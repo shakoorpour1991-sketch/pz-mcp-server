@@ -29,8 +29,8 @@ A comprehensive Model Context Protocol (MCP) server for Project Zomboid mod deve
 - **Best practices suggestions** for mod development
 
 ### Deployment Ready
-- **Cloudflare Workers** support for serverless deployment
-- **D1 Database** integration for persistent storage
+- **Cross-platform** Node.js deployment
+- **SQLite Database** integration for persistent storage
 - **HTTP API** for integration with any MCP client
 - **Claude Desktop** ready with example configurations
 
@@ -54,21 +54,6 @@ npm run build
 
 # Run in development mode
 npm run dev
-```
-
-### Cloudflare Workers Deployment
-```bash
-# Install Wrangler CLI
-npm install -g wrangler
-
-# Login to Cloudflare
-wrangler login
-
-# Create D1 database
-wrangler d1 create pz-mcp-prod
-
-# Deploy to Cloudflare Workers
-wrangler deploy
 ```
 
 ## 📖 Usage
@@ -227,41 +212,12 @@ await mcp.callTool('parse_game_files', {
 
 ### Core Components
 
-- **DatabaseManager**: SQLite/D1 database with full-text search capabilities
+- **DatabaseManager**: SQLite database with full-text search capabilities
 - **ProjectZomboidParser**: Parse vanilla game files and mod directories
 - **ScriptGenerator**: Generate balanced scripts using templates and game data
 - **ValidationEngine**: Real-time syntax and reference validation
 - **ModAnalyzer**: Comprehensive mod analysis and quality metrics
 - **PathManager**: Auto-detection of Project Zomboid installations
-
-## 🌐 Cloudflare Workers Deployment
-
-The server includes full Cloudflare Workers support for serverless deployment:
-
-### Features
-- **D1 Database** for persistent storage
-- **KV Storage** for caching frequently accessed data
-- **HTTP API** endpoints for all MCP tools
-- **Automatic scaling** with zero cold starts
-- **Global edge deployment** for low latency
-
-### API Endpoints
-
-- `GET /health` - Health check
-- `GET /mcp/info` - Server capabilities
-- `POST /tools/{toolName}` - Execute MCP tools
-- `POST /admin/load-game-data` - Load vanilla game data
-
-### Configuration
-
-Update `wrangler.toml` with your database IDs:
-
-```toml
-[[env.production.d1_databases]]
-binding = "DB"
-database_name = "pz-mcp-prod"
-database_id = "your-database-id"
-```
 
 ## 📋 Development Workflow
 
