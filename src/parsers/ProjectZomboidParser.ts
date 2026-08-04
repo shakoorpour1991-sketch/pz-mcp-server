@@ -186,6 +186,7 @@ export class ProjectZomboidParser {
   private async parseScriptFile(filePath: string, results: ParseResults, defaultModule: string): Promise<void> {
     const content = readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
+    const accumulatedItems: any[] = [];
     
     let currentModule = defaultModule;
     let currentBlock: any = null;
@@ -244,18 +245,10 @@ export class ProjectZomboidParser {
           try {
             const item = this.parseBlock(currentBlock, blockContent, filePath, blockStartLine);
             if (item) {
-              await this.db.insertItem(item);
-
-              // Populate cross-item references (recipe ingredients/results,
-              // fixing requirements). Non-fatal: a reference failure must not
-              // abort parsing of the rest of the file.
-              try {
-                await this.extractReferences(item);
-              } catch (refError) {
-                logger.warn(
-                  `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`
-                );
-              }
+              // Accumulate the item for bulk insert (references are extracted
+              // after the flush below — "references".item_id has a FOREIGN KEY
+              // to items(id), so the item row must exist first).
+              accumulatedItems.push(item);
 
               // Update counters
               switch (item.type) {
@@ -285,6 +278,25 @@ export class ProjectZomboidParser {
       if (inModule && braceLevel === -1 && line.includes('}')) {
         inModule = false;
         currentModule = defaultModule;
+      }
+    }
+
+    // Flush accumulated items to database
+    if (accumulatedItems.length > 0) {
+      await this.db.insertItems(accumulatedItems);
+
+      // Populate cross-item references (recipe ingredients/results, fixing
+      // requirements). Must run AFTER the flush: "references".item_id has a
+      // FOREIGN KEY to items(id), so the item row must exist first. Non-fatal:
+      // a reference failure must not abort parsing of the rest of the file.
+      for (const item of accumulatedItems) {
+        try {
+          await this.extractReferences(item);
+        } catch (refError) {
+          logger.warn(
+            `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`
+          );
+        }
       }
     }
   }
