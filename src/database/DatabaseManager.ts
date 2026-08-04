@@ -231,8 +231,10 @@ export class DatabaseManager {
     }
 
     // Add ordering and limit
+    // FTS5 bm25 rank is NEGATIVE for matches (more negative = more relevant),
+    // so ASC puts best matches first; DESC would invert it (audit finding).
     if (query.trim() !== '') {
-      sql += ' ORDER BY rank DESC';
+      sql += ' ORDER BY rank ASC';
     } else {
       sql += ' ORDER BY name ASC';
     }

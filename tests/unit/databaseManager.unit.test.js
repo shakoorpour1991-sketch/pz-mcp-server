@@ -87,5 +87,56 @@ describe('DatabaseManager', () => {
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBeGreaterThan(0);
     });
+
+    test('FTS5 bm25 ordering: best match ranks first (ASC, not DESC)', async () => {
+      // Sword matches "sword" in 2 columns (name + displayName);
+      // Spoon matches in 1 column (displayName only); Axe matches none.
+      await db.insertItems([
+        {
+          id: 'Base.Sword',
+          name: 'Sword',
+          displayName: 'Sword',
+          type: 'item',
+          module: 'Base',
+          category: 'Weapon',
+          properties: { Type: 'Weapon' },
+          rawContent: 'item Sword {}',
+          filePath: 'test.txt',
+        },
+        {
+          id: 'Base.Spoon',
+          name: 'Spoon',
+          displayName: 'Kitchen Sword',
+          type: 'item',
+          module: 'Base',
+          category: 'Kitchen',
+          properties: { Type: 'Kitchen' },
+          rawContent: 'item Spoon {}',
+          filePath: 'test.txt',
+        },
+        {
+          id: 'Base.Axe',
+          name: 'Axe',
+          displayName: 'Axe',
+          type: 'item',
+          module: 'Base',
+          category: 'Weapon',
+          properties: { Type: 'Weapon' },
+          rawContent: 'item Axe {}',
+          filePath: 'test.txt',
+        },
+      ]);
+
+      const results = await db.searchContent('sword');
+      // TestSword (inserted earlier in this describe) also matches via its
+      // display name "Test Sword", so 3 rows total — but the ordering
+      // assertion is the point: the strongest match must rank first.
+      expect(results.length).toBe(3);
+      // bm25 rank is more negative for better matches; ASC must surface
+      // the stronger match first (DESC would invert it — audit finding).
+      expect(results[0].id).toBe('Base.Sword');
+      const spoonIdx = results.findIndex((r) => r.id === 'Base.Spoon');
+      expect(spoonIdx).toBeGreaterThan(0);
+    });
   });
 });
