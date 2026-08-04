@@ -240,11 +240,11 @@ npm install  →  better-sqlite3 & sqlite3 require node-gyp + Visual Studio C++ 
 20. ~~Create CI/CD pipeline (GitHub Actions)~~ — **RESOLVED**: `.github/workflows/ci.yml` — build+lint+test+audit on Node 20/22 x ubuntu/windows (committed eb68cfb)
 
 ### P4 — Nice to Have
-21. Add structured logging (pino/winston)
-22. Implement Steam registry detection on Windows properly
-23. Add more comprehensive balance analysis (armor, clothing, food)
-24. ~~Add vehicle script parsing/generation~~ — **RESOLVED**: vehicle generation implemented (commit 0647d62)
-25. Add Lua script validation beyond syntax
+21. ~~Add structured logging (pino/winston)~~ — **RESOLVED**: pino logger, stderr-only, level via `PZ_MCP_LOG_LEVEL` (commit 7056109)
+22. Implement Steam registry detection on Windows properly — **Still open**
+23. ~~Add more comprehensive balance analysis (armor, clothing, food)~~ — **RESOLVED**: armor/clothing/food categories alongside weapons (commit fb042b8)
+24. ~~Add vehicle script parsing/generation~~ — **RESOLVED**: generation (commit 0647d62) + parsing verified/locked in test (commit aabe0e1)
+25. ~~Add Lua script validation beyond syntax~~ — **RESOLVED**: deprecated-API + semantic checks (if/end, global leaks, unused require) (commit f373742)
 
 ---
 
