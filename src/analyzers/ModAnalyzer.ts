@@ -503,6 +503,18 @@ export class ModAnalyzer {
     }
   }
 
+  /**
+   * Category configs for balance comparison. Each category maps a PZ
+   * properties.Type to the vanilla search keyword and the stats that
+   * matter for that category (P4 #23).
+   */
+  private static readonly BALANCE_CATEGORIES = [
+    { type: 'Weapon', keyword: 'weapon', stats: ['MaxDamage', 'MinDamage', 'Weight'] },
+    { type: 'Armor', keyword: 'armor', stats: ['BiteDefense', 'ScratchDefense', 'BulletDefense', 'Weight'] },
+    { type: 'Clothing', keyword: 'clothing', stats: ['Insulation', 'WindResistance', 'WaterResistance', 'Weight'] },
+    { type: 'Food', keyword: 'food', stats: ['HungerChange', 'ThirstChange', 'Calories', 'Weight'] },
+  ] as const;
+
   private async analyzeBalance(modPath: string, _result: ModAnalysisResult): Promise<BalanceAnalysis> {
     const balance: BalanceAnalysis = {
       itemCount: 0,
@@ -524,15 +536,14 @@ export class ModAnalyzer {
 
       balance.itemCount = modItems.length;
 
-      // Analyze item stats
-      const stats = ['MaxDamage', 'MinDamage', 'Weight', 'ConditionMax'];
+      // Collect stats from mod items (all categories)
+      const stats = ModAnalyzer.BALANCE_CATEGORIES.flatMap(c => c.stats);
       const statValues: Record<string, number[]> = {};
 
       for (const stat of stats) {
         statValues[stat] = [];
       }
 
-      // Collect stats from mod items
       for (const item of modItems) {
         for (const stat of stats) {
           const value = item.properties[stat];
@@ -569,50 +580,50 @@ export class ModAnalyzer {
     modItems: GameItem[], 
     balance: BalanceAnalysis
   ): Promise<void> {
-    
-    // Get vanilla weapon stats for comparison
-    const vanillaWeapons = await this.db.searchContent('weapon', { type: 'item', limit: 50 });
-    
-    if (vanillaWeapons.length === 0) return;
+    for (const category of ModAnalyzer.BALANCE_CATEGORIES) {
+      // Get vanilla items of this category for comparison
+      const vanillaResults = await this.db.searchContent(category.keyword, { type: 'item', limit: 100 });
+      const vanillaItems = vanillaResults.filter(v => v.properties.Type === category.type);
 
-    // Calculate vanilla averages
-    const vanillaStats: Record<string, number> = {};
-    const stats = ['MaxDamage', 'MinDamage', 'Weight'];
+      if (vanillaItems.length === 0) continue;
 
-    for (const stat of stats) {
-      const values = vanillaWeapons
-        .map(w => w.properties[stat])
-        .filter(v => typeof v === 'number') as number[];
-      
-      if (values.length > 0) {
-        vanillaStats[stat] = values.reduce((sum, val) => sum + val, 0) / values.length;
+      // Calculate vanilla averages
+      const vanillaStats: Record<string, number> = {};
+      for (const stat of category.stats) {
+        const values = vanillaItems
+          .map(w => w.properties[stat])
+          .filter(v => typeof v === 'number') as number[];
+
+        if (values.length > 0) {
+          vanillaStats[stat] = values.reduce((sum, val) => sum + val, 0) / values.length;
+        }
       }
-    }
 
-    // Find outliers in mod items
-    for (const item of modItems) {
-      if (item.properties.Type === 'Weapon') {
-        for (const stat of stats) {
-          const value = item.properties[stat];
-          const vanillaAvg = vanillaStats[stat];
-          
-          if (typeof value === 'number' && vanillaAvg) {
-            const ratio = value / vanillaAvg;
-            
-            if (ratio > 2.0) {
-              balance.outliers.push({
-                item: item.name,
-                property: stat,
-                value,
-                recommendation: `${stat} is ${ratio.toFixed(1)}x higher than vanilla average (${vanillaAvg.toFixed(1)})`,
-              });
-            } else if (ratio < 0.3) {
-              balance.outliers.push({
-                item: item.name,
-                property: stat,
-                value,
-                recommendation: `${stat} is ${(1/ratio).toFixed(1)}x lower than vanilla average (${vanillaAvg.toFixed(1)})`,
-              });
+      // Find outliers in mod items of this category
+      for (const item of modItems) {
+        if (item.properties.Type === category.type) {
+          for (const stat of category.stats) {
+            const value = item.properties[stat];
+            const vanillaAvg = vanillaStats[stat];
+
+            if (typeof value === 'number' && vanillaAvg) {
+              const ratio = value / vanillaAvg;
+
+              if (ratio > 2.0) {
+                balance.outliers.push({
+                  item: item.name,
+                  property: stat,
+                  value,
+                  recommendation: `${stat} is ${ratio.toFixed(1)}x higher than vanilla average (${vanillaAvg.toFixed(1)})`,
+                });
+              } else if (ratio < 0.3) {
+                balance.outliers.push({
+                  item: item.name,
+                  property: stat,
+                  value,
+                  recommendation: `${stat} is ${(1/ratio).toFixed(1)}x lower than vanilla average (${vanillaAvg.toFixed(1)})`,
+                });
+              }
             }
           }
         }
