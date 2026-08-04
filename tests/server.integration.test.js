@@ -7,11 +7,14 @@
  * Zomboid install + mod are created as fixtures. Requires `npm run build`
  * to have produced dist/ (the `test` script builds first).
  */
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.resolve(__dirname, '..', 'dist', 'index.js');
 
 const GAME_SCRIPT = [
@@ -235,7 +238,6 @@ describe('pz-mcp-server integration', () => {
   }, 30000);
 
   test('extractReferences populates the references table during parse', async () => {
-    const Database = require('better-sqlite3');
     const dbPath = path.join(tmpDir, 'data', 'pz_database.db');
     const db = new Database(dbPath, { readonly: true });
     try {

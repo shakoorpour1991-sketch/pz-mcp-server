@@ -397,7 +397,7 @@ export class DatabaseManager {
     // operator injection, or expensive scans. Strip FTS5 special characters
     // and operator keywords, then wrap every term in quotes.
     const terms = query
-      .replace(/["*:^+\-(){}[\]!~]/g, ' ')
+      .replace(/["*:^+\-(){}[\]!~;]/g, ' ')
       .split(/\s+/)
       .filter(term => term.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(term));
 
