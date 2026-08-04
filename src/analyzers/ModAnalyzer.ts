@@ -428,6 +428,9 @@ export class ModAnalyzer {
       // Check for deprecated API usage
       this.checkDeprecatedAPI(content, filePath, result);
 
+      // Check for semantic issues
+      this.checkSemanticIssues(content, filePath, result);
+
     } catch (error) {
       result.issues.push({
         file: filePath,
@@ -485,19 +488,104 @@ export class ModAnalyzer {
   }
 
   private checkDeprecatedAPI(content: string, filePath: string, result: ModAnalysisResult): void {
-    const deprecatedAPIs = [
-      { old: 'getSpecificPlayer(0)', new: 'getPlayer()', message: 'Use getPlayer() instead of getSpecificPlayer(0)' },
-      { old: 'instanceof', new: 'type checking', message: 'instanceof may not work as expected in Lua' },
+    const deprecatedPatterns = [
+      { pattern: 'getCell():getGridSquare()', new: 'getSquare()', message: 'Use getSquare() instead of getCell():getGridSquare()' },
+      { pattern: 'getSpecificPlayer(0)', new: 'getPlayer()', message: 'Use getPlayer() instead of getSpecificPlayer(0)' },
+      { pattern: 'getSpecificPlayer(1)', new: 'getPlayer()', message: 'Use getPlayer() instead of getSpecificPlayer(1)' },
+      { pattern: 'instanceof', new: 'type checking', message: 'instanceof may not work as expected in Lua' },
+      { pattern: 'getClosestPlayer()', new: 'getPlayer()', message: 'getClosestPlayer() is deprecated, use getPlayer()' },
+      { pattern: 'getLocalPlayer()', new: 'getPlayer()', message: 'getLocalPlayer() is deprecated, use getPlayer()' },
     ];
 
-    for (const api of deprecatedAPIs) {
-      if (content.includes(api.old)) {
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lineNumber = i + 1;
+      
+      for (const pattern of deprecatedPatterns) {
+        if (line.includes(pattern.pattern)) {
+          result.issues.push({
+            file: filePath,
+            line: lineNumber,
+            severity: 'warning',
+            message: pattern.message,
+            code: 'DEPRECATED_API',
+            suggestion: `Replace with: ${pattern.new}`,
+          });
+        }
+      }
+    }
+  }
+
+  private checkSemanticIssues(content: string, filePath: string, result: ModAnalysisResult): void {
+    const lines = content.split('\n');
+    const ifKeywordCount = (content.match(/\bif\b/g) || []).length;
+    const endKeywordCount = (content.match(/\bend\b/g) || []).length;
+    
+    if (ifKeywordCount !== endKeywordCount) {
+      result.issues.push({
+        file: filePath,
+        severity: 'error',
+        message: `Unbalanced if/end: ${ifKeywordCount} 'if' statements but ${endKeywordCount} 'end' keywords`,
+        code: 'SEMANTIC_ERROR',
+      });
+    }
+    
+    const globalVarPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*/g;
+    const globalVars = new Set<string>();
+    let inStrictContext = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lineNumber = i + 1;
+      
+      if (line.includes('--strict') || line.includes('--strict-context')) {
+        inStrictContext = true;
+      }
+      
+      if (inStrictContext && line.includes('local ')) {
+        const localMatch = line.match(/local\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+        if (localMatch) {
+          const varName = localMatch[1];
+          globalVars.add(varName);
+        }
+      }
+      
+      const varMatches = Array.from(line.matchAll(globalVarPattern));
+      for (const match of varMatches) {
+        const varName = match[1];
+        if (!varName.startsWith('_') && !globalVars.has(varName)) {
+          result.issues.push({
+            file: filePath,
+            line: lineNumber,
+            severity: 'warning',
+            message: `Potential global variable leak: '${varName}' is assigned without 'local' keyword`,
+            code: 'GLOBAL_VAR',
+          });
+        }
+      }
+    }
+    
+    const requirePattern = /\brequire\s*\(\s*['"]([^'']+)['"]/g;
+    let match: RegExpExecArray | null;
+    const requiredModules = new Set<string>();
+    
+    while ((match = requirePattern.exec(content)) !== null) {
+      requiredModules.add(match[1]);
+    }
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lineNumber = i + 1;
+      
+      const unusedRequireMatch = line.match(/\brequire\s*\(\s*['"]([^'']+)['"]/);
+      if (unusedRequireMatch && !requiredModules.has(unusedRequireMatch[1])) {
         result.issues.push({
           file: filePath,
+          line: lineNumber,
           severity: 'warning',
-          message: api.message,
-          code: 'DEPRECATED_API',
-          suggestion: `Replace with: ${api.new}`,
+          message: `Potential unused require: '${unusedRequireMatch[1]}' appears to be unused`,
+          code: 'UNUSED_REQUIRE',
         });
       }
     }
