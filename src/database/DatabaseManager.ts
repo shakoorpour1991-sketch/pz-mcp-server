@@ -389,29 +389,25 @@ export class DatabaseManager {
   }
 
   private prepareFTSQuery(query: string): string {
-    // Handle exact matches with quotes
-    if (query.startsWith('"') && query.endsWith('"')) {
-      return query;
+    // FTS5 query sanitization: never pass user input through unmodified.
+    // FTS5 MATCH strings are their own query language — raw input containing
+    // operators, quotes, or special characters can cause syntax errors,
+    // operator injection, or expensive scans. Strip FTS5 special characters
+    // and operator keywords, then wrap every term in quotes.
+    const terms = query
+      .replace(/["*:^+\-(){}[\]!~]/g, ' ')
+      .split(/\s+/)
+      .filter(term => term.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(term));
+
+    if (terms.length === 0) {
+      // Nothing searchable — return a match-nothing query
+      return '""';
     }
 
-    // Handle complex queries
-    if (query.includes(' AND ') || query.includes(' OR ') || query.includes(' NOT ')) {
-      return query;
-    }
-
-    // For simple queries, add wildcards and prepare for FTS5
-    const terms = query.split(/\s+/).filter(term => term.length > 0);
-    
-    if (terms.length === 1) {
-      const term = terms[0];
-      // Try exact match first, then prefix match
-      return `"${term}" OR ${term}*`;
-    }
-
-    // For multiple terms, create a phrase query and individual term queries
+    const quotedTerms = terms.map(term => `"${term}"`);
     const phraseQuery = `"${terms.join(' ')}"`;
-    const termQueries = terms.map(term => `${term}*`).join(' ');
-    
+    const termQueries = quotedTerms.join(' ');
+
     return `${phraseQuery} OR (${termQueries})`;
   }
 

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, resolve } from 'path';
+import { isAbsolute, join, resolve } from 'path';
 import { homedir } from 'os';
 
 export interface GameInstallation {
@@ -396,5 +396,46 @@ export class PathManager {
 
     // Fallback to detection
     return null; // Will trigger auto-detection
+  }
+
+  /**
+   * Validate a user-supplied file path before it is used for filesystem access.
+   * Guards against path traversal (audit P1 #10): rejects empty/relative paths,
+   * NUL bytes, and any '..' segment. Verifies the target exists.
+   *
+   * @param input raw path from an MCP tool argument
+   * @param kind expected target type ('dir' or 'file')
+   * @returns the validated, resolved absolute path
+   * @throws Error describing the rejection
+   */
+  validateInputPath(input: string, kind: 'dir' | 'file' = 'dir'): string {
+    if (!input || input.trim() === '') {
+      throw new Error('Path must not be empty');
+    }
+
+    if (input.includes('\0')) {
+      throw new Error('Path contains invalid characters');
+    }
+
+    if (!isAbsolute(input)) {
+      throw new Error(`Path must be absolute: ${input}`);
+    }
+
+    // Reject traversal sequences outright — no path may escape via '..'
+    const segments = input.split(/[\\/]+/).filter(seg => seg.length > 0);
+    if (segments.includes('..')) {
+      throw new Error(`Path must not contain '..' segments: ${input}`);
+    }
+
+    const resolved = resolve(input);
+
+    if (kind === 'dir' && !existsSync(resolved)) {
+      throw new Error(`Directory does not exist: ${resolved}`);
+    }
+    if (kind === 'file' && !existsSync(resolved)) {
+      throw new Error(`File does not exist: ${resolved}`);
+    }
+
+    return resolved;
   }
 }

@@ -22,13 +22,17 @@ import { ScriptGenerator } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { PathManager } from "./utils/PathManager.js";
 
-const server = new Server({
-  name: "pz-mcp-server",
-  version: "1.0.0",
-  capabilities: {
-    tools: {},
+const server = new Server(
+  {
+    name: "pz-mcp-server",
+    version: "1.0.0",
   },
-});
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
 
 // Initialize core components
 let dbManager: DatabaseManager;
@@ -206,7 +210,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "analyze_mod": {
         const { modPath, checkBalance, checkCompatibility, generateReport } = AnalyzeModSchema.parse(args);
-        const analysis = await analyzer.analyzeMod(modPath, {
+        let safePath: string;
+        try {
+          safePath = pathManager.validateInputPath(modPath, 'dir');
+        } catch (err) {
+          throw new McpError(ErrorCode.InvalidParams, `Invalid modPath: ${(err as Error).message}`);
+        }
+        const analysis = await analyzer.analyzeMod(safePath, {
           checkBalance,
           checkCompatibility,
           generateReport,
@@ -224,7 +234,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "parse_game_files": {
         const { gamePath, forceReparse } = ParseGameFilesSchema.parse(args);
-        const detectedPath = gamePath || await pathManager.detectProjectZomboidPath();
+        let detectedPath: string | null;
+        if (gamePath) {
+          try {
+            detectedPath = pathManager.validateInputPath(gamePath, 'dir');
+          } catch (err) {
+            throw new McpError(ErrorCode.InvalidParams, `Invalid gamePath: ${(err as Error).message}`);
+          }
+        } else {
+          detectedPath = await pathManager.detectProjectZomboidPath();
+        }
         
         if (!detectedPath) {
           throw new McpError(

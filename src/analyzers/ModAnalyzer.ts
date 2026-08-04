@@ -248,7 +248,7 @@ export class ModAnalyzer {
           }
         }
       }
-    } catch (error) {
+    } catch {
       // Directory read error, skip
     }
   }
@@ -263,7 +263,7 @@ export class ModAnalyzer {
       if (existsSync(modInfoPath)) {
         try {
           return this.parser.parseModInfo(modInfoPath);
-        } catch (error) {
+        } catch {
           // Failed to parse, continue to next path
         }
       }
@@ -733,7 +733,7 @@ export class ModAnalyzer {
           }
         }
       }
-    } catch (error) {
+    } catch {
       // Skip directories that can't be read
     }
   }
