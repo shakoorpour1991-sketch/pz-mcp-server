@@ -244,7 +244,18 @@ export class ProjectZomboidParser {
             const item = this.parseBlock(currentBlock, blockContent, filePath, blockStartLine);
             if (item) {
               await this.db.insertItem(item);
-              
+
+              // Populate cross-item references (recipe ingredients/results,
+              // fixing requirements). Non-fatal: a reference failure must not
+              // abort parsing of the rest of the file.
+              try {
+                await this.extractReferences(item);
+              } catch (refError) {
+                console.warn(
+                  `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`
+                );
+              }
+
               // Update counters
               switch (item.type) {
                 case 'item': results.itemCount++; break;
@@ -539,6 +550,30 @@ export class ProjectZomboidParser {
           ref: ingredient.item,
           type: 'item',
           context: 'ingredient',
+        });
+      }
+    }
+
+    // Extract recipe result reference (may carry a count suffix: "Base.Sword=2")
+    if (item.type === 'recipe' && typeof item.properties.Result === 'string') {
+      const resultId = item.properties.Result.split('=')[0].trim();
+      if (resultId) {
+        refs.push({
+          ref: resultId,
+          type: 'item',
+          context: 'result',
+        });
+      }
+    }
+
+    // Extract fixing requirement reference
+    if (item.type === 'fixing' && typeof item.properties.RequiredItem === 'string') {
+      const required = item.properties.RequiredItem.trim();
+      if (required) {
+        refs.push({
+          ref: required,
+          type: 'item',
+          context: 'required_item',
         });
       }
     }

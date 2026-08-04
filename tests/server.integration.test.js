@@ -30,8 +30,8 @@ const GAME_SCRIPT = [
   '}',
   'recipe TestSwordRecipe',
   '{',
-  '	Result = TestSword,',
-  '	Time = 10,',
+  '	Result: TestSword=1,',
+  '	Water=2,',
   '}',
   '}',
 ].join('\n');
@@ -232,6 +232,54 @@ describe('pz-mcp-server integration', () => {
     expect(text).toContain('✅ Valid: 1');
     expect(text).toContain('❌ Invalid: 1');
     expect(text).toContain('NoSuchItemEver');
+  }, 30000);
+
+  test('extractReferences populates the references table during parse', async () => {
+    const Database = require('better-sqlite3');
+    const dbPath = path.join(tmpDir, 'data', 'pz_database.db');
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const rows = db.prepare(
+        'SELECT item_id, reference_id, reference_type, context FROM "references" ORDER BY context'
+      ).all();
+      const recipeRows = rows.filter((r) => r.item_id === 'TestSwordRecipe');
+      expect(recipeRows.length).toBeGreaterThanOrEqual(2);
+      expect(recipeRows.some((r) => r.context === 'result' && r.reference_id === 'TestSword')).toBe(true);
+      expect(recipeRows.some((r) => r.context === 'ingredient' && r.reference_id === 'Water')).toBe(true);
+    } finally {
+      db.close();
+    }
+  }, 30000);
+
+  test('generate_script produces evolvedrecipe and vehicle scripts', async () => {
+    const evo = await client.call('tools/call', {
+      name: 'generate_script',
+      arguments: {
+        type: 'evolvedrecipe',
+        name: 'TestCampfirePot',
+        properties: {
+          baseItem: 'Base.TinPot',
+          ingredients: ['Base.Water', 'Base.Cabbage'],
+          maxItems: 3,
+        },
+      },
+    });
+    const evoText = evo.content[0].text;
+    expect(evoText).toContain('evolvedrecipe TestCampfirePot');
+    expect(evoText).toContain('BaseItem: Base.TinPot');
+    expect(evoText).toContain('Ingredients: Base.Water, Base.Cabbage');
+
+    const veh = await client.call('tools/call', {
+      name: 'generate_script',
+      arguments: {
+        type: 'vehicle',
+        name: 'TestCar',
+        properties: { Mass: 1200 },
+      },
+    });
+    const vehText = veh.content[0].text;
+    expect(vehText).toContain('vehicle TestCar');
+    expect(vehText).toContain('Mass = 1200');
   }, 30000);
 
   test('analyze_mod analyzes the fixture mod', async () => {

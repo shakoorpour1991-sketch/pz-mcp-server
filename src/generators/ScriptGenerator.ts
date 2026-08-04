@@ -170,6 +170,47 @@ export class ScriptGenerator {
         vanilla: 1.0,
       },
     });
+
+    // Evolved recipe template (transforms a base item with additional ingredients)
+    this.templates.set('evolved_recipe', {
+      type: 'evolvedrecipe',
+      category: 'Recipe',
+      baseStats: {
+        AllowFrozen: false,
+        MaxItems: 3,
+      },
+      requiredProperties: ['BaseItem'],
+      optionalProperties: ['Ingredients', 'AllowFrozen', 'MaxItems'],
+      balanceMultipliers: {
+        powerful: 1.0,
+        weak: 1.0,
+        vanilla: 1.0,
+      },
+    });
+
+    // Vehicle template (minimal top-level vehicle script)
+    this.templates.set('vehicle', {
+      type: 'vehicle',
+      category: 'Vehicle',
+      baseStats: {
+        Mass: 1000,
+        EngineLoudness: 100,
+        EngineForce: 280,
+        BrakingForce: 40,
+        MaxSpeed: 130,
+        SuspensionTravel: 5,
+        WheelTrackWidth: 1.4,
+        AxleWeight: 50,
+        MechanicalConditionMax: 100,
+      },
+      requiredProperties: ['Mass'],
+      optionalProperties: ['EngineForce', 'MaxSpeed', 'BrakingForce', 'EngineLoudness'],
+      balanceMultipliers: {
+        powerful: 1.2,
+        weak: 0.8,
+        vanilla: 1.0,
+      },
+    });
   }
 
   async generateScript(
@@ -233,6 +274,10 @@ export class ScriptGenerator {
         return this.templates.get('tool_item')!;
       case 'recipe':
         return this.templates.get('basic_recipe')!;
+      case 'evolvedrecipe':
+        return this.templates.get('evolved_recipe')!;
+      case 'vehicle':
+        return this.templates.get('vehicle')!;
       default:
         return null;
     }
@@ -304,6 +349,10 @@ export class ScriptGenerator {
       return this.generateFixingScript(name, specs, template, references, options);
     } else if (type === 'sound') {
       return this.generateSoundScript(name, specs, template, references, options);
+    } else if (type === 'evolvedrecipe') {
+      return this.generateEvolvedRecipeScript(name, specs, template, references, options);
+    } else if (type === 'vehicle') {
+      return this.generateVehicleScript(name, specs, template, references, options);
     }
 
     throw new Error(`Script generation for type '${type}' not implemented`);
@@ -492,6 +541,85 @@ export class ScriptGenerator {
     lines.push(`        }`);
     lines.push(`    }`);
 
+    return lines.join('\n');
+  }
+
+  private generateEvolvedRecipeScript(
+    name: string,
+    specs: Record<string, any>,
+    template: ItemTemplate,
+    _references: GameItem[],
+    options: GenerationOptions
+  ): string {
+    const lines: string[] = [];
+
+    if (options.includeComments) {
+      lines.push(`    /* ${name} - Generated evolved recipe */`);
+    }
+
+    lines.push(`    evolvedrecipe ${name}`);
+    lines.push(`    {`);
+
+    // Base item (the item the recipe transforms)
+    const baseItem = specs.baseItem || specs.BaseItem;
+    if (baseItem) {
+      lines.push(`        BaseItem: ${baseItem},`);
+    }
+
+    // Ingredients: array of strings or {item, count} objects
+    if (specs.ingredients && Array.isArray(specs.ingredients)) {
+      const ingredients = specs.ingredients
+        .map((ing: any) => (typeof ing === 'string' ? ing : ing && ing.item))
+        .filter((v: any) => typeof v === 'string' && v.trim().length > 0);
+      if (ingredients.length > 0) {
+        lines.push(`        Ingredients: ${ingredients.join(', ')},`);
+      }
+    }
+
+    // Merge remaining template defaults with user specs
+    const properties = { ...template.baseStats };
+    Object.keys(specs).forEach(key => {
+      if (!['baseItem', 'BaseItem', 'ingredients'].includes(key)) {
+        properties[key] = specs[key];
+      }
+    });
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (value !== undefined && value !== null) {
+        lines.push(`        ${key}: ${this.formatPropertyValue(value)},`);
+      }
+    }
+
+    lines.push(`    }`);
+    return lines.join('\n');
+  }
+
+  private generateVehicleScript(
+    name: string,
+    specs: Record<string, any>,
+    template: ItemTemplate,
+    _references: GameItem[],
+    options: GenerationOptions
+  ): string {
+    const lines: string[] = [];
+
+    if (options.includeComments) {
+      lines.push(`    /* ${name} - Generated vehicle */`);
+    }
+
+    lines.push(`    vehicle ${name}`);
+    lines.push(`    {`);
+
+    // Merge template defaults with user specifications
+    const properties = { ...template.baseStats, ...specs };
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (value !== undefined && value !== null) {
+        lines.push(`        ${key} = ${this.formatPropertyValue(value)},`);
+      }
+    }
+
+    lines.push(`    }`);
     return lines.join('\n');
   }
 
