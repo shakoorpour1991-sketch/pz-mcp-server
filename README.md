@@ -1,44 +1,53 @@
 # Project Zomboid MCP Server
 
-A comprehensive Model Context Protocol (MCP) server for Project Zomboid mod development, providing intelligent script validation, generation, and contextual assistance through AI-enhanced tooling.
+A Model Context Protocol (MCP) server for Project Zomboid mod development, providing script validation, generation, and contextual assistance through AI-enhanced tooling.
 
 ## 🚀 Features
 
 ### Smart Project Zomboid Integration
-- **Auto-detection** of Steam, Epic Games, and GOG installations
+- **Auto-detection** of Steam, Epic Games, and GOG installations (basic path checking; Steam VDF parsing incomplete)
 - **Cross-platform support** (Windows, Linux, macOS, WSL)
 - **Build 42 compatibility** with modern mod structure support
 - **Fallback system** with local script parsing
 
 ### Comprehensive Game Data Knowledge
-- **Complete vanilla game indexing** with full-text search capabilities
-- **Rich metadata extraction** including damage, durability, categories, and tags
-- **Relationship mapping** between items, recipes, and dependencies
-- **Real-time reference validation** against game database
+- **Vanilla game indexing** with full-text search (FTS5; references table not yet populated during parsing)
+- **Metadata extraction** for items, recipes, and basic properties (some PZ-specific fields like `MetalValue`, `Tags`, `AttachmentType` parsing is minimal)
+- **Relationship mapping** between items, recipes, and dependencies (references table exists but `extractReferences` not integrated into parse flow)
 
 ### Intelligent Script Generation
 - **Template-based generation** using real game patterns
-- **Balance analysis** comparing custom items to vanilla equivalents
-- **Reference validation** ensuring all dependencies exist
-- **Multiple output formats** (items, recipes, fixing scripts, sounds, vehicles)
+- **Balance analysis** comparing custom items to vanilla equivalents (weapons only; no armor/clothing/food balance)
+- **Reference validation** ensuring dependencies exist (database currently empty)
+- **Multiple output formats**: items, recipes, fixing scripts, sounds — **evolvedrecipe and vehicle generation NOT implemented**
 
 ### Advanced Validation Engine
 - **Real-time syntax validation** with detailed error reporting
 - **Reference checking** for items, sounds, and sprites
-- **Balance analysis** with gameplay impact assessment
-- **Best practices suggestions** for mod development
+- **Balance analysis** with gameplay impact assessment (limited to weapons)
+- **Best practices suggestions** for mod development (basic warnings only)
 
-### Deployment Ready
-- **Cross-platform** Node.js deployment
+### Mod Analysis (Implemented, Not Previously Documented)
+- Mod structure validation (Build 42, common folder detection)
+- Lua file syntax checking (parentheses, brackets balance)
+- Deprecated Lua API detection
+- Performance analysis (large file detection)
+- Mod quality metrics (structure, syntax, balance, documentation)
+- Steam library folder VDF parsing
+- WSL path detection
+- Mod template generation (mod.info + example script)
+
+### Deployment
+- **Cross-platform** Node.js deployment (STDIO MCP server)
 - **SQLite Database** integration for persistent storage
-- **HTTP API** for integration with any MCP client
-- **Claude Desktop** ready with example configurations
+- **Cloudflare Workers support removed** — HTTP API and edge deployment no longer available
 
 ## 🔧 Installation
 
 ### Prerequisites
 - Node.js 18.0.0 or higher
 - npm or yarn package manager
+- Visual Studio C++ Build Tools (Windows) for native dependencies
 
 ### Local Development
 ```bash
@@ -52,13 +61,13 @@ npm install
 # Build the project
 npm run build
 
-# Run in development mode
+# Run in development mode (requires successful build first)
 npm run dev
 ```
 
 ## 📖 Usage
 
-### With Claude Desktop
+### With Claude Desktop (STDIO)
 
 Add to your `claude_desktop_config.json`:
 
@@ -73,13 +82,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### With Cursor/VSCode
-
-The server can be integrated with any IDE that supports MCP protocol:
-
-1. Install the MCP extension for your IDE
-2. Configure the server endpoint
-3. Start using Project Zomboid development tools
+> Requires successful `npm run build` first. The STDIO server entry point is `src/index.ts`.
 
 ## 🛠️ MCP Tools
 
@@ -88,13 +91,12 @@ Search vanilla Project Zomboid content with intelligent matching.
 
 **Parameters:**
 - `query` (string): Search query for game content
-- `type` (string, optional): Filter by content type (item, recipe, sound, vehicle)
+- `type` (string, optional): Filter by content type (`item`, `recipe`, `sound`, `vehicle`)
 - `category` (string, optional): Filter by item category
 - `limit` (number, optional): Maximum results (default: 20)
 
 **Example:**
 ```typescript
-// Search for weapons
 await mcp.callTool('search_vanilla', {
   query: 'katana',
   type: 'item',
@@ -106,14 +108,13 @@ await mcp.callTool('search_vanilla', {
 Generate balanced Project Zomboid scripts using templates and game data.
 
 **Parameters:**
-- `type` (string): Script type (item, recipe, evolvedrecipe, fixing, sound, vehicle)
+- `type` (string): Script type (`item`, `recipe`, `fixing`, `sound`) — **`evolvedrecipe` and `vehicle` throw "not implemented"**
 - `name` (string): Name of the item/recipe to generate
 - `properties` (object): Properties and specifications
 - `module` (string, optional): Module name (default: "Base")
 
 **Example:**
 ```typescript
-// Generate a custom weapon
 await mcp.callTool('generate_script', {
   type: 'item',
   name: 'SuperKatana',
@@ -137,7 +138,6 @@ Validate Project Zomboid script syntax and references with detailed error report
 
 **Example:**
 ```typescript
-// Validate mod script
 await mcp.callTool('validate_script', {
   content: scriptContent,
   type: 'item',
@@ -150,16 +150,17 @@ Validate item, sound, and sprite references against game database.
 
 **Parameters:**
 - `references` (string[]): List of references to validate
-- `type` (string, optional): Type of references (item, sound, sprite, all)
+- `type` (string, optional): Type of references (`item`, `sound`, `sprite`, `all`)
 
 **Example:**
 ```typescript
-// Check if items exist
 await mcp.callTool('check_references', {
   references: ['Base.Katana', 'Base.Apple'],
   type: 'item'
 });
 ```
+
+> Database currently empty — run `parse_game_files` first.
 
 ### `analyze_mod`
 Comprehensive analysis of mod directory including balance, compatibility, and structure validation.
@@ -172,7 +173,6 @@ Comprehensive analysis of mod directory including balance, compatibility, and st
 
 **Example:**
 ```typescript
-// Analyze mod quality
 await mcp.callTool('analyze_mod', {
   modPath: '/path/to/my-mod',
   checkBalance: true,
@@ -189,11 +189,12 @@ Parse and index Project Zomboid game files to populate the database.
 
 **Example:**
 ```typescript
-// Parse vanilla game files
 await mcp.callTool('parse_game_files', {
   forceReparse: false
 });
 ```
+
+> Note: `extractReferences` is not called during parsing; references table stays empty.
 
 ## 🏗️ Architecture
 
@@ -203,7 +204,7 @@ await mcp.callTool('parse_game_files', {
 ├─────────────────────────────────────────────────────┤
 │  Path Manager  │  Enhanced Parser  │  Script Gen    │
 ├─────────────────────────────────────────────────────┤
-│          SQLite/D1 Database Layer                   │
+│          SQLite Database Layer                      │
 ├─────────────────────────────────────────────────────┤
 │  Game Data     │  Templates       │  Validation     │
 │  (Vanilla PZ)  │  (JSON-based)   │  (Real-time)    │
@@ -211,7 +212,6 @@ await mcp.callTool('parse_game_files', {
 ```
 
 ### Core Components
-
 - **DatabaseManager**: SQLite database with full-text search capabilities
 - **ProjectZomboidParser**: Parse vanilla game files and mod directories
 - **ScriptGenerator**: Generate balanced scripts using templates and game data
@@ -255,9 +255,8 @@ await mcp.callTool('parse_game_files', {
    ```
 
 ### Supported File Formats
-
 - **mod.info**: Mod metadata and configuration
-- **Script Files (.txt)**: Items, recipes, vehicles, sounds, fixing scripts
+- **Script Files (.txt)**: Items, recipes, fixing scripts, sounds
 - **Lua Files (.lua)**: Game logic and event handlers
 - **Assets**: Textures, sounds, models, and maps
 
@@ -332,28 +331,25 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 
 - **GitHub Issues**: Bug reports and feature requests
 - **Documentation**: Comprehensive guides and API references
-- **Community**: Discord server for mod developers
 
 ## 🔮 Roadmap
 
-### v1.1.0 - Enhanced Features
-- **Vehicle script support** with complete parsing and generation
-- **Advanced templates** for complex modding scenarios
-- **Lua script integration** for game logic assistance
-- **Performance optimization** tools for large mods
+### v1.1.0 - Core Completeness
+- Fix TypeScript build errors
+- Implement `evolvedrecipe` and `vehicle` generation
+- Populate references table during parsing (`extractReferences`)
+- Add comprehensive balance analysis (armor, clothing, food)
 
-### v1.2.0 - Collaboration Features
-- **Multi-user support** for team mod development
-- **Version control integration** with Git workflows
-- **Automated testing** pipelines for mod validation
-- **Documentation generation** from mod analysis
+### v1.2.0 - MCP Protocol & Testing
+- Full MCP JSON-RPC compliance
+- Integration tests for all MCP tools
+- CI/CD pipeline
 
-### v2.0.0 - Full Platform
-- **Web interface** for non-technical users
-- **Steam Workshop integration** for direct publishing
-- **Marketplace features** for mod discovery
-- **Enterprise support** for large mod teams
+### v2.0.0 - Platform Features
+- Vehicle script parsing and generation
+- Lua script validation beyond syntax
+- Steam registry detection on Windows
 
 ---
 
-**Built with ❤️ for the Project Zomboid modding community**
+**Built for the Project Zomboid modding community**
