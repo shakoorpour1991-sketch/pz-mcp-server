@@ -11,6 +11,9 @@ A local-only Model Context Protocol (MCP) stdio server for Project Zomboid mod d
 - **check_references** — Validate item, sound, and sprite references against the database (run `parse_game_files` first)
 - **analyze_mod** — Mod directory analysis: structure validation, Lua syntax checking, balance metrics, deprecated API detection
 - **parse_game_files** — Parse Project Zomboid game files and populate the local SQLite database
+- **index_knowledge_base** — Index markdown modding knowledge base docs (title, source, content) into a searchable FTS database
+- **search_knowledge_base** — Full-text search of knowledge base docs with relevance ranking and topic filter
+- **list_knowledge_topics** — List all indexed knowledge base topics with line/word/char stats
 
 ### Path Detection
 - Hardcoded path checks for common Project Zomboid install locations on Windows
@@ -170,6 +173,42 @@ Parse Project Zomboid game files and populate the local SQLite database.
 
 ---
 
+### index_knowledge_base
+Index markdown knowledge base docs (title, source, content) into a searchable FTS database.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `path` | string | No | Path to the knowledge base docs dir (default: `PZ_MCP_KB_PATH` env or `D:\PZ-Modding\Documentation`) |
+| `overwrite` | boolean | No | Re-index existing topics (default: `true`) |
+
+**Output:** Counts of indexed topics, files found, total characters; any per-file errors.
+
+---
+
+### search_knowledge_base
+Full-text search of knowledge base docs with relevance ranking and topic filter.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `query` | string | Yes | Search query |
+| `topic` | string | No | Filter by exact topic (filename without `.md`) |
+| `limit` | number | No | Max results, 1–100 (default: 10) |
+
+**Output:** Matching topics ranked by relevance (bm25), each with title, score, and a content snippet.
+
+---
+
+### list_knowledge_topics
+List all indexed knowledge base topics with stats.
+
+**Parameters:** none
+
+**Output:** Each indexed topic with title, line/word/char counts.
+
+---
+
 ## Development Workflow
 
 1. **Build:** `npm run build`
@@ -194,6 +233,7 @@ Parse Project Zomboid game files and populate the local SQLite database.
 MCP Server (StdioServerTransport)
   ├── PathManager          — Game install detection
   ├── DatabaseManager      — SQLite + FTS5
+  ├── KnowledgeBaseManager — KB docs indexing + FTS5 search
   ├── ProjectZomboidParser — Game file parsing
   ├── ScriptGenerator      — Template-based script generation
   ├── ValidationEngine     — Syntax + reference validation

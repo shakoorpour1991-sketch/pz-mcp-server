@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vehicle generator**: `generateVehicle` implemented in `ScriptGenerator` (commit 0647d62)
 - **CI workflow** (`.github/workflows/`); lint and test on push/PR
 - **README truth-audit**: Claimed features (`evolvedrecipe`/`vehicle` output, references table, tests, lint) now verified against implementation
+- **Bulk inserts**: parser accumulates items per file and flushes via a transaction (commit f8a0c62)
+- **FTS5 rank ordering fix**: `ORDER BY rank ASC` — bm25 is more-negative-is-better; DESC inverted results (commit 82bf1ef)
+- **Knowledge base integration**: 3 new MCP tools — `index_knowledge_base`, `search_knowledge_base`, `list_knowledge_topics` (commits 6e7309f/d199945); indexes `D:\PZ-Modding\Documentation` (or `PZ_MCP_KB_PATH`) into a searchable FTS database
 
 ### Removed
 - **Cloudflare Workers** — HTTP API, edge deployment, D1 database, KV storage, and `wrangler.toml` removed (commit 8bd7d1a); project now runs as local STDIO MCP server only
