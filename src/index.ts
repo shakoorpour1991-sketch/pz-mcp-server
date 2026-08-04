@@ -22,6 +22,7 @@ import { ModAnalyzer } from "./analyzers/ModAnalyzer.js";
 import { ScriptGenerator } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { PathManager } from "./utils/PathManager.js";
+import logger from "./utils/logger.js";
 
 const server = new Server(
   {
@@ -60,9 +61,9 @@ async function initializeServer() {
     generator = new ScriptGenerator(dbManager);
     validator = new ValidationEngine(dbManager);
     
-    console.error("🎮 Project Zomboid MCP Server initialized successfully");
+    logger.info("🎮 Project Zomboid MCP Server initialized successfully");
   } catch (error) {
-    console.error("❌ Failed to initialize server:", error);
+    logger.error("❌ Failed to initialize server: %s", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }
@@ -441,7 +442,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   
-  console.error("🚀 Project Zomboid MCP Server running");
+  logger.info("🚀 Project Zomboid MCP Server running");
 }
 
 // Entry guard: compare as file URLs so Windows paths (backslashes) match too
@@ -451,7 +452,7 @@ const isMain =
 
 if (isMain) {
   main().catch((error) => {
-    console.error("💥 Server failed to start:", error);
+    logger.error("💥 Server failed to start: %s", error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 }

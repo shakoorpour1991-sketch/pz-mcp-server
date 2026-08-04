@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join, resolve } from 'path';
 import { homedir } from 'os';
+import logger from './logger.js';
 
 export interface GameInstallation {
   path: string;
@@ -160,7 +161,7 @@ export class PathManager {
         return await this.detectSteamMacOS();
       }
     } catch (error) {
-      console.warn('Failed to detect Steam installation:', error);
+      logger.warn('Failed to detect Steam installation: %s', error instanceof Error ? error.message : String(error));
     }
     
     return null;
@@ -187,7 +188,7 @@ export class PathManager {
             }
           }
         } catch (error) {
-          console.warn('Failed to parse Steam library folders:', error);
+          logger.warn('Failed to parse Steam library folders: %s', error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -217,7 +218,7 @@ export class PathManager {
             }
           }
         } catch (error) {
-          console.warn('Failed to parse Steam library folders:', error);
+          logger.warn('Failed to parse Steam library folders: %s', error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -242,7 +243,7 @@ export class PathManager {
           }
         }
       } catch (error) {
-        console.warn('Failed to parse Steam library folders:', error);
+        logger.warn('Failed to parse Steam library folders: %s', error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -347,7 +348,7 @@ export class PathManager {
         }
       }
     } catch (error) {
-      console.warn('Failed to detect game version:', error);
+      logger.warn('Failed to detect game version: %s', error instanceof Error ? error.message : String(error));
     }
 
     return undefined;
