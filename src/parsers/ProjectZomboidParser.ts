@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { DatabaseManager, GameItem } from '../database/DatabaseManager.js';
+import logger from '../utils/logger.js';
 
 export interface ParseResults {
   itemCount: number;
@@ -57,7 +58,7 @@ export class ProjectZomboidParser {
       if (!forceReparse) {
         const stats = await this.db.getStats();
         if (stats.total > 0) {
-          console.error('Database already contains data. Use forceReparse=true to re-parse.');
+          logger.warn('Database already contains data. Use forceReparse=true to re-parse.');
           results.parseTime = Date.now() - startTime;
           return results;
         }
@@ -80,7 +81,7 @@ export class ProjectZomboidParser {
       }
 
       results.parseTime = Date.now() - startTime;
-      console.error(`Parsing completed in ${results.parseTime}ms`);
+      logger.info(`Parsing completed in ${results.parseTime}ms`);
       
     } catch (error) {
       results.errors.push({
@@ -251,7 +252,7 @@ export class ProjectZomboidParser {
               try {
                 await this.extractReferences(item);
               } catch (refError) {
-                console.warn(
+                logger.warn(
                   `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`
                 );
               }
@@ -313,7 +314,7 @@ export class ProjectZomboidParser {
         }
       } catch (error) {
         // Log property parse errors but continue
-        console.warn(`Property parse error in ${filePath}:${startLine}: ${error}`);
+        logger.warn(`Property parse error in ${filePath}:${startLine}: ${error}`);
       }
     }
 

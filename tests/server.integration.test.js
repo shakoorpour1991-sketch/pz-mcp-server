@@ -36,6 +36,13 @@ const GAME_SCRIPT = [
   '	Result: TestSword=1,',
   '	Water=2,',
   '}',
+  'vehicle TestCar',
+  '{',
+  '	Name = TestCar,',
+  '	DisplayName = Test Car,',
+  '	Type = NormalCar,',
+  '	Weight = 1200,',
+  '}',
   '}',
 ].join('\n');
 
@@ -251,6 +258,18 @@ describe('pz-mcp-server integration', () => {
     } finally {
       db.close();
     }
+  }, 30000);
+
+  test('vehicle blocks parse and are searchable with type=vehicle', async () => {
+    const result = await client.call('tools/call', {
+      name: 'search_vanilla',
+      arguments: { query: 'TestCar', type: 'vehicle' },
+    });
+    const text = result.content[0].text;
+    expect(text).toContain('Found 1 results for "TestCar"');
+    expect(text).toContain('**TestCar** (vehicle)');
+    expect(text).toContain('Test Car');
+    expect(text).toContain('Weight: 1200');
   }, 30000);
 
   test('generate_script produces evolvedrecipe and vehicle scripts', async () => {
