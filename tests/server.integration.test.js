@@ -130,6 +130,9 @@ const TOOLS = [
   'check_references',
   'analyze_mod',
   'parse_game_files',
+  'index_knowledge_base',
+  'search_knowledge_base',
+  'list_knowledge_topics',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -169,7 +172,7 @@ describe('pz-mcp-server integration', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   }, 10000);
 
-  test('tools/list exposes all 6 MCP tools', async () => {
+  test('tools/list exposes all 9 MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     expect(names).toEqual([...TOOLS].sort());
@@ -184,6 +187,40 @@ describe('pz-mcp-server integration', () => {
     expect(text).toContain('**Items**: 2 parsed');
     expect(text).toContain('**Recipes**: 1 parsed');
     expect(text).not.toContain('Parse Errors:');
+  }, 30000);
+
+  test('index_knowledge_base indexes markdown docs and search finds them', async () => {
+    const kbDir = path.join(tmpDir, 'kb');
+    fs.mkdirSync(kbDir, { recursive: true });
+    fs.writeFileSync(path.join(kbDir, 'Farming.md'), '# Farming Guide\n> Source: v42.20\n\nCabbage grows in spring. Water is essential.\n');
+    fs.writeFileSync(path.join(kbDir, 'Cooking.md'), '# Cooking Guide\n> Source: v42.20\n\nSoup needs water and a pot.\n');
+
+    const idx = await client.call('tools/call', {
+      name: 'index_knowledge_base',
+      arguments: { path: kbDir },
+    });
+    expect(idx.content[0].text).toContain('**Topics**: 2 indexed');
+
+    const search = await client.call('tools/call', {
+      name: 'search_knowledge_base',
+      arguments: { query: 'water', limit: 5 },
+    });
+    expect(search.content[0].text).toContain('Found 2 results for "water"');
+
+    const topicFilter = await client.call('tools/call', {
+      name: 'search_knowledge_base',
+      arguments: { query: 'water', topic: 'Cooking' },
+    });
+    expect(topicFilter.content[0].text).toContain('Found 1 results');
+    expect(topicFilter.content[0].text).toContain('Cooking');
+
+    const list = await client.call('tools/call', {
+      name: 'list_knowledge_topics',
+      arguments: {},
+    });
+    expect(list.content[0].text).toContain('Knowledge Base Topics (2)');
+    expect(list.content[0].text).toContain('Farming');
+    expect(list.content[0].text).toContain('Cooking');
   }, 30000);
 
   test('search_vanilla finds parsed items', async () => {

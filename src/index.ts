@@ -16,11 +16,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { pathToFileURL } from "url";
+import { existsSync } from "fs";
 import { DatabaseManager } from "./database/DatabaseManager.js";
 import { ProjectZomboidParser } from "./parsers/ProjectZomboidParser.js";
 import { ModAnalyzer } from "./analyzers/ModAnalyzer.js";
 import { ScriptGenerator } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
+import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
 import logger from "./utils/logger.js";
 
@@ -43,6 +45,7 @@ let analyzer: ModAnalyzer;
 let generator: ScriptGenerator;
 let validator: ValidationEngine;
 let pathManager: PathManager;
+let knowledgeBaseManager: KnowledgeBaseManager;
 
 async function initializeServer() {
   try {
@@ -60,6 +63,10 @@ async function initializeServer() {
     analyzer = new ModAnalyzer(dbManager, parser);
     generator = new ScriptGenerator(dbManager);
     validator = new ValidationEngine(dbManager);
+    
+    // Initialize knowledge base manager
+    knowledgeBaseManager = new KnowledgeBaseManager();
+    await knowledgeBaseManager.initialize();
     
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");
   } catch (error) {
@@ -106,6 +113,21 @@ const ParseGameFilesSchema = z.object({
   forceReparse: z.boolean().default(false).describe("Force re-parsing even if data exists"),
 });
 
+const IndexKnowledgeBaseSchema = z.object({
+  path: z.string().optional().describe("Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)"),
+  overwrite: z.boolean().default(true).describe("Re-index existing topics"),
+});
+
+const SearchKnowledgeBaseSchema = z.object({
+  query: z.string().describe("Search query for knowledge base content"),
+  topic: z.string().optional().describe("Filter by exact topic (filename without .md)"),
+  limit: z.number().min(1).max(100).default(10).describe("Maximum number of results"),
+});
+
+const ListKnowledgeTopicsSchema = z.object({
+  path: z.string().optional().describe("Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)"),
+});
+
 // Tool definitions
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -139,6 +161,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "parse_game_files",
         description: "Parse and index Project Zomboid game files to populate the database",
         inputSchema: ParseGameFilesSchema,
+      },
+      {
+        name: "index_knowledge_base",
+        description: "Index markdown knowledge base docs (title, source, content) into a searchable FTS database",
+        inputSchema: IndexKnowledgeBaseSchema,
+      },
+      {
+        name: "search_knowledge_base",
+        description: "Search knowledge base docs with relevance ranking and topic filter",
+        inputSchema: SearchKnowledgeBaseSchema,
+      },
+      {
+        name: "list_knowledge_topics",
+        description: "List all indexed knowledge base topics with stats",
+        inputSchema: ListKnowledgeTopicsSchema,
       },
     ],
   };
@@ -261,6 +298,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: `Successfully parsed Project Zomboid files from: ${detectedPath}\n\n${formatParseResults(results)}`,
+            },
+          ],
+        };
+      }
+
+      case "index_knowledge_base": {
+        const { path: kbPath, overwrite } = IndexKnowledgeBaseSchema.parse(args);
+        const resolvedPath = kbPath || process.env.PZ_MCP_KB_PATH || 'D:\\PZ-Modding\\Documentation';
+        if (!existsSync(resolvedPath)) {
+          throw new McpError(ErrorCode.InvalidParams, `Knowledge base directory not found: ${resolvedPath}`);
+        }
+        const result = await knowledgeBaseManager.indexDirectory(resolvedPath as string, { overwrite });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully indexed knowledge base from: ${resolvedPath}\n\n${formatKbIndexResults(result)}`,
+            },
+          ],
+        };
+      }
+
+      case "search_knowledge_base": {
+        const { query, topic, limit } = SearchKnowledgeBaseSchema.parse(args);
+        const results = await knowledgeBaseManager.search(query, topic ? { topic, limit } : { limit });
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatKbSearchResults(query, results),
+            },
+          ],
+        };
+      }
+
+      case "list_knowledge_topics": {
+        const topics = await knowledgeBaseManager.listTopics();
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatKbTopics(topics),
             },
           ],
         };
@@ -431,6 +510,50 @@ function formatParseResults(results: any): string {
       output += `${index + 1}. **${error.file}**: ${error.message}\n`;
     });
   }
+  
+  return output;
+}
+
+function formatKbIndexResults(result: { topics: number; files: number; chars: number; errors: Array<{file: string; message: string}> }): string {
+  let output = `## Knowledge Base Index Results\n\n`;
+  output += `- **Topics**: ${result.topics} indexed\n`;
+  output += `- **Files**: ${result.files} found\n`;
+  output += `- **Characters**: ${result.chars}\n\n`;
+  
+  if (result.errors && result.errors.length > 0) {
+    output += `### Errors:\n`;
+    result.errors.forEach((error, index) => {
+      output += `${index + 1}. **${error.file}**: ${error.message}\n`;
+    });
+  }
+  
+  return output;
+}
+
+function formatKbSearchResults(query: string, results: Array<{ topic: string; title: string; snippet: string; score: number }>): string {
+  if (results.length === 0) {
+    return `Found 0 results for "${query}" in knowledge base.\n`;
+  }
+  
+  let output = `Found ${results.length} results for "${query}":\n\n`;
+  results.forEach((r) => {
+    output += `**${r.topic}** (${r.title})\n`;
+    output += `  Score: ${r.score}\n`;
+    output += `  ${r.snippet.replace(/\n/g, '\n  ')}\n\n`;
+  });
+  
+  return output;
+}
+
+function formatKbTopics(topics: Array<{ topic: string; title: string; lines: number; words: number; chars: number }>): string {
+  if (topics.length === 0) {
+    return `No knowledge base topics indexed. Run index_knowledge_base first.\n`;
+  }
+  
+  let output = `## Knowledge Base Topics (${topics.length})\n\n`;
+  topics.forEach((t) => {
+    output += `- **${t.topic}**: ${t.title} (${t.lines} lines, ${t.words} words, ${t.chars} chars)\n`;
+  });
   
   return output;
 }
