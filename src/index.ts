@@ -15,6 +15,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { pathToFileURL } from "url";
 import { DatabaseManager } from "./database/DatabaseManager.js";
 import { ProjectZomboidParser } from "./parsers/ProjectZomboidParser.js";
 import { ModAnalyzer } from "./analyzers/ModAnalyzer.js";
@@ -443,7 +444,12 @@ async function main() {
   console.error("🚀 Project Zomboid MCP Server running");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Entry guard: compare as file URLs so Windows paths (backslashes) match too
+const isMain =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMain) {
   main().catch((error) => {
     console.error("💥 Server failed to start:", error);
     process.exit(1);

@@ -112,8 +112,10 @@ export class DatabaseManager {
     `);
 
     // References table for tracking item dependencies
+    // NOTE: 'references' is a SQLite keyword (FOREIGN KEY ... REFERENCES),
+    // so the table name is always double-quoted in SQL.
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS references (
+      CREATE TABLE IF NOT EXISTS "references" (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         item_id TEXT NOT NULL,
         reference_id TEXT NOT NULL,
@@ -141,9 +143,9 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_items_type ON items (type)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_items_module ON items (module)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_items_category ON items (category)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_item ON references (item_id)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_ref ON references (reference_id)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_type ON references (reference_type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_item ON "references" (item_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_ref ON "references" (reference_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_references_type ON "references" (reference_type)`);
   }
 
   async insertItem(item: GameItem): Promise<void> {
@@ -216,15 +218,15 @@ export class DatabaseManager {
       params.push(this.prepareFTSQuery(query));
     }
 
-    // Add type filter
+    // Add type filter (qualified — the FTS join makes bare 'type' ambiguous)
     if (options.type && options.type !== 'all') {
-      sql += ' AND type = ?';
+      sql += ' AND items.type = ?';
       params.push(options.type);
     }
 
     // Add category filter
     if (options.category) {
-      sql += ' AND category = ?';
+      sql += ' AND items.category = ?';
       params.push(options.category);
     }
 
@@ -317,7 +319,7 @@ export class DatabaseManager {
 
   async addReference(itemId: string, referenceId: string, referenceType: string, context?: string): Promise<void> {
     this.db.prepare(`
-      INSERT OR IGNORE INTO references (item_id, reference_id, reference_type, context)
+      INSERT OR IGNORE INTO "references" (item_id, reference_id, reference_type, context)
       VALUES (?, ?, ?, ?)
     `).run(itemId, referenceId, referenceType, context);
   }
@@ -325,7 +327,7 @@ export class DatabaseManager {
   async getReferences(itemId: string): Promise<Array<{referenceId: string; type: string; context?: string}>> {
     const rows = this.db.prepare(`
       SELECT reference_id, reference_type, context
-      FROM references
+      FROM "references"
       WHERE item_id = ?
     `).all(itemId) as Array<{
       reference_id: string;
@@ -384,7 +386,7 @@ export class DatabaseManager {
 
   async clearDatabase(): Promise<void> {
     this.db.exec('DELETE FROM items');
-    this.db.exec('DELETE FROM references');
+    this.db.exec('DELETE FROM "references"');
     this.db.exec('DELETE FROM mods');
   }
 

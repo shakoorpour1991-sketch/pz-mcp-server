@@ -57,7 +57,7 @@ export class ProjectZomboidParser {
       if (!forceReparse) {
         const stats = await this.db.getStats();
         if (stats.total > 0) {
-          console.log('Database already contains data. Use forceReparse=true to re-parse.');
+          console.error('Database already contains data. Use forceReparse=true to re-parse.');
           results.parseTime = Date.now() - startTime;
           return results;
         }
@@ -80,7 +80,7 @@ export class ProjectZomboidParser {
       }
 
       results.parseTime = Date.now() - startTime;
-      console.log(`Parsing completed in ${results.parseTime}ms`);
+      console.error(`Parsing completed in ${results.parseTime}ms`);
       
     } catch (error) {
       results.errors.push({
@@ -236,7 +236,10 @@ export class ProjectZomboidParser {
         blockContent.push(line);
 
         // Check if block is complete (closing brace)
-        if (braceLevel === (inModule ? 1 : 0) && line.includes('}')) {
+        // The module header '{' is consumed by the module-branch `continue`
+        // above and never counted, so the enclosing scope's brace level is 0
+        // (module or top-level). A block's closing '}' returns us to 0.
+        if (braceLevel === 0 && line.includes('}')) {
           try {
             const item = this.parseBlock(currentBlock, blockContent, filePath, blockStartLine);
             if (item) {
@@ -266,8 +269,8 @@ export class ProjectZomboidParser {
         }
       }
 
-      // Check if we're exiting module scope
-      if (inModule && braceLevel === 0 && line.includes('}')) {
+      // Check if we're exiting module scope (the module's own '}' drops us to -1)
+      if (inModule && braceLevel === -1 && line.includes('}')) {
         inModule = false;
         currentModule = defaultModule;
       }
