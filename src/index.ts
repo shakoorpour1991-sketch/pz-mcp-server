@@ -22,17 +22,13 @@ import { ScriptGenerator } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { PathManager } from "./utils/PathManager.js";
 
-const server = new Server(
-  {
-    name: "pz-mcp-server",
-    version: "1.0.0",
+const server = new Server({
+  name: "pz-mcp-server",
+  version: "1.0.0",
+  capabilities: {
+    tools: {},
   },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
+});
 
 // Initialize core components
 let dbManager: DatabaseManager;
@@ -150,7 +146,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case "search_vanilla": {
         const { query, type, category, limit } = SearchVanillaSchema.parse(args);
-        const results = await dbManager.searchContent(query, { type, category, limit });
+        const searchOptions: { type?: string; category?: string; limit?: number } = {};
+        if (type !== undefined && type !== 'all') searchOptions.type = type;
+        if (category !== undefined) searchOptions.category = category;
+        if (limit !== undefined) searchOptions.limit = limit;
+        const results = await dbManager.searchContent(query, searchOptions);
         
         return {
           content: [
@@ -276,7 +276,7 @@ function formatSearchResults(results: any[]): string {
     
     if (result.properties) {
       const props = Object.entries(result.properties)
-        .filter(([key, value]) => value !== null && value !== undefined)
+        .filter(([, value]) => value !== null && value !== undefined)
         .slice(0, 5) // Limit to first 5 properties
         .map(([key, value]) => `${key}: ${value}`)
         .join(', ');

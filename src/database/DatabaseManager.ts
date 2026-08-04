@@ -20,8 +20,21 @@ export interface SearchOptions {
   limit?: number;
 }
 
+interface ItemRow {
+  id: string;
+  name: string;
+  display_name: string | null;
+  type: string;
+  module: string;
+  category: string | null;
+  properties: string | null;
+  raw_content: string | null;
+  file_path: string | null;
+  rank?: number;
+}
+
 export class DatabaseManager {
-  private db: Database.Database;
+  private db!: Database.Database;
   private dbPath: string;
 
   constructor(dbPath?: string) {
@@ -181,7 +194,7 @@ export class DatabaseManager {
 
   async searchContent(query: string, options: SearchOptions = {}): Promise<GameItem[]> {
     let sql = '';
-    let params: any[] = [];
+    const params: any[] = [];
 
     if (query.trim() === '') {
       // Return all items with optional filtering
@@ -227,19 +240,24 @@ export class DatabaseManager {
       params.push(options.limit);
     }
 
-    const rows = this.db.prepare(sql).all(...params);
-    
-    return rows.map(row => ({
+    const rows = this.db.prepare(sql).all(...params) as ItemRow[];
+
+    return rows.map(row => this.rowToItem(row));
+  }
+
+  private rowToItem(row: ItemRow): GameItem {
+    const item: GameItem = {
       id: row.id,
       name: row.name,
-      displayName: row.display_name,
-      type: row.type as any,
+      type: row.type as GameItem['type'],
       module: row.module,
-      category: row.category,
-      properties: JSON.parse(row.properties || '{}'),
-      rawContent: row.raw_content,
-      filePath: row.file_path,
-    }));
+      properties: JSON.parse(row.properties ?? '{}'),
+      rawContent: row.raw_content ?? '',
+      filePath: row.file_path ?? '',
+    };
+    if (row.display_name !== null) item.displayName = row.display_name;
+    if (row.category !== null) item.category = row.category;
+    return item;
   }
 
   async getItemById(id: string): Promise<GameItem | null> {
@@ -247,21 +265,11 @@ export class DatabaseManager {
       SELECT id, name, display_name, type, module, category, properties, raw_content, file_path
       FROM items
       WHERE id = ?
-    `).get(id);
+    `).get(id) as ItemRow | undefined;
 
     if (!row) return null;
 
-    return {
-      id: row.id,
-      name: row.name,
-      displayName: row.display_name,
-      type: row.type as any,
-      module: row.module,
-      category: row.category,
-      properties: JSON.parse(row.properties || '{}'),
-      rawContent: row.raw_content,
-      filePath: row.file_path,
-    };
+    return this.rowToItem(row);
   }
 
   async getItemsByType(type: string): Promise<GameItem[]> {
@@ -270,19 +278,9 @@ export class DatabaseManager {
       FROM items
       WHERE type = ?
       ORDER BY name ASC
-    `).all(type);
+    `).all(type) as ItemRow[];
 
-    return rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      displayName: row.display_name,
-      type: row.type as any,
-      module: row.module,
-      category: row.category,
-      properties: JSON.parse(row.properties || '{}'),
-      rawContent: row.raw_content,
-      filePath: row.file_path,
-    }));
+    return rows.map(row => this.rowToItem(row));
   }
 
   async getCategories(): Promise<string[]> {
@@ -291,9 +289,9 @@ export class DatabaseManager {
       FROM items
       WHERE category IS NOT NULL
       ORDER BY category ASC
-    `).all();
+    `).all() as Array<{ category: string | null }>;
 
-    return rows.map(row => row.category);
+    return rows.map(row => row.category).filter((c): c is string => c !== null);
   }
 
   async getStats(): Promise<Record<string, number>> {
@@ -304,14 +302,14 @@ export class DatabaseManager {
       SELECT type, COUNT(*) as count
       FROM items
       GROUP BY type
-    `).all();
+    `).all() as Array<{ type: string; count: number }>;
 
     for (const row of typeRows) {
       stats[row.type] = row.count;
     }
 
     // Total count
-    const totalRow = this.db.prepare('SELECT COUNT(*) as count FROM items').get();
+    const totalRow = this.db.prepare('SELECT COUNT(*) as count FROM items').get() as { count: number };
     stats.total = totalRow.count;
 
     return stats;
@@ -329,13 +327,20 @@ export class DatabaseManager {
       SELECT reference_id, reference_type, context
       FROM references
       WHERE item_id = ?
-    `).all(itemId);
+    `).all(itemId) as Array<{
+      reference_id: string;
+      reference_type: string;
+      context: string | null;
+    }>;
 
-    return rows.map(row => ({
-      referenceId: row.reference_id,
-      type: row.reference_type,
-      context: row.context,
-    }));
+    return rows.map(row => {
+      const ref: { referenceId: string; type: string; context?: string } = {
+        referenceId: row.reference_id,
+        type: row.reference_type,
+      };
+      if (row.context !== null) ref.context = row.context;
+      return ref;
+    });
   }
 
   async checkReference(referenceId: string, referenceType?: string): Promise<boolean> {
@@ -347,7 +352,7 @@ export class DatabaseManager {
       params.push(referenceType);
     }
 
-    const row = this.db.prepare(sql).get(...params);
+    const row = this.db.prepare(sql).get(...params) as { count: number };
     return row.count > 0;
   }
 
@@ -372,7 +377,7 @@ export class DatabaseManager {
       `${query}%`,
       `${query}%`,
       limit
-    );
+    ) as Array<{ name: string }>;
 
     return rows.map(row => row.name);
   }

@@ -29,6 +29,14 @@ export interface ReferenceValidationResult {
   suggestions: string[];
 }
 
+interface PropertyValidator {
+  type: 'number' | 'boolean' | 'enum' | 'string' | 'reference';
+  min?: number;
+  max?: number;
+  values?: string[];
+  referenceType?: string;
+}
+
 export class ValidationEngine {
   private db: DatabaseManager;
   
@@ -43,7 +51,7 @@ export class ValidationEngine {
   };
 
   // Define valid property types and ranges
-  private readonly propertyValidators = {
+  private readonly propertyValidators: Record<string, PropertyValidator> = {
     // Numeric properties with ranges
     Weight: { type: 'number', min: 0, max: 1000 },
     MaxDamage: { type: 'number', min: 0, max: 100 },
@@ -406,15 +414,16 @@ export class ValidationEngine {
       const refResult = referenceResults[0];
       
       if (!refResult.isValid) {
-        result.warnings.push({
+        const warning: ValidationWarning = {
           line: block.startLine,
           message: `Reference "${value}" not found in game database`,
           severity: 'warning',
           code: 'INVALID_REFERENCE',
-          suggestion: refResult.suggestions.length > 0 
-            ? `Did you mean: ${refResult.suggestions[0]}?`
-            : undefined,
-        });
+        };
+        if (refResult.suggestions.length > 0) {
+          warning.suggestion = `Did you mean: ${refResult.suggestions[0]}?`;
+        }
+        result.warnings.push(warning);
       }
     }
   }
@@ -422,7 +431,7 @@ export class ValidationEngine {
   private async validateBlockSpecific(
     block: any, 
     result: ValidationResult, 
-    strict: boolean
+    _strict: boolean
   ): Promise<void> {
     
     switch (block.type) {

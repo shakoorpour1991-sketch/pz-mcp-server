@@ -2,7 +2,7 @@ import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { DatabaseManager, GameItem } from '../database/DatabaseManager.js';
 import { ProjectZomboidParser, ModInfo } from '../parsers/ProjectZomboidParser.js';
-import { ValidationEngine, ValidationResult } from '../validation/ValidationEngine.js';
+import { ValidationEngine } from '../validation/ValidationEngine.js';
 
 export interface ModAnalysisResult {
   modName?: string;
@@ -99,7 +99,6 @@ export class ModAnalyzer {
       checkBalance = true,
       checkCompatibility = true,
       checkPerformance = true,
-      generateReport = true,
       strictValidation = false,
     } = options;
 
@@ -119,8 +118,9 @@ export class ModAnalyzer {
 
     try {
       // Parse mod.info if it exists
-      result.modInfo = this.parseModInfo(modPath);
-      result.modName = result.modInfo?.name || basename(modPath);
+      const modInfo = this.parseModInfo(modPath);
+      if (modInfo) result.modInfo = modInfo;
+      result.modName = modInfo?.name || basename(modPath);
 
       // Analyze scripts
       await this.analyzeScripts(modPath, result, strictValidation);
@@ -332,25 +332,31 @@ export class ModAnalyzer {
 
       // Add validation issues to result
       for (const error of validation.errors) {
-        result.issues.push({
+        const issue: Issue = {
           file: filePath,
           line: error.line,
           severity: error.severity,
           message: error.message,
           code: error.code,
-          suggestion: error.suggestion,
-        });
+        };
+        if (error.suggestion !== undefined) {
+          issue.suggestion = error.suggestion;
+        }
+        result.issues.push(issue);
       }
 
       for (const warning of validation.warnings) {
-        result.issues.push({
+        const issue: Issue = {
           file: filePath,
           line: warning.line,
           severity: warning.severity,
           message: warning.message,
           code: warning.code,
-          suggestion: warning.suggestion,
-        });
+        };
+        if (warning.suggestion !== undefined) {
+          issue.suggestion = warning.suggestion;
+        }
+        result.issues.push(issue);
       }
 
     } catch (error) {
@@ -497,7 +503,7 @@ export class ModAnalyzer {
     }
   }
 
-  private async analyzeBalance(modPath: string, result: ModAnalysisResult): Promise<BalanceAnalysis> {
+  private async analyzeBalance(modPath: string, _result: ModAnalysisResult): Promise<BalanceAnalysis> {
     const balance: BalanceAnalysis = {
       itemCount: 0,
       averageStats: {},
@@ -508,7 +514,7 @@ export class ModAnalyzer {
 
     try {
       // Parse mod items
-      const parseResults = await this.parser.parseModDirectory(modPath);
+      await this.parser.parseModDirectory(modPath);
       const modItems = await this.db.getItemsByType('item');
 
       if (modItems.length === 0) {
@@ -644,7 +650,7 @@ export class ModAnalyzer {
   }
 
   private async analyzeCompatibility(
-    modPath: string, 
+    _modPath: string, 
     result: ModAnalysisResult
   ): Promise<CompatibilityAnalysis> {
     
@@ -670,12 +676,18 @@ export class ModAnalyzer {
 
     // Check game version compatibility
     if (result.modInfo?.versionMin || result.modInfo?.versionMax) {
-      compatibility.gameVersionCompatibility.minVersion = result.modInfo.versionMin;
-      compatibility.gameVersionCompatibility.maxVersion = result.modInfo.versionMax;
+      const minVersion = result.modInfo.versionMin;
+      const maxVersion = result.modInfo.versionMax;
+      if (minVersion !== undefined) {
+        compatibility.gameVersionCompatibility.minVersion = minVersion;
+      }
+      if (maxVersion !== undefined) {
+        compatibility.gameVersionCompatibility.maxVersion = maxVersion;
+      }
       
       // Simple version check (could be more sophisticated)
       const currentVersion = '42.0'; // This should come from game detection
-      if (result.modInfo.versionMax && currentVersion > result.modInfo.versionMax) {
+      if (maxVersion !== undefined && currentVersion > maxVersion) {
         compatibility.gameVersionCompatibility.compatible = false;
       }
     }
@@ -685,7 +697,7 @@ export class ModAnalyzer {
 
   private async analyzePerformance(
     modPath: string, 
-    result: ModAnalysisResult
+    _result: ModAnalysisResult
   ): Promise<PerformanceAnalysis> {
     
     const performance: PerformanceAnalysis = {

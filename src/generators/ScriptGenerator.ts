@@ -416,8 +416,8 @@ export class ScriptGenerator {
   private generateFixingScript(
     name: string,
     specs: Record<string, any>,
-    template: ItemTemplate,
-    references: GameItem[],
+    _template: ItemTemplate,
+    _references: GameItem[],
     options: GenerationOptions
   ): string {
     
@@ -456,8 +456,8 @@ export class ScriptGenerator {
   private generateSoundScript(
     name: string,
     specs: Record<string, any>,
-    template: ItemTemplate,
-    references: GameItem[],
+    _template: ItemTemplate,
+    _references: GameItem[],
     options: GenerationOptions
   ): string {
     
@@ -535,7 +535,7 @@ export class ScriptGenerator {
     properties: Record<string, any>,
     template: ItemTemplate,
     balance: string,
-    references: GameItem[]
+    _references: GameItem[]
   ): void {
     
     const multiplier = template.balanceMultipliers[balance] || 1.0;
