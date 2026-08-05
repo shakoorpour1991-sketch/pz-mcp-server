@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'path';
 import { readdirSync, readFileSync, mkdirSync } from 'fs';
 import logger from '../utils/logger.js';
 
 export class KnowledgeBaseManager {
-  private db!: Database.Database;
+  private db!: DatabaseSync;
   private dbPath: string;
 
   constructor(dataDir?: string) {
@@ -14,8 +14,8 @@ export class KnowledgeBaseManager {
   }
 
   async initialize(): Promise<void> {
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
+    this.db = new DatabaseSync(this.dbPath);
+    this.db.exec('PRAGMA journal_mode = WAL');
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS knowledge_docs (
@@ -73,7 +73,7 @@ export class KnowledgeBaseManager {
         if (!overwrite) {
           const existing = this.db
             .prepare('SELECT topic FROM knowledge_docs WHERE topic = ?')
-            .get(topic) as { topic: string } | undefined;
+            .get(topic) as unknown as { topic: string } | undefined;
           if (existing) {
             continue;
           }
@@ -96,13 +96,16 @@ export class KnowledgeBaseManager {
           }
         }
 
-        const tx = this.db.transaction(() => {
+        this.db.exec('BEGIN');
+        try {
           deleteFtsStmt.run(topic);
           insertDocStmt.run(topic, title, source, content);
           insertFtsStmt.run(topic, title, source, content);
-        });
-
-        tx();
+          this.db.exec('COMMIT');
+        } catch (e) {
+          this.db.exec('ROLLBACK');
+          throw e;
+        }
 
         topics++;
         totalChars += content.length;
@@ -198,7 +201,7 @@ export class KnowledgeBaseManager {
   ): Promise<{ topic: string; title: string; content: string; lines: number; words: number; chars: number } | null> {
     const row = this.db
       .prepare('SELECT topic, title, content FROM knowledge_docs WHERE topic = ?')
-      .get(topic) as { topic: string; title: string; content: string } | undefined;
+      .get(topic) as unknown as { topic: string; title: string; content: string } | undefined;
 
     if (!row) return null;
 

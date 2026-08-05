@@ -12,7 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.resolve(__dirname, '..', 'dist', 'index.js');
@@ -283,7 +283,7 @@ describe('pz-mcp-server integration', () => {
 
   test('extractReferences populates the references table during parse', async () => {
     const dbPath = path.join(tmpDir, 'data', 'pz_database.db');
-    const db = new Database(dbPath, { readonly: true });
+    const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
       const rows = db.prepare(
         'SELECT item_id, reference_id, reference_type, context FROM "references" ORDER BY context'

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 
@@ -54,7 +54,7 @@ interface ItemRow {
 }
 
 export class DatabaseManager {
-  private db!: Database.Database;
+  private db!: DatabaseSync;
   private dbPath: string;
 
   constructor(dbPath?: string) {
@@ -66,10 +66,10 @@ export class DatabaseManager {
   }
 
   async initialize(): Promise<void> {
-    this.db = new Database(this.dbPath);
+    this.db = new DatabaseSync(this.dbPath);
     
     // Enable WAL mode for better concurrency
-    this.db.pragma('journal_mode = WAL');
+    this.db.exec('PRAGMA journal_mode = WAL');
     
     await this.createTables();
     await this.createIndexes();
@@ -203,10 +203,10 @@ export class DatabaseManager {
     stmt.run(
       item.id,
       item.name,
-      item.displayName,
+      item.displayName ?? null,
       item.type,
       item.module,
-      item.category,
+      item.category ?? null,
       JSON.stringify(item.properties),
       item.rawContent,
       item.filePath,
@@ -230,15 +230,16 @@ export class DatabaseManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const transaction = this.db.transaction((items: GameItem[]) => {
+    this.db.exec('BEGIN');
+    try {
       for (const item of items) {
         stmt.run(
           item.id,
           item.name,
-          item.displayName,
+          item.displayName ?? null,
           item.type,
           item.module,
-          item.category,
+          item.category ?? null,
           JSON.stringify(item.properties),
           item.rawContent,
           item.filePath,
@@ -252,9 +253,11 @@ export class DatabaseManager {
           item.thirst_change ?? null
         );
       }
-    });
-
-    transaction(items);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   async searchContent(query: string, options: SearchOptions = {}): Promise<GameItem[]> {
@@ -339,7 +342,7 @@ export class DatabaseManager {
       params.push(options.limit);
     }
 
-    const rows = this.db.prepare(sql).all(...params) as ItemRow[];
+    const rows = this.db.prepare(sql).all(...params) as unknown as ItemRow[];
 
     return rows.map((row) => this.rowToItem(row));
   }
@@ -374,7 +377,7 @@ export class DatabaseManager {
              hunger_change, thirst_change
       FROM items
       WHERE id = ?
-    `).get(id) as ItemRow | undefined;
+    `).get(id) as unknown as ItemRow | undefined;
 
     if (!row) return null;
 
@@ -389,7 +392,7 @@ export class DatabaseManager {
       FROM items
       WHERE type = ?
       ORDER BY name ASC
-    `).all(type) as ItemRow[];
+    `).all(type) as unknown as ItemRow[];
 
     return rows.map((row) => this.rowToItem(row));
   }
@@ -413,14 +416,14 @@ export class DatabaseManager {
       SELECT type, COUNT(*) as count
       FROM items
       GROUP BY type
-    `).all() as Array<{ type: string; count: number }>;
+    `).all() as unknown as Array<{ type: string; count: number }>;
 
     for (const row of typeRows) {
       stats[row.type] = row.count;
     }
 
     // Total count
-    const totalRow = this.db.prepare('SELECT COUNT(*) as count FROM items').get() as { count: number };
+    const totalRow = this.db.prepare('SELECT COUNT(*) as count FROM items').get() as unknown as { count: number };
     stats.total = totalRow.count;
 
     return stats;
@@ -430,7 +433,7 @@ export class DatabaseManager {
     this.db.prepare(`
       INSERT OR IGNORE INTO "references" (item_id, reference_id, reference_type, context)
       VALUES (?, ?, ?, ?)
-    `).run(itemId, referenceId, referenceType, context);
+    `).run(itemId, referenceId, referenceType, context ?? null);
   }
 
   async getReferences(itemId: string): Promise<Array<{referenceId: string; type: string; context?: string}>> {
@@ -463,7 +466,7 @@ export class DatabaseManager {
       params.push(referenceType);
     }
 
-    const row = this.db.prepare(sql).get(...params) as { count: number };
+    const row = this.db.prepare(sql).get(...params) as unknown as { count: number };
     return row.count > 0;
   }
 
@@ -488,7 +491,7 @@ export class DatabaseManager {
       `${query}%`,
       `${query}%`,
       limit
-    ) as Array<{ name: string }>;
+    ) as unknown as Array<{ name: string }>;
 
     return rows.map(row => row.name);
   }
