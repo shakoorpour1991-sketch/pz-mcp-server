@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-05
+
 ### Fixed
 - **Build/TypeScript**: All 52 TypeScript errors resolved (commits f1cc131/042a307/21909fb); build now compiles cleanly
 - **Dependencies**: All 15 npm vulnerabilities resolved — SDK upgraded to 1.30, sqlite3 removed, typescript-eslint 8; 0 vulnerabilities remaining
