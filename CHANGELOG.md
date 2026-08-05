@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Steam registry detection on Windows** (audit P4 #22): `detectSteamWindows` now queries the actual Steam install path from the registry (HKCU `SteamPath`, HKLM fallback) before falling back to hardcoded paths and `libraryfolders.vdf` — catches non-default installs (e.g. `D:\Games\ProjectZomboid`)
+
 ## [1.1.0] - 2026-08-05
 
 ### Fixed

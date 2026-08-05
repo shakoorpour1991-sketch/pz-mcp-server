@@ -241,7 +241,7 @@ npm install  →  better-sqlite3 & sqlite3 require node-gyp + Visual Studio C++ 
 
 ### P4 — Nice to Have
 21. ~~Add structured logging (pino/winston)~~ — **RESOLVED**: pino logger, stderr-only, level via `PZ_MCP_LOG_LEVEL` (commit 7056109)
-22. Implement Steam registry detection on Windows properly — **Still open**
+22. ~~Implement Steam registry detection on Windows properly~~ — **RESOLVED**: `detectSteamWindows` now queries HKCU\Software\Valve\Steam (SteamPath) + HKLM fallback via `reg query`, validates the install, then libraryfolders.vdf, then hardcoded paths (commit)
 23. ~~Add more comprehensive balance analysis (armor, clothing, food)~~ — **RESOLVED**: armor/clothing/food categories alongside weapons (commit fb042b8)
 24. ~~Add vehicle script parsing/generation~~ — **RESOLVED**: generation (commit 0647d62) + parsing verified/locked in test (commit aabe0e1)
 25. ~~Add Lua script validation beyond syntax~~ — **RESOLVED**: deprecated-API + semantic checks (if/end, global leaks, unused require) (commit f373742)
