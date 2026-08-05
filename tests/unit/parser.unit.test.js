@@ -1,6 +1,6 @@
 /**
- * Unit tests for ProjectZomboidParser: semicolon-delimited list splitting
- * and rich metadata extraction into top-level columns.
+ * Unit tests for ProjectZomboidParser: indented blocks, semicolon-delimited
+ * list splitting, and rich metadata extraction into top-level columns.
  */
 import path from 'path';
 import fs from 'fs';
@@ -24,6 +24,142 @@ describe('ProjectZomboidParser', () => {
   afterEach(() => {
     db.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('B42 indented item block inside module', () => {
+    test('item block indented 4 spaces inside module parses with properties', async () => {
+      const scriptDir = path.join(tmpDir, 'media', 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(scriptDir, 'normal.txt'),
+        [
+          'module Base',
+          '{',
+          '    item Hat_SantaHatDebug',
+          '    {',
+          '        DisplayCategory = Accessory,',
+          '        ItemType = base:normal,',
+          '        Weight = 0.5,',
+          '        Tags = base:isfirefuel;base:isfiretinder,',
+          '    }',
+          '}',
+        ].join('\n')
+      );
+
+      const results = await parser.parseGameFiles(tmpDir, true);
+      expect(results.itemCount).toBe(1);
+
+      const item = await db.getItemById('Hat_SantaHatDebug');
+      expect(item).not.toBeNull();
+      expect(item.displayName).toBe('Hat_SantaHatDebug');
+      expect(item.properties.DisplayCategory).toBe('Accessory');
+      expect(item.properties.ItemType).toBe('base:normal');
+      expect(item.properties.Weight).toBe(0.5);
+      expect(item.tags).toEqual(['base:isfirefuel', 'base:isfiretinder']);
+    });
+
+    test('multiple indented item blocks in same module all parsed', async () => {
+      const scriptDir = path.join(tmpDir, 'media', 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(scriptDir, 'food.txt'),
+        [
+          'module Base',
+          '{',
+          '    item Apple',
+          '    {',
+          '        DisplayName = Apple,',
+          '        Weight = 0.1,',
+          '    }',
+          '    item Banana',
+          '    {',
+          '        DisplayName = Banana,',
+          '        Weight = 0.2,',
+          '    }',
+          '    item Cherry',
+          '    {',
+          '        DisplayName = Cherry,',
+          '        Weight = 0.05,',
+          '    }',
+          '}',
+        ].join('\n')
+      );
+
+      const results = await parser.parseGameFiles(tmpDir, true);
+      expect(results.itemCount).toBe(3);
+      expect(await db.getItemById('Apple')).not.toBeNull();
+      expect(await db.getItemById('Banana')).not.toBeNull();
+      expect(await db.getItemById('Cherry')).not.toBeNull();
+    });
+  });
+
+  describe('craftRecipe ingredient lines do NOT create items', () => {
+    test('variable[...] ingredient lines inside craftRecipe are not inserted as items', async () => {
+      const scriptDir = path.join(tmpDir, 'media', 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(scriptDir, 'entity_test.txt'),
+        [
+          'craftrecipe RecipeName',
+          '{',
+          '    item variable[1:20] [Base.Corn] flags[ItemCount] mode:destroy,',
+          '    item variable[1:3] [Base.Seeds] flags[ItemCount] mode:destroy,',
+          '    Result = Base.DriedCorn,',
+          '    Time = 100.0,',
+          '}',
+        ].join('\n')
+      );
+
+      const results = await parser.parseGameFiles(tmpDir, true);
+      expect(results.itemCount).toBe(0);
+
+      const fake1 = await db.getItemById('variable');
+      const fake2 = await db.getItemById('Base.Corn');
+      expect(fake1).toBeNull();
+      expect(fake2).toBeNull();
+    });
+
+    test('bare numeric lines do not become items', async () => {
+      const scriptDir = path.join(tmpDir, 'media', 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(scriptDir, 'entity_num.txt'),
+        [
+          'craftrecipe RecipeName2',
+          '{',
+          '    item variable[1:20] [Base.Corn] flags[ItemCount] mode:destroy,',
+          '    400',
+          '    8',
+          '    20',
+          '    Result = Base.DriedCorn,',
+          '}',
+        ].join('\n')
+      );
+
+      const results = await parser.parseGameFiles(tmpDir, true);
+      expect(results.itemCount).toBe(0);
+
+      const fake = await db.getItemById('400');
+      expect(fake).toBeNull();
+    });
+
+    test('entity container block lines are not inserted as items', async () => {
+      const scriptDir = path.join(tmpDir, 'media', 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(scriptDir, 'entity_dry.txt'),
+        [
+          'entity Drying_Rack',
+          '{',
+          '    DisplayName = Drying Rack,',
+          '}',
+        ].join('\n')
+      );
+
+      const results = await parser.parseGameFiles(tmpDir, true);
+      expect(results.itemCount).toBe(0);
+      expect(results.vehicleCount).toBe(0);
+    });
   });
 
   describe('parseValue: semicolon-delimited lists', () => {

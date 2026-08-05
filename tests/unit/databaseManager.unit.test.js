@@ -222,4 +222,76 @@ describe('DatabaseManager', () => {
       expect(noResults.some((r) => r.id === 'Base.Sling')).toBe(false);
     });
   });
+
+  describe('FTS rowid stability (upsert vs INSERT OR REPLACE)', () => {
+    test('re-inserting the same id keeps it FTS-searchable (no rowid drift)', async () => {
+      const item = {
+        id: 'Base.DriftTest',
+        name: 'DriftTest',
+        displayName: 'Drift Test',
+        type: 'item',
+        module: 'Base',
+        category: 'Weapon',
+        properties: { DisplayName: 'Drift Test', Type: 'Weapon' },
+        rawContent: 'item DriftTest {}',
+        filePath: 'drift.txt',
+      };
+
+      // First insert + search
+      await db.insertItem(item);
+      let results = await db.searchContent('DriftTest');
+      expect(results.some((r) => r.id === 'Base.DriftTest')).toBe(true);
+
+      // Re-insert (simulates re-parse of the same file) — upsert must keep the
+      // rowid stable so the FTS external-content index stays aligned. With
+      // INSERT OR REPLACE this used to drift and throw "missing row N".
+      await db.insertItem({ ...item, displayName: 'Drift Test v2' });
+      results = await db.searchContent('DriftTest');
+      expect(results.some((r) => r.id === 'Base.DriftTest')).toBe(true);
+      expect(results.find((r) => r.id === 'Base.DriftTest')?.displayName).toBe('Drift Test v2');
+
+      // Bulk path too
+      await db.insertItems([{ ...item, id: 'Base.DriftBulk', name: 'DriftBulk' }]);
+      results = await db.searchContent('DriftBulk');
+      expect(results.some((r) => r.id === 'Base.DriftBulk')).toBe(true);
+    });
+
+    test('initialize() heals a stale FTS index (rebuild)', async () => {
+      // Simulate the drift: delete a row behind the FTS index's back (as
+      // INSERT OR REPLACE used to do) then re-initialize and confirm the
+      // rebuild command resyncs without throwing.
+      const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-stale-'));
+      const staleDb = new DatabaseManager(path.join(staleDir, 'data', 'pz_database.db'));
+      await staleDb.initialize();
+      await staleDb.insertItem({
+        id: 'Base.StaleItem',
+        name: 'StaleItem',
+        displayName: 'Stale Item',
+        type: 'item',
+        module: 'Base',
+        properties: {},
+        rawContent: 'item StaleItem {}',
+        filePath: 'stale.txt',
+      });
+
+      // Corrupt the FTS index by deleting the content row without firing the
+      // delete trigger (simulates rowid drift) — then close.
+      const { DatabaseSync } = await import('node:sqlite');
+      const rawPath = path.join(staleDir, 'data', 'pz_database.db');
+      const raw = new DatabaseSync(rawPath);
+      raw.exec('DELETE FROM items WHERE id = ?', 'Base.StaleItem');
+      raw.close();
+      staleDb.close();
+
+      // Re-initialize: the rebuild in initialize() must resync FTS with the
+      // (now empty) items table without throwing "missing row N".
+      const healedDb = new DatabaseManager(rawPath);
+      await healedDb.initialize();
+      // Any MATCH must not throw; the index is empty so no results.
+      const results = await healedDb.searchContent('StaleItem');
+      expect(Array.isArray(results)).toBe(true);
+      healedDb.close();
+      fs.rmSync(staleDir, { recursive: true, force: true });
+    });
+  });
 });

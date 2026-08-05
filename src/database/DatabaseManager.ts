@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
+import logger from '../utils/logger.js';
 
 export interface GameItem {
   id: string;
@@ -74,6 +75,17 @@ export class DatabaseManager {
     await this.createTables();
     await this.createIndexes();
     await this.migrateSchema();
+
+    // Heal any stale FTS index: older DBs (INSERT OR REPLACE era) drifted
+    // rowids, leaving items_fts entries pointing at rows that no longer exist
+    // ("missing row N from content table" on MATCH). Rebuild resyncs it.
+    // Safe on a fresh DB (no rows = no-op).
+    try {
+      this.db.exec(`INSERT INTO items_fts(items_fts) VALUES('rebuild')`);
+    } catch (err) {
+      // If the FTS table is missing, tables were just created — nothing to heal.
+      logger.warn(`FTS rebuild skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private async migrateSchema(): Promise<void> {
@@ -195,11 +207,29 @@ export class DatabaseManager {
 
   async insertItem(item: GameItem): Promise<void> {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO items 
+      INSERT INTO items 
       (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
        hunger_change, thirst_change)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        display_name = excluded.display_name,
+        type = excluded.type,
+        module = excluded.module,
+        category = excluded.category,
+        properties = excluded.properties,
+        properties_text = excluded.properties_text,
+        raw_content = excluded.raw_content,
+        file_path = excluded.file_path,
+        tags = excluded.tags,
+        metal_value = excluded.metal_value,
+        weight = excluded.weight,
+        condition_max = excluded.condition_max,
+        attachment_type = excluded.attachment_type,
+        run_speed_modifier = excluded.run_speed_modifier,
+        hunger_change = excluded.hunger_change,
+        thirst_change = excluded.thirst_change
     `);
 
     stmt.run(
@@ -226,11 +256,29 @@ export class DatabaseManager {
 
   async insertItems(items: GameItem[]): Promise<void> {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO items 
+      INSERT INTO items 
       (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
        hunger_change, thirst_change)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        display_name = excluded.display_name,
+        type = excluded.type,
+        module = excluded.module,
+        category = excluded.category,
+        properties = excluded.properties,
+        properties_text = excluded.properties_text,
+        raw_content = excluded.raw_content,
+        file_path = excluded.file_path,
+        tags = excluded.tags,
+        metal_value = excluded.metal_value,
+        weight = excluded.weight,
+        condition_max = excluded.condition_max,
+        attachment_type = excluded.attachment_type,
+        run_speed_modifier = excluded.run_speed_modifier,
+        hunger_change = excluded.hunger_change,
+        thirst_change = excluded.thirst_change
     `);
 
     this.db.exec('BEGIN');
