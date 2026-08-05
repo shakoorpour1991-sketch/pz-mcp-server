@@ -13,6 +13,10 @@ import {
   ErrorCode,
   ListToolsRequestSchema,
   McpError,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { pathToFileURL } from "url";
@@ -29,11 +33,13 @@ import logger from "./utils/logger.js";
 const server = new Server(
   {
     name: "pz-mcp-server",
-    version: "1.0.0",
+    version: "1.1.0",
   },
   {
     capabilities: {
       tools: {},
+      resources: {},
+      prompts: {},
     },
   }
 );
@@ -183,6 +189,177 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
     ],
   };
+});
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  const topics = await knowledgeBaseManager.listTopics();
+  return {
+    resources: topics.map((t) => ({
+      uri: `knowledge://${encodeURIComponent(t.topic)}`,
+      name: t.topic,
+      description: `${t.title} (${t.lines} lines, ${t.words} words)`,
+      mimeType: 'text/markdown',
+      size: t.chars,
+    })),
+  };
+});
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri as string;
+  const match = uri.match(/^knowledge:\/\/([^/?#]+)(?:\/.*)?$/);
+  if (!match) {
+    throw new McpError(ErrorCode.InvalidRequest, `Unknown resource URI: ${uri}`);
+  }
+  const topic = decodeURIComponent(match[1]);
+  const doc = await knowledgeBaseManager.getTopic(topic);
+  if (!doc) {
+    throw new McpError(ErrorCode.InvalidRequest, `Topic not found: ${topic}`);
+  }
+  return {
+    contents: [
+      {
+        uri: `knowledge://${encodeURIComponent(topic)}`,
+        mimeType: 'text/markdown',
+        text: doc.content,
+      },
+    ],
+  };
+});
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  return {
+    prompts: [
+      {
+        name: 'create-item',
+        description: 'Guides you through generating a Project Zomboid item script using generate_script',
+        arguments: [
+          {
+            name: 'itemName',
+            description: 'Name of the item to generate (e.g. WoodenBat, IronAxe)',
+            required: true,
+          },
+          {
+            name: 'category',
+            description: 'Item category: Weapon, Clothing, Food, Tool, Literature, etc.',
+            required: false,
+          },
+        ],
+      },
+      {
+        name: 'analyze-mod',
+        description: 'Guides you through analyzing a Project Zomboid mod directory using analyze_mod',
+        arguments: [
+          {
+            name: 'modPath',
+            description: 'Absolute path to the mod directory',
+            required: true,
+          },
+        ],
+      },
+      {
+        name: 'search-game',
+        description: 'Guides you through searching vanilla Project Zomboid content using search_vanilla',
+        arguments: [
+          {
+            name: 'query',
+            description: 'Search query string',
+            required: true,
+          },
+          {
+            name: 'type',
+            description: 'Content type filter: item, recipe, sound, vehicle, or all',
+            required: false,
+          },
+        ],
+      },
+      {
+        name: 'validate-script',
+        description: 'Guides you through validating a Project Zomboid script using validate_script',
+        arguments: [
+          {
+            name: 'scriptType',
+            description: 'Script type: item, recipe, evolvedrecipe, fixing, sound, or vehicle',
+            required: false,
+          },
+        ],
+      },
+    ],
+  };
+});
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params ?? {};
+
+  switch (name) {
+    case 'create-item': {
+      const itemName = args?.itemName ?? '';
+      const category = args?.category ?? '';
+      return {
+        description: `Generate a Project Zomboid item script for "${itemName}"`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Generate a Project Zomboid item script for "${itemName || '<itemName>'}"${category ? ` in category "${category}"` : ''}.\n\nUse the generate_script tool with type="item", name="${itemName || '<itemName>'}", and the appropriate properties (DisplayName, Type, Weight, etc.). Module should be "Base".`,
+            },
+          },
+        ],
+      };
+    }
+
+    case 'analyze-mod': {
+      const modPath = args?.modPath ?? '';
+      return {
+        description: `Analyze a Project Zomboid mod at "${modPath}"`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Analyze the mod at "${modPath || '<modPath>'}" for Project Zomboid.\n\nUse the analyze_mod tool with the provided modPath. Enable checkBalance and checkCompatibility.`,
+            },
+          },
+        ],
+      };
+    }
+
+    case 'search-game': {
+      const query = args?.query ?? '';
+      const type = args?.type ?? 'all';
+      return {
+        description: `Search vanilla PZ content for "${query}"`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Search Project Zomboid vanilla content for "${query || '<query>'}" with type filter "${type}".\n\nUse the search_vanilla tool.`,
+            },
+          },
+        ],
+      };
+    }
+
+    case 'validate-script': {
+      const scriptType = args?.scriptType ?? '';
+      return {
+        description: `Validate a Project Zomboid ${scriptType || '<type>'} script`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Validate a Project Zomboid${scriptType ? ` ${scriptType}` : ''} script.\n\nUse the validate_script tool with the script content and type="${scriptType || 'item'}".`,
+            },
+          },
+        ],
+      };
+    }
+
+    default:
+      throw new McpError(ErrorCode.InvalidRequest, `Unknown prompt: ${name}`);
+  }
 });
 
 // Tool handlers

@@ -193,6 +193,30 @@ export class KnowledgeBaseManager {
     });
   }
 
+  async getTopic(
+    topic: string
+  ): Promise<{ topic: string; title: string; content: string; lines: number; words: number; chars: number } | null> {
+    const row = this.db
+      .prepare('SELECT topic, title, content FROM knowledge_docs WHERE topic = ?')
+      .get(topic) as { topic: string; title: string; content: string } | undefined;
+
+    if (!row) return null;
+
+    const lines = row.content.split('\n').length;
+    const words = row.content.trim()
+      ? row.content.trim().split(/\s+/).length
+      : 0;
+    const chars = row.content.length;
+    return {
+      topic: row.topic,
+      title: row.title,
+      content: row.content,
+      lines,
+      words,
+      chars,
+    };
+  }
+
   close(): void {
     if (this.db) {
       this.db.close();

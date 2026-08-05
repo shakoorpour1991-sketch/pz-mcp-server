@@ -364,4 +364,78 @@ describe('pz-mcp-server integration', () => {
     expect(stderr).not.toContain('Failed to initialize server');
     expect(stderr).not.toContain('Unhandled');
   });
+
+  describe('MCP resources', () => {
+    test('resources/list returns KB topics as resources with knowledge:// URIs', async () => {
+      const kbDir = path.join(tmpDir, 'kb2');
+      fs.mkdirSync(kbDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(kbDir, 'Farming.md'),
+        '# Farming Guide\n> Source: v42.20\n\nCabbage grows in spring.\n'
+      );
+      await client.call('tools/call', {
+        name: 'index_knowledge_base',
+        arguments: { path: kbDir },
+      });
+
+      const result = await client.call('resources/list');
+      const farmingRes = result.resources?.find((r) => r.name === 'Farming');
+      expect(farmingRes).toBeDefined();
+      expect(farmingRes.uri).toBe('knowledge://Farming');
+      expect(farmingRes.mimeType).toBe('text/markdown');
+      expect(farmingRes.description).toMatch(/\d+ lines/);
+    });
+
+    test('resources/read returns full content for existing topic', async () => {
+      const result = await client.call('resources/read', {
+        uri: 'knowledge://Farming',
+      });
+      expect(result.contents).toBeDefined();
+      expect(result.contents.length).toBeGreaterThan(0);
+      expect(result.contents[0].text).toContain('Farming Guide');
+      expect(result.contents[0].mimeType).toBe('text/markdown');
+    });
+
+    test('resources/read returns error for missing topic', async () => {
+      await expect(
+        client.call('resources/read', { uri: 'knowledge://NoSuchTopic' })
+      ).rejects.toThrow(/Topic not found/);
+    });
+  });
+
+  describe('MCP prompts', () => {
+    test('prompts/list returns all 4 prompt templates', async () => {
+      const result = await client.call('prompts/list');
+      const names = result.prompts.map((p) => p.name).sort();
+      expect(names).toEqual(['analyze-mod', 'create-item', 'search-game', 'validate-script'].sort());
+    });
+
+    test('prompts/get create-item substitutes itemName arg', async () => {
+      const result = await client.call('prompts/get', {
+        name: 'create-item',
+        arguments: { itemName: 'TestSword', category: 'Weapon' },
+      });
+      expect(result.description).toContain('TestSword');
+      expect(result.messages).toBeDefined();
+      expect(result.messages.length).toBe(1);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[0].content.text).toContain('TestSword');
+      expect(result.messages[0].content.text).toContain('Weapon');
+    });
+
+    test('prompts/get search-game substitutes query and type args', async () => {
+      const result = await client.call('prompts/get', {
+        name: 'search-game',
+        arguments: { query: 'axe', type: 'item' },
+      });
+      expect(result.messages[0].content.text).toContain('axe');
+      expect(result.messages[0].content.text).toContain('item');
+    });
+
+    test('prompts/get returns error for unknown prompt', async () => {
+      await expect(
+        client.call('prompts/get', { name: 'nonexistent' })
+      ).rejects.toThrow(/Unknown prompt/);
+    });
+  });
 });
