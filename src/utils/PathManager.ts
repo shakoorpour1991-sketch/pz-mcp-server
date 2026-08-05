@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join, resolve } from 'path';
 import { homedir } from 'os';
@@ -168,7 +169,32 @@ export class PathManager {
   }
 
   private async detectSteamWindows(): Promise<string | null> {
-    // Try to read Steam installation paths from common locations
+    // Try Windows registry first
+    const registrySteamPath = await this.readSteamRegistryPath();
+    if (registrySteamPath) {
+      const defaultPzPath = join(registrySteamPath, 'steamapps', 'common', 'ProjectZomboid');
+      if (this.isValidProjectZomboidInstallation(defaultPzPath)) {
+        return defaultPzPath;
+      }
+
+      const libraryFoldersPath = join(registrySteamPath, 'steamapps', 'libraryfolders.vdf');
+      if (existsSync(libraryFoldersPath)) {
+        try {
+          const configContent = readFileSync(libraryFoldersPath, 'utf-8');
+          const libraries = this.parseSteamLibraryFolders(configContent);
+          for (const library of libraries) {
+            const pzPath = join(library, 'steamapps', 'common', 'ProjectZomboid');
+            if (this.isValidProjectZomboidInstallation(pzPath)) {
+              return pzPath;
+            }
+          }
+        } catch (error) {
+          logger.warn('Failed to parse Steam library folders: %s', error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    // Fall back to hardcoded paths
     const steamPaths = [
       'C:\\Program Files (x86)\\Steam',
       'C:\\Program Files\\Steam',
@@ -193,6 +219,56 @@ export class PathManager {
       }
     }
 
+    return null;
+  }
+
+  private async readSteamRegistryPath(): Promise<string | null> {
+    try {
+      const hkcuPath = await this.queryRegistryValue(
+        'HKCU\\Software\\Valve\\Steam',
+        'SteamPath'
+      );
+      if (hkcuPath) {
+        return hkcuPath;
+      }
+
+      const hklmPath = await this.queryRegistryValue(
+        'HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam',
+        'InstallPath'
+      );
+      if (hklmPath) {
+        return hklmPath;
+      }
+    } catch (error) {
+      logger.warn('Failed to read Steam registry: %s', error instanceof Error ? error.message : String(error));
+    }
+
+    return null;
+  }
+
+  private async queryRegistryValue(key: string, valueName: string): Promise<string | null> {
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        execFile('reg', ['query', key, '/v', valueName], { timeout: 5000 }, (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout, stderr });
+        });
+      });
+      const lines = result.stdout.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const regex = new RegExp(`^${valueName}\\s+REG_SZ\\s+(.+)$`);
+        const match = trimmed.match(regex);
+        if (match) {
+          return match[1].trim();
+        }
+      }
+    } catch (error) {
+      logger.warn('Steam registry query failed: %s', error instanceof Error ? error.message : String(error));
+    }
     return null;
   }
 

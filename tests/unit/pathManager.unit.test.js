@@ -1,5 +1,6 @@
 /**
- * Unit tests for PathManager.validateInputPath (audit P1 #10 path guard).
+ * Unit tests for PathManager.validateInputPath (audit P1 #10 path guard)
+ * and PathManager.detectSteamWindows registry detection (audit P4 #22).
  * Runs against the compiled dist/ build.
  */
 import path from 'path';
@@ -54,5 +55,59 @@ describe('PathManager.validateInputPath', () => {
     fs.writeFileSync(file, 'hello');
     expect(pm.validateInputPath(file, 'file')).toBe(file);
     expect(() => pm.validateInputPath(path.join(tmpDir, 'missing.txt'), 'file')).toThrow('does not exist');
+  });
+});
+
+describe('PathManager.detectSteamWindows registry detection', () => {
+  let pm;
+
+  beforeEach(() => {
+    pm = new PathManager();
+  });
+
+  test('registry returns SteamPath and valid PZ is found there', async () => {
+    const steamRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-steam-'));
+    const pzDir = path.join(steamRoot, 'steamapps', 'common', 'ProjectZomboid');
+    fs.mkdirSync(pzDir, { recursive: true });
+    fs.writeFileSync(path.join(pzDir, 'ProjectZomboid64.exe'), '');
+    fs.mkdirSync(path.join(pzDir, 'media', 'scripts'), { recursive: true });
+
+    pm.queryRegistryValue = async () => steamRoot;
+
+    const result = await pm.detectSteamWindows();
+    expect(result).toBe(pzDir);
+
+    fs.rmSync(steamRoot, { recursive: true, force: true });
+  });
+
+  test('registry points to dir without PZ, falls through to libraryfolders.vdf', async () => {
+    const steamRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-steam-'));
+    const libraryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-lib-'));
+    const pzDir = path.join(libraryDir, 'steamapps', 'common', 'ProjectZomboid');
+    fs.mkdirSync(pzDir, { recursive: true });
+    fs.writeFileSync(path.join(pzDir, 'ProjectZomboid64.exe'), '');
+    fs.mkdirSync(path.join(pzDir, 'media', 'scripts'), { recursive: true });
+
+    const steamAppsDir = path.join(steamRoot, 'steamapps');
+    fs.mkdirSync(steamAppsDir, { recursive: true });
+    const vdfContent = `"libraryfolders"\n{\n    "1"\n    {\n        "path"    "${libraryDir.replace(/\\/g, '\\\\')}"\n    }\n}`;
+    fs.writeFileSync(path.join(steamAppsDir, 'libraryfolders.vdf'), vdfContent);
+
+    pm.queryRegistryValue = async () => steamRoot;
+
+    const result = await pm.detectSteamWindows();
+    expect(result).toBe(pzDir);
+
+    fs.rmSync(steamRoot, { recursive: true, force: true });
+    fs.rmSync(libraryDir, { recursive: true, force: true });
+  });
+
+  test('registry read fails gracefully, returns null when no hardcoded paths exist', async () => {
+    pm.queryRegistryValue = async () => {
+      throw new Error('Registry query failed');
+    };
+
+    const result = await pm.detectSteamWindows();
+    expect(result).toBeNull();
   });
 });
