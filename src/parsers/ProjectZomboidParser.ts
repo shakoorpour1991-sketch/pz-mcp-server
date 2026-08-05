@@ -330,6 +330,16 @@ export class ProjectZomboidParser {
       }
     }
 
+    // Extract rich metadata fields into top-level columns
+    const tags = properties.Tags;
+    const metalValue = properties.MetalValue;
+    const weight = properties.Weight;
+    const conditionMax = properties.ConditionMax;
+    const attachmentTypeRaw = properties.AttachmentType;
+    const runSpeedModifier = properties.RunSpeedModifier;
+    const hungerChange = properties.HungerChange;
+    const thirstChange = properties.ThirstChange;
+
     // Generate item ID
     const itemId = blockInfo.module === 'Base' 
       ? blockInfo.name 
@@ -343,6 +353,16 @@ export class ProjectZomboidParser {
       module: blockInfo.module,
       category: properties.DisplayCategory || properties.Category,
       properties,
+      tags: tags ? (Array.isArray(tags) ? (tags as string[]) : [tags]) : undefined,
+      metal_value: typeof metalValue === 'number' ? metalValue : undefined,
+      weight: typeof weight === 'number' ? weight : undefined,
+      condition_max: typeof conditionMax === 'number' ? conditionMax : undefined,
+      attachment_type: attachmentTypeRaw
+        ? (Array.isArray(attachmentTypeRaw) ? attachmentTypeRaw[0] : attachmentTypeRaw)
+        : undefined,
+      run_speed_modifier: typeof runSpeedModifier === 'number' ? runSpeedModifier : undefined,
+      hunger_change: typeof hungerChange === 'number' ? hungerChange : undefined,
+      thirst_change: typeof thirstChange === 'number' ? thirstChange : undefined,
       rawContent,
       filePath,
     };
@@ -448,9 +468,18 @@ export class ProjectZomboidParser {
 
   private parseValue(value: string): any {
     // Remove quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || 
+    if ((value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))) {
-      return value.slice(1, -1);
+      const unquoted = value.slice(1, -1);
+      if (unquoted.includes(';')) {
+        return unquoted.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
+      }
+      return unquoted;
+    }
+
+    // Split semicolon-delimited lists before numeric/boolean parsing
+    if (value.includes(';')) {
+      return value.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
     }
 
     // Parse numbers

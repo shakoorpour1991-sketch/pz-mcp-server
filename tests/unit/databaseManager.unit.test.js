@@ -138,5 +138,88 @@ describe('DatabaseManager', () => {
       const spoonIdx = results.findIndex((r) => r.id === 'Base.Spoon');
       expect(spoonIdx).toBeGreaterThan(0);
     });
+
+    test('tags filter matches items with any of the specified tags', async () => {
+      await db.insertItem({
+        id: 'Base.Hammer',
+        name: 'Hammer',
+        displayName: 'Hammer',
+        type: 'item',
+        module: 'Base',
+        category: 'Weapon',
+        properties: { Tags: ['Hammer', 'Metal'], Type: 'Weapon' },
+        rawContent: 'item Hammer {}',
+        filePath: 'test.txt',
+        tags: ['Hammer', 'Metal'],
+        metal_value: 10,
+      });
+
+      const results = await db.searchContent('', { tags: 'Hammer,Metal' });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some((r) => r.id === 'Base.Hammer')).toBe(true);
+    });
+
+    test('metalValueMin filters items with metal_value >= threshold', async () => {
+      await db.insertItem({
+        id: 'Base.IronBar',
+        name: 'IronBar',
+        displayName: 'Iron Bar',
+        type: 'item',
+        module: 'Base',
+        category: 'Material',
+        properties: { MetalValue: 25, Type: 'Material' },
+        rawContent: 'item IronBar {}',
+        filePath: 'test.txt',
+        metal_value: 25,
+      });
+
+      const results = await db.searchContent('', { metalValueMin: 20 });
+      expect(results.some((r) => r.id === 'Base.IronBar')).toBe(true);
+
+      const lowResults = await db.searchContent('', { metalValueMin: 30 });
+      expect(lowResults.some((r) => r.id === 'Base.IronBar')).toBe(false);
+    });
+
+    test('metalValueMax filters items with metal_value <= threshold', async () => {
+      await db.insertItem({
+        id: 'Base.CopperBar',
+        name: 'CopperBar',
+        displayName: 'Copper Bar',
+        type: 'item',
+        module: 'Base',
+        category: 'Material',
+        properties: { MetalValue: 5, Type: 'Material' },
+        rawContent: 'item CopperBar {}',
+        filePath: 'test.txt',
+        metal_value: 5,
+      });
+
+      const results = await db.searchContent('', { metalValueMax: 10 });
+      expect(results.some((r) => r.id === 'Base.CopperBar')).toBe(true);
+
+      const highResults = await db.searchContent('', { metalValueMax: 3 });
+      expect(highResults.some((r) => r.id === 'Base.CopperBar')).toBe(false);
+    });
+
+    test('attachmentType filter matches items with the specified attachment type', async () => {
+      await db.insertItem({
+        id: 'Base.Sling',
+        name: 'Sling',
+        displayName: 'Sling',
+        type: 'item',
+        module: 'Base',
+        category: 'Weapon',
+        properties: { AttachmentType: 'Sling', Type: 'Weapon' },
+        rawContent: 'item Sling {}',
+        filePath: 'test.txt',
+        attachment_type: 'Sling',
+      });
+
+      const results = await db.searchContent('', { attachmentType: 'Sling' });
+      expect(results.some((r) => r.id === 'Base.Sling')).toBe(true);
+
+      const noResults = await db.searchContent('', { attachmentType: 'Bow' });
+      expect(noResults.some((r) => r.id === 'Base.Sling')).toBe(false);
+    });
   });
 });

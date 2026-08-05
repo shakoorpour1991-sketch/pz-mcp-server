@@ -12,11 +12,23 @@ export interface GameItem {
   properties: Record<string, any>;
   rawContent: string;
   filePath: string;
+  tags?: string[] | undefined;
+  metal_value?: number | undefined;
+  weight?: number | undefined;
+  condition_max?: number | undefined;
+  attachment_type?: string | undefined;
+  run_speed_modifier?: number | undefined;
+  hunger_change?: number | undefined;
+  thirst_change?: number | undefined;
 }
 
 export interface SearchOptions {
   type?: string;
   category?: string;
+  tags?: string;
+  metalValueMin?: number;
+  metalValueMax?: number;
+  attachmentType?: string;
   limit?: number;
 }
 
@@ -30,6 +42,14 @@ interface ItemRow {
   properties: string | null;
   raw_content: string | null;
   file_path: string | null;
+  tags: string | null;
+  metal_value: number | null;
+  weight: number | null;
+  condition_max: number | null;
+  attachment_type: string | null;
+  run_speed_modifier: number | null;
+  hunger_change: number | null;
+  thirst_change: number | null;
   rank?: number;
 }
 
@@ -53,6 +73,29 @@ export class DatabaseManager {
     
     await this.createTables();
     await this.createIndexes();
+    await this.migrateSchema();
+  }
+
+  private async migrateSchema(): Promise<void> {
+    const existing = this.db.prepare('PRAGMA table_info(items)').all() as Array<{name: string}>;
+    const existingColumns = new Set(existing.map((c) => c.name));
+
+    const newColumns: Array<{name: string; sql: string}> = [
+      { name: 'tags', sql: 'ALTER TABLE items ADD COLUMN tags TEXT' },
+      { name: 'metal_value', sql: 'ALTER TABLE items ADD COLUMN metal_value REAL' },
+      { name: 'weight', sql: 'ALTER TABLE items ADD COLUMN weight REAL' },
+      { name: 'condition_max', sql: 'ALTER TABLE items ADD COLUMN condition_max INTEGER' },
+      { name: 'attachment_type', sql: 'ALTER TABLE items ADD COLUMN attachment_type TEXT' },
+      { name: 'run_speed_modifier', sql: 'ALTER TABLE items ADD COLUMN run_speed_modifier REAL' },
+      { name: 'hunger_change', sql: 'ALTER TABLE items ADD COLUMN hunger_change REAL' },
+      { name: 'thirst_change', sql: 'ALTER TABLE items ADD COLUMN thirst_change REAL' },
+    ];
+
+    for (const col of newColumns) {
+      if (!existingColumns.has(col.name)) {
+        this.db.exec(col.sql);
+      }
+    }
   }
 
   private async createTables(): Promise<void> {
@@ -151,8 +194,10 @@ export class DatabaseManager {
   async insertItem(item: GameItem): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO items 
-      (id, name, display_name, type, module, category, properties, raw_content, file_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, display_name, type, module, category, properties, raw_content, file_path,
+       tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
+       hunger_change, thirst_change)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -164,15 +209,25 @@ export class DatabaseManager {
       item.category,
       JSON.stringify(item.properties),
       item.rawContent,
-      item.filePath
+      item.filePath,
+      item.tags ? JSON.stringify(item.tags) : null,
+      item.metal_value ?? null,
+      item.weight ?? null,
+      item.condition_max ?? null,
+      item.attachment_type ?? null,
+      item.run_speed_modifier ?? null,
+      item.hunger_change ?? null,
+      item.thirst_change ?? null
     );
   }
 
   async insertItems(items: GameItem[]): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO items 
-      (id, name, display_name, type, module, category, properties, raw_content, file_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, display_name, type, module, category, properties, raw_content, file_path,
+       tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
+       hunger_change, thirst_change)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const transaction = this.db.transaction((items: GameItem[]) => {
@@ -186,7 +241,15 @@ export class DatabaseManager {
           item.category,
           JSON.stringify(item.properties),
           item.rawContent,
-          item.filePath
+          item.filePath,
+          item.tags ? JSON.stringify(item.tags) : null,
+          item.metal_value ?? null,
+          item.weight ?? null,
+          item.condition_max ?? null,
+          item.attachment_type ?? null,
+          item.run_speed_modifier ?? null,
+          item.hunger_change ?? null,
+          item.thirst_change ?? null
         );
       }
     });
@@ -201,7 +264,9 @@ export class DatabaseManager {
     if (query.trim() === '') {
       // Return all items with optional filtering
       sql = `
-        SELECT id, name, display_name, type, module, category, properties, raw_content, file_path
+        SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
+               tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
+               hunger_change, thirst_change
         FROM items
         WHERE 1=1
       `;
@@ -210,7 +275,9 @@ export class DatabaseManager {
       sql = `
         SELECT items.id, items.name, items.display_name, items.type, items.module, 
                items.category, items.properties, items.raw_content, items.file_path,
-               items_fts.rank
+               items.tags, items.metal_value, items.weight, items.condition_max,
+               items.attachment_type, items.run_speed_modifier, items.hunger_change,
+               items.thirst_change, items_fts.rank
         FROM items_fts
         JOIN items ON items.rowid = items_fts.rowid
         WHERE items_fts MATCH ?
@@ -230,6 +297,34 @@ export class DatabaseManager {
       params.push(options.category);
     }
 
+    // Add tags filter (comma-separated, matches if ANY tag present)
+    if (options.tags) {
+      const tagList = options.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      if (tagList.length > 0) {
+        const tagConditions = tagList.map(() => 'json_each.value = ?').join(' OR ');
+        sql += ` AND (SELECT COUNT(*) FROM json_each(items.tags) WHERE ${tagConditions}) > 0`;
+        for (const tag of tagList) {
+          params.push(tag);
+        }
+      }
+    }
+
+    // Add metalValueMin/Max filter
+    if (options.metalValueMin !== undefined) {
+      sql += ' AND items.metal_value >= ?';
+      params.push(options.metalValueMin);
+    }
+    if (options.metalValueMax !== undefined) {
+      sql += ' AND items.metal_value <= ?';
+      params.push(options.metalValueMax);
+    }
+
+    // Add attachmentType filter
+    if (options.attachmentType) {
+      sql += ' AND items.attachment_type = ?';
+      params.push(options.attachmentType);
+    }
+
     // Add ordering and limit
     // FTS5 bm25 rank is NEGATIVE for matches (more negative = more relevant),
     // so ASC puts best matches first; DESC would invert it (audit finding).
@@ -246,7 +341,7 @@ export class DatabaseManager {
 
     const rows = this.db.prepare(sql).all(...params) as ItemRow[];
 
-    return rows.map(row => this.rowToItem(row));
+    return rows.map((row) => this.rowToItem(row));
   }
 
   private rowToItem(row: ItemRow): GameItem {
@@ -261,12 +356,22 @@ export class DatabaseManager {
     };
     if (row.display_name !== null) item.displayName = row.display_name;
     if (row.category !== null) item.category = row.category;
+    if (row.tags !== null) item.tags = JSON.parse(row.tags);
+    if (row.metal_value !== null) item.metal_value = row.metal_value;
+    if (row.weight !== null) item.weight = row.weight;
+    if (row.condition_max !== null) item.condition_max = row.condition_max;
+    if (row.attachment_type !== null) item.attachment_type = row.attachment_type;
+    if (row.run_speed_modifier !== null) item.run_speed_modifier = row.run_speed_modifier;
+    if (row.hunger_change !== null) item.hunger_change = row.hunger_change;
+    if (row.thirst_change !== null) item.thirst_change = row.thirst_change;
     return item;
   }
 
   async getItemById(id: string): Promise<GameItem | null> {
     const row = this.db.prepare(`
-      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path
+      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
+             tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
+             hunger_change, thirst_change
       FROM items
       WHERE id = ?
     `).get(id) as ItemRow | undefined;
@@ -278,13 +383,15 @@ export class DatabaseManager {
 
   async getItemsByType(type: string): Promise<GameItem[]> {
     const rows = this.db.prepare(`
-      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path
+      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
+             tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
+             hunger_change, thirst_change
       FROM items
       WHERE type = ?
       ORDER BY name ASC
     `).all(type) as ItemRow[];
 
-    return rows.map(row => this.rowToItem(row));
+    return rows.map((row) => this.rowToItem(row));
   }
 
   async getCategories(): Promise<string[]> {

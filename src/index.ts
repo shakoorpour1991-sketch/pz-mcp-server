@@ -80,6 +80,10 @@ const SearchVanillaSchema = z.object({
   query: z.string().describe("Search query for vanilla game content"),
   type: z.enum(["item", "recipe", "sound", "vehicle", "all"]).optional().describe("Filter by content type"),
   category: z.string().optional().describe("Filter by item category"),
+  tags: z.string().optional().describe("Filter by tags (comma-separated, matches if ANY tag present)"),
+  metalValueMin: z.number().optional().describe("Minimum metal value"),
+  metalValueMax: z.number().optional().describe("Maximum metal value"),
+  attachmentType: z.string().optional().describe("Filter by attachment type"),
   limit: z.number().min(1).max(100).default(20).describe("Maximum number of results"),
 });
 
@@ -188,12 +192,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (name) {
       case "search_vanilla": {
-        const { query, type, category, limit } = SearchVanillaSchema.parse(args);
-        const searchOptions: { type?: string; category?: string; limit?: number } = {};
-        if (type !== undefined && type !== 'all') searchOptions.type = type;
-        if (category !== undefined) searchOptions.category = category;
-        if (limit !== undefined) searchOptions.limit = limit;
-        const results = await dbManager.searchContent(query, searchOptions);
+         const { query, type, category, tags, metalValueMin, metalValueMax, attachmentType, limit } = SearchVanillaSchema.parse(args);
+         const searchOptions: { type?: string; category?: string; tags?: string; metalValueMin?: number; metalValueMax?: number; attachmentType?: string; limit?: number } = {};
+         if (type !== undefined && type !== 'all') searchOptions.type = type;
+         if (category !== undefined) searchOptions.category = category;
+         if (tags !== undefined) searchOptions.tags = tags;
+         if (metalValueMin !== undefined) searchOptions.metalValueMin = metalValueMin;
+         if (metalValueMax !== undefined) searchOptions.metalValueMax = metalValueMax;
+         if (attachmentType !== undefined) searchOptions.attachmentType = attachmentType;
+         if (limit !== undefined) searchOptions.limit = limit;
+         const results = await dbManager.searchContent(query, searchOptions);
         
         return {
           content: [
