@@ -43,6 +43,7 @@ export class PathManager {
         // Standalone
         'C:\\ProjectZomboid',
         'C:\\Games\\ProjectZomboid',
+        'D:\\Games\\ProjectZomboid',
       ];
     }
     // Linux paths

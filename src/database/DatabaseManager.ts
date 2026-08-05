@@ -81,6 +81,7 @@ export class DatabaseManager {
     const existingColumns = new Set(existing.map((c) => c.name));
 
     const newColumns: Array<{name: string; sql: string}> = [
+      { name: 'properties_text', sql: 'ALTER TABLE items ADD COLUMN properties_text TEXT' },
       { name: 'tags', sql: 'ALTER TABLE items ADD COLUMN tags TEXT' },
       { name: 'metal_value', sql: 'ALTER TABLE items ADD COLUMN metal_value REAL' },
       { name: 'weight', sql: 'ALTER TABLE items ADD COLUMN weight REAL' },
@@ -109,6 +110,7 @@ export class DatabaseManager {
         module TEXT NOT NULL,
         category TEXT,
         properties TEXT, -- JSON string
+        properties_text TEXT, -- mirror of properties for FTS5 external-content mapping
         raw_content TEXT,
         file_path TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -194,10 +196,10 @@ export class DatabaseManager {
   async insertItem(item: GameItem): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO items 
-      (id, name, display_name, type, module, category, properties, raw_content, file_path,
+      (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
        hunger_change, thirst_change)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -207,6 +209,7 @@ export class DatabaseManager {
       item.type,
       item.module,
       item.category ?? null,
+      JSON.stringify(item.properties),
       JSON.stringify(item.properties),
       item.rawContent,
       item.filePath,
@@ -224,10 +227,10 @@ export class DatabaseManager {
   async insertItems(items: GameItem[]): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO items 
-      (id, name, display_name, type, module, category, properties, raw_content, file_path,
+      (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
        hunger_change, thirst_change)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.db.exec('BEGIN');
@@ -240,6 +243,7 @@ export class DatabaseManager {
           item.type,
           item.module,
           item.category ?? null,
+          JSON.stringify(item.properties),
           JSON.stringify(item.properties),
           item.rawContent,
           item.filePath,
