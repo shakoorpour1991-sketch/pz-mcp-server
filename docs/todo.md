@@ -1,13 +1,9 @@
-# TASK: Project Zomboid MCP Server Development
+# Current Work Status
 
-## Objective: Build a comprehensive MCP server for Project Zomboid mod development using Node.js, with SQLite database integration
+This file previously held the original build-plan step checklist (all steps completed).
+Superseded — see these instead:
 
-## STEPs:
-[✅] STEP 1: Research Project Zomboid file formats and mod structure, create comprehensive parser architecture → System STEP
-[✅] STEP 2: Develop MCP server foundation with Node.js, including TypeScript setup and project structure → System STEP  
-[✅] STEP 3: Build SQLite database schema and integration for storing parsed mod data → System STEP
-[✅] STEP 4: Implement Project Zomboid file parsers for common formats (Lua, txt, mod definitions) → System STEP
-[✅] STEP 5: Create MCP tools for mod development (query, validate, generate, search functionality) → System STEP
-[✅] STEP 6: Create documentation and usage examples for Cursor/VSCode integration → System STEP
-
-## Deliverable: Complete MCP server with parsers, database integration, deployment configuration, and documentation
+- **Audit:** `AUDIT_2026-08-06.md` (repo root) — full findings list, statuses, and fix order.
+- **Canonical project context:** `docs/project-summary.md` (uploaded to online AIs for codegen).
+- **Structure:** `docs/project-structure.md`.
+- **Status (Aug 2026):** 76/76 tests green, lint + build clean.

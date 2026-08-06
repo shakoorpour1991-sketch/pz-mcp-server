@@ -3,6 +3,32 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import logger from '../utils/logger.js';
 
+/**
+ * Flatten item properties into plain, searchable text for the FTS mirror
+ * (audit A6). The raw JSON string contains syntax noise ({, }, ", :)
+ * that the FTS tokenizer indexes, skewing ranking. Nested objects become
+ * dotted keys; arrays are comma-joined; scalars are `key=value` lines.
+ */
+function propertiesToPlainText(props: Record<string, any>): string {
+  const parts: string[] = [];
+  const walk = (prefix: string, value: any): void => {
+    if (value === null || value === undefined) return;
+    if (Array.isArray(value)) {
+      if (value.length > 0) parts.push(`${prefix}=${value.join(',')}`);
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const [k, v] of Object.entries(value)) {
+        walk(prefix ? `${prefix}.${k}` : k, v);
+      }
+      return;
+    }
+    parts.push(`${prefix}=${String(value)}`);
+  };
+  walk('', props);
+  return parts.join('\n');
+}
+
 export interface GameItem {
   id: string;
   name: string;
@@ -144,27 +170,33 @@ export class DatabaseManager {
       )
     `);
 
-    // Triggers to keep FTS table in sync
+    // Triggers to keep FTS table in sync.
+    // NOTE: recreated unconditionally (DROP + CREATE) so existing DBs upgrade
+    // to the plain-text mirror; CREATE IF NOT EXISTS would keep stale triggers
+    // that fed raw JSON (new.properties) into the FTS properties_text column.
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS items_ai AFTER INSERT ON items BEGIN
+      DROP TRIGGER IF EXISTS items_ai;
+      CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
         INSERT INTO items_fts(rowid, id, name, display_name, type, module, category, properties_text)
-        VALUES (new.rowid, new.id, new.name, new.display_name, new.type, new.module, new.category, new.properties);
+        VALUES (new.rowid, new.id, new.name, new.display_name, new.type, new.module, new.category, new.properties_text);
       END
     `);
 
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS items_ad AFTER DELETE ON items BEGIN
+      DROP TRIGGER IF EXISTS items_ad;
+      CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
         INSERT INTO items_fts(items_fts, rowid, id, name, display_name, type, module, category, properties_text)
-        VALUES ('delete', old.rowid, old.id, old.name, old.display_name, old.type, old.module, old.category, old.properties);
+        VALUES ('delete', old.rowid, old.id, old.name, old.display_name, old.type, old.module, old.category, old.properties_text);
       END
     `);
 
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE ON items BEGIN
+      DROP TRIGGER IF EXISTS items_au;
+      CREATE TRIGGER items_au AFTER UPDATE ON items BEGIN
         INSERT INTO items_fts(items_fts, rowid, id, name, display_name, type, module, category, properties_text)
-        VALUES ('delete', old.rowid, old.id, old.name, old.display_name, old.type, old.module, old.category, old.properties);
+        VALUES ('delete', old.rowid, old.id, old.name, old.display_name, old.type, old.module, old.category, old.properties_text);
         INSERT INTO items_fts(rowid, id, name, display_name, type, module, category, properties_text)
-        VALUES (new.rowid, new.id, new.name, new.display_name, new.type, new.module, new.category, new.properties);
+        VALUES (new.rowid, new.id, new.name, new.display_name, new.type, new.module, new.category, new.properties_text);
       END
     `);
 
@@ -240,7 +272,7 @@ export class DatabaseManager {
       item.module,
       item.category ?? null,
       JSON.stringify(item.properties),
-      JSON.stringify(item.properties),
+      propertiesToPlainText(item.properties),
       item.rawContent,
       item.filePath,
       item.tags ? JSON.stringify(item.tags) : null,
@@ -292,7 +324,7 @@ export class DatabaseManager {
           item.module,
           item.category ?? null,
           JSON.stringify(item.properties),
-          JSON.stringify(item.properties),
+          propertiesToPlainText(item.properties),
           item.rawContent,
           item.filePath,
           item.tags ? JSON.stringify(item.tags) : null,

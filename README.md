@@ -39,7 +39,7 @@ A local-only Model Context Protocol (MCP) stdio server for Project Zomboid mod d
 
 ### Setup
 ```bash
-git clone https://github.com/minimax/pz-mcp-server.git
+git clone https://github.com/shakoorpour1991-sketch/pz-mcp-server.git
 cd pz-mcp-server
 npm install
 npm run build
@@ -52,7 +52,7 @@ npm run build
 | `npm run dev` | Run with `tsx` (dev mode, requires successful build) |
 | `npm start` | Run compiled server (`node dist/index.js`) |
 | `npm run lint` | ESLint |
-| `npm test` | Build + Jest (66 tests: 20 integration + 46 unit) |
+| `npm test` | Build + Jest (76 tests, 6 suites) |
 
 ---
 

@@ -474,45 +474,63 @@ export class ModAnalyzer {
     result: ModAnalysisResult,
   ): void {
     const lines = content.split("\n");
+    let openParens = 0, closeParens = 0;
+    let openBrackets = 0, closeBrackets = 0;
+    let firstIssueLine = -1;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const lineNumber = i + 1;
-
-      // Check for unbalanced parentheses/brackets
-      const openParens = (line.match(/\(/g) || []).length;
-      const closeParens = (line.match(/\)/g) || []).length;
-      const openBrackets = (line.match(/\[/g) || []).length;
-      const closeBrackets = (line.match(/\]/g) || []).length;
-
-      if (openParens !== closeParens && !line.includes("--")) {
-        result.issues.push({
-          file: filePath,
-          line: lineNumber,
-          severity: "warning",
-          message: "Unbalanced parentheses",
-          code: "LUA_SYNTAX_WARNING",
-        });
+      let line = lines[i];
+      // Strip comments: remove from -- to end of line (heuristic)
+      const commentIndex = line.indexOf("--");
+      if (commentIndex !== -1) {
+        line = line.substring(0, commentIndex);
       }
 
-      if (openBrackets !== closeBrackets && !line.includes("--")) {
-        result.issues.push({
-          file: filePath,
-          line: lineNumber,
-          severity: "warning",
-          message: "Unbalanced brackets",
-          code: "LUA_SYNTAX_WARNING",
-        });
-      }
+      const openP = (line.match(/\(/g) || []).length;
+      const closeP = (line.match(/\)/g) || []).length;
+      const openB = (line.match(/\[/g) || []).length;
+      const closeB = (line.match(/\]/g) || []).length;
 
-      // Check for common typos
-      if (
-        line.includes("Events.OnPreMapLoad.Add") &&
-        line.includes("Events.OnPreMapLoad.Add")
-      ) {
+      openParens += openP;
+      closeParens += closeP;
+      openBrackets += openB;
+      closeBrackets += closeB;
+
+      if (closeParens > openParens && firstIssueLine === -1) {
+        firstIssueLine = i + 1;
+      }
+      if (closeBrackets > openBrackets && firstIssueLine === -1) {
+        firstIssueLine = i + 1;
+      }
+    }
+
+    if (openParens !== closeParens) {
+      result.issues.push({
+        file: filePath,
+        line: firstIssueLine !== -1 ? firstIssueLine : 1,
+        severity: "warning",
+        message: `Unbalanced parentheses: ${openParens} open vs ${closeParens} close`,
+        code: "LUA_SYNTAX_WARNING",
+      });
+    }
+
+    if (openBrackets !== closeBrackets) {
+      result.issues.push({
+        file: filePath,
+        line: firstIssueLine !== -1 ? firstIssueLine : 1,
+        severity: "warning",
+        message: `Unbalanced brackets: ${openBrackets} open vs ${closeBrackets} close`,
+        code: "LUA_SYNTAX_WARNING",
+      });
+    }
+
+    // Check for OnPreMapLoad usage
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes("Events.OnPreMapLoad.Add")) {
         result.issues.push({
           file: filePath,
-          line: lineNumber,
+          line: i + 1,
           severity: "info",
           message:
             "Consider using Events.OnGameBoot.Add for initialization code",
@@ -600,17 +618,13 @@ export class ModAnalyzer {
 
     const globalVarPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*/g;
     const globalVars = new Set<string>();
-    let inStrictContext = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
 
-      if (line.includes("--strict") || line.includes("--strict-context")) {
-        inStrictContext = true;
-      }
-
-      if (inStrictContext && line.includes("local ")) {
+      // Always register local declarations (not just in strict context)
+      if (line.includes("local ")) {
         const localMatch = line.match(/local\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
         if (localMatch) {
           const varName = localMatch[1];
@@ -630,32 +644,6 @@ export class ModAnalyzer {
             code: "GLOBAL_VAR",
           });
         }
-      }
-    }
-
-    const requirePattern = /\brequire\s*\(\s*['"]([^'']+)['"]/g;
-    let match: RegExpExecArray | null;
-    const requiredModules = new Set<string>();
-
-    while ((match = requirePattern.exec(content)) !== null) {
-      requiredModules.add(match[1]);
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const lineNumber = i + 1;
-
-      const unusedRequireMatch = line.match(
-        /\brequire\s*\(\s*['"]([^'']+)['"]/,
-      );
-      if (unusedRequireMatch && !requiredModules.has(unusedRequireMatch[1])) {
-        result.issues.push({
-          file: filePath,
-          line: lineNumber,
-          severity: "warning",
-          message: `Potential unused require: '${unusedRequireMatch[1]}' appears to be unused`,
-          code: "UNUSED_REQUIRE",
-        });
       }
     }
   }
@@ -780,7 +768,7 @@ export class ModAnalyzer {
       // Get vanilla items of this category for comparison
       const vanillaResults = await this.db.searchContent(category.keyword, {
         type: "item",
-        limit: 100,
+        limit: 1000,
       });
       const vanillaItems = vanillaResults.filter(
         (v) => v.properties.Type === category.type,

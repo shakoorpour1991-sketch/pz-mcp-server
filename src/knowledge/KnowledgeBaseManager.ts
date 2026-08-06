@@ -66,7 +66,11 @@ export class KnowledgeBaseManager {
 
     for (const filePath of files) {
       try {
-        const content = readFileSync(filePath, 'utf-8');
+        const rawContent = readFileSync(filePath, 'utf-8');
+        // Strip any YAML frontmatter block: its title/source keys are used
+        // as metadata below, and it must not be indexed as body text.
+        const { meta, body } = this.parseFrontmatter(rawContent);
+        const content = body;
         const filename = filePath.split(/[/\\]/).pop() || '';
         const topic = filename.replace(/\.md$/, '');
 
@@ -80,19 +84,33 @@ export class KnowledgeBaseManager {
         }
 
         const lines = content.split('\n');
-        let title = filename;
-        for (const line of lines) {
-          if (line.startsWith('# ')) {
-            title = line.slice(2).trim();
-            break;
+        // Title priority: frontmatter `title`, then first H1, then filename.
+        const fmTitle = meta.title?.trim() || '';
+        let title: string;
+        if (fmTitle.length > 0) {
+          title = fmTitle;
+        } else {
+          title = filename;
+          for (const line of lines) {
+            if (line.startsWith('# ')) {
+              title = line.slice(2).trim();
+              break;
+            }
           }
         }
 
-        let source = '';
-        for (const line of lines) {
-          if (line.startsWith('> Source:')) {
-            source = line.slice('> Source:'.length).trim();
-            break;
+        // Source priority: frontmatter `source`, then `> Source:` blockquote.
+        const fmSource = meta.source?.trim() || '';
+        let source: string;
+        if (fmSource.length > 0) {
+          source = fmSource;
+        } else {
+          source = '';
+          for (const line of lines) {
+            if (line.startsWith('> Source:')) {
+              source = line.slice('> Source:'.length).trim();
+              break;
+            }
           }
         }
 
@@ -267,5 +285,52 @@ export class KnowledgeBaseManager {
       }
     }
     return content.slice(0, 200);
+  }
+
+  /**
+   * Parse a leading YAML frontmatter block (`---` ... `---`) into a
+   * key/value map and return the remaining body. No-op (meta empty, body
+   * unchanged) when the file has no frontmatter or an unterminated opener.
+   * Keys are lower-cased; quoted values are stripped. Dependency-free.
+   */
+  private parseFrontmatter(content: string): {
+    meta: Record<string, string>;
+    body: string;
+  } {
+    const lines = content.split('\n');
+    if (lines[0]?.trim() !== '---') {
+      return { meta: {}, body: content };
+    }
+    let endIndex = -1;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---') {
+        endIndex = i;
+        break;
+      }
+    }
+    if (endIndex === -1) {
+      // Opening '---' without a closing delimiter is not frontmatter.
+      return { meta: {}, body: content };
+    }
+    const meta: Record<string, string> = {};
+    for (let i = 1; i < endIndex; i++) {
+      const colonIndex = lines[i].indexOf(':');
+      if (colonIndex === -1) {
+        continue;
+      }
+      const key = lines[i].slice(0, colonIndex).trim().toLowerCase();
+      let value = lines[i].slice(colonIndex + 1).trim();
+      if (
+        value.length >= 2 &&
+        ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'")))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (key.length > 0) {
+        meta[key] = value;
+      }
+    }
+    return { meta, body: lines.slice(endIndex + 1).join('\n') };
   }
 }

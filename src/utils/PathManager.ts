@@ -252,6 +252,14 @@ export class PathManager {
       const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
         execFile('reg', ['query', key, '/v', valueName], { timeout: 5000 }, (error, stdout, stderr) => {
           if (error) {
+            // `reg query` exits with code 1 when the key/value is not present —
+            // an expected miss (we fall through to other detection strategies),
+            // not an error worth warning about.
+            const code = (error as { code?: unknown }).code;
+            if (code === 1) {
+              resolve({ stdout, stderr });
+              return;
+            }
             reject(error);
             return;
           }

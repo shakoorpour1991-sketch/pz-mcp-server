@@ -152,10 +152,20 @@ function dbStats() {
       }
       out.references = db.prepare('SELECT COUNT(*) AS c FROM "references"').get().c;
       out.mods = db.prepare('SELECT COUNT(*) AS c FROM mods').get().c;
-    } catch { /* tables not created yet */ }
+    } catch (err) {
+      // "no such table" just means parse_game_files has not run yet - keep
+      // the graceful zeros quietly (telemetry polls every 2s). Anything else
+      // (e.g. a corrupted DB) is a real SQL error: surface it on stderr.
+      const msg = err && err.message ? err.message : String(err);
+      if (!/no such table/i.test(msg)) console.error(`[bridge] dbStats query failed: ${msg}`);
+    }
     db.close();
     return out;
-  } catch { return null; }
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    console.error(`[bridge] dbStats: cannot open ${DB_PATH}: ${msg}`);
+    return null;
+  }
 }
 
 function childMemoryMB() {

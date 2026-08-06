@@ -19,10 +19,10 @@ It also indexes a local markdown "modding knowledge base" into FTS5.
 - **ZERO native dependencies**: runtime deps are only `@modelcontextprotocol/sdk` 1.30,
   `commander`, `pino`, `zod`. Database is the **built-in `node:sqlite`** module.
 - Tests: **Jest 29** run via `node --experimental-vm-modules node_modules/jest/bin/jest.js`.
-- **66 tests, 6 suites** (20 integration + 46 unit). Lint: ESLint (src only).
+- **76 tests, 6 suites**. Lint: ESLint (src only).
 - Platform: Windows 11 host; CI = GitHub Actions (ubuntu + windows, Node 22 only).
 
-## Architecture (src/, 9 files — the whole source)
+## Architecture (src/, 10 files — the whole source)
 
 | File | Responsibility | Key exports |
 |---|---|---|
@@ -30,7 +30,8 @@ It also indexes a local markdown "modding knowledge base" into FTS5.
 | `src/parsers/ProjectZomboidParser.ts` | Parse PZ game files (items, recipes, evolvedrecipes, sounds, vehicles, fixing) + mod directories into the DB | `parseGameFiles`, `parseModDirectory`, `extractReferences` |
 | `src/generators/ScriptGenerator.ts` | Template-based script generation | `generateItem`, `generateRecipe`, `generateEvolvedRecipe`, `generateFixing`, `generateSound`, `generateVehicle`, `formatPropertyValue` |
 | `src/validation/ValidationEngine.ts` | Script syntax + reference validation | `validateScript`, `checkReferences`, `parseValue` |
-| `src/database/DatabaseManager.ts` | SQLite layer via **`node:sqlite`** | tables: items, recipes, sounds, vehicles, evolvedrecipes, fixing, references; FTS5 |
+| `src/utils/scriptSyntax.ts` | Shared script-property parsing used by parser, validator, generator | `matchPropertyLine`, `parseScriptValue`, `formatScriptValue` |
+| `src/database/DatabaseManager.ts` | SQLite layer via **`node:sqlite`** | tables: `items` (single table, `type` column), `"references"`, `mods`; FTS5 |
 | `src/knowledge/KnowledgeBaseManager.ts` | Markdown KB indexing/search (FTS5 + bm25) | `indexKnowledgeBase`, `searchKnowledgeBase`, `listTopics`, `getTopic` |
 | `src/analyzers/ModAnalyzer.ts` | Mod analysis: structure, Lua syntax, balance, deprecated APIs | `analyzeMod` |
 | `src/utils/PathManager.ts` | Game install detection + path validation | `validateInputPath`, `detectProjectZomboidPath`, `detectAllInstallations`, `resolvePathWithPriority` |
@@ -39,7 +40,7 @@ It also indexes a local markdown "modding knowledge base" into FTS5.
 ## MCP surface (ground truth from src/index.ts)
 
 Tools (snake_case names):
-- `search_vanilla` — FTS over vanilla data; filters: type (item/recipe/sound/vehicle/all), category, tags, metalValueMin/Max, attachmentType, limit
+- `search_vanilla` — FTS over vanilla data; filters: type (item/recipe/sound/vehicle/evolvedrecipe/fixing/all), category, tags, metalValueMin/Max, attachmentType, limit
 - `generate_script` — type (item/recipe/evolvedrecipe/fixing/sound/vehicle), name, properties (record), module (default "Base")
 - `validate_script` — content, type, strict (default false)
 - `check_references` — references (string[]), type (item/sound/sprite/all, default all)
@@ -47,15 +48,17 @@ Tools (snake_case names):
 - `parse_game_files` — gamePath (optional, auto-detect), forceReparse (false)
 - `index_knowledge_base` — path (default `D:\PZ-Modding\Documentation` or `PZ_MCP_KB_PATH`), overwrite (true)
 - `search_knowledge_base` — query, topic, limit (default 10)
-- `list_knowledge_topics` — path (accepted, currently ignored by implementation)
+- `list_knowledge_topics` — no parameters
 
 Prompts (kebab-case): `create-item`, `analyze-mod`, `search-game`, `validate-script`.
 Resources: `knowledge://<topic>` URIs exposing indexed KB docs.
 
 ## Data model (data/pz_database.db)
 
-Parsed B42.20 game data (real parse): ~9,400 rows — items ~5,100 / recipes ~970 /
-sounds ~3,000 / vehicles ~240 / evolvedrecipes 24 / fixing 29; references ~8,100.
+Single **`items`** table (18 cols incl. rich metadata; `type` column: item/sound/recipe/
+vehicle/fixing/evolvedrecipe) + FTS5 `items_fts` (external content) + `"references"` +
+`mods`. Parsed B42.20 data (real parse): 9,383 items rows — item 5,088 · sound 3,036 ·
+recipe 965 · vehicle 241 · fixing 29 · evolvedrecipe 24; references 8,133.
 Knowledge base: FTS5 + bm25 ranking (`ORDER BY rank ASC`).
 
 ## Critical conventions (violating these breaks the build/contract)
@@ -75,7 +78,7 @@ Knowledge base: FTS5 + bm25 ranking (`ORDER BY rank ASC`).
 ```
 npm run build    # tsc strict
 npm run lint     # eslint src/**/*.ts
-npm test         # build + jest (66 tests, 6 suites)
+npm test         # build + jest (76 tests, 6 suites)
 npm run format   # prettier
 npm run dashboard  # Control Deck UI (admin/bridge.mjs, port 8787)
 ```
