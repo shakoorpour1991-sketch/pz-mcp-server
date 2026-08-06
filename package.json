@@ -20,7 +20,7 @@
     "parser",
     "sqlite"
   ],
-  "author": "MiniMax Agent",
+  "author": "shakoorpour1991-sketch",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -41,14 +41,14 @@
     "typescript": "^5.3.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.5.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/minimax/pz-mcp-server.git"
+    "url": "https://github.com/shakoorpour1991-sketch/pz-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/minimax/pz-mcp-server/issues"
+    "url": "https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues"
   },
-  "homepage": "https://github.com/minimax/pz-mcp-server#readme"
+  "homepage": "https://github.com/shakoorpour1991-sketch/pz-mcp-server#readme"
 }

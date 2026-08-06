@@ -1,4 +1,5 @@
-import { DatabaseManager } from '../database/DatabaseManager.js';
+import { DatabaseManager } from "../database/DatabaseManager.js";
+import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -12,13 +13,13 @@ export interface ValidationError {
   line: number;
   column?: number;
   message: string;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   code: string;
   suggestion?: string;
 }
 
 export interface ValidationWarning extends ValidationError {
-  severity: 'warning';
+  severity: "warning";
 }
 
 export interface ReferenceValidationResult {
@@ -30,7 +31,7 @@ export interface ReferenceValidationResult {
 }
 
 interface PropertyValidator {
-  type: 'number' | 'boolean' | 'enum' | 'string' | 'reference';
+  type: "number" | "boolean" | "enum" | "string" | "reference";
   min?: number;
   max?: number;
   values?: string[];
@@ -39,47 +40,82 @@ interface PropertyValidator {
 
 export class ValidationEngine {
   private db: DatabaseManager;
-  
+
   // Define required properties for different block types
   private readonly requiredProperties = {
-    item: ['Type', 'DisplayName'],
-    recipe: ['Result'],
-    fixing: ['Require', 'Fixer'],
-    sound: ['category'],
-    vehicle: ['template'],
-    evolvedrecipe: ['BaseItem', 'ResultItem'],
+    item: ["Type", "DisplayName"],
+    recipe: ["Result"],
+    fixing: ["Require", "Fixer"],
+    sound: ["category"],
+    // B42 vehicle scripts have no "template" property and the generator's
+    // vehicle output does not emit one, so it must not be required (F7).
+    vehicle: [],
+    // Evolved recipes must identify a base item; "BaseItem" (what the
+    // generator emits) or legacy "ResultItem" both satisfy it — enforced in
+    // validateEvolvedRecipeBlock (F8).
+    evolvedrecipe: [],
   };
 
   // Define valid property types and ranges
   private readonly propertyValidators: Record<string, PropertyValidator> = {
     // Numeric properties with ranges
-    Weight: { type: 'number', min: 0, max: 1000 },
-    MaxDamage: { type: 'number', min: 0, max: 100 },
-    MinDamage: { type: 'number', min: 0, max: 100 },
-    ConditionMax: { type: 'number', min: 1, max: 100 },
-    SwingTime: { type: 'number', min: 0.1, max: 10 },
-    Time: { type: 'number', min: 1, max: 10000 },
-    
+    Weight: { type: "number", min: 0, max: 1000 },
+    MaxDamage: { type: "number", min: 0, max: 100 },
+    MinDamage: { type: "number", min: 0, max: 100 },
+    ConditionMax: { type: "number", min: 1, max: 100 },
+    SwingTime: { type: "number", min: 0.1, max: 10 },
+    Time: { type: "number", min: 1, max: 10000 },
+
     // Boolean properties
-    CanBeEquipped: { type: 'boolean' },
-    KnockBackOnNoDeath: { type: 'boolean' },
-    IsCookable: { type: 'boolean' },
-    
+    CanBeEquipped: { type: "boolean" },
+    KnockBackOnNoDeath: { type: "boolean" },
+    IsCookable: { type: "boolean" },
+
     // String properties with valid values
-    Type: { type: 'enum', values: ['Normal', 'Weapon', 'Food', 'Literature', 'Container', 'Clothing', 'AlarmClock', 'Key', 'Drainable', 'Moveable'] },
-    DisplayCategory: { type: 'enum', values: ['Weapon', 'Food', 'Medical', 'Literature', 'Tool', 'Clothing', 'Container', 'Electronics', 'Survival'] },
-    DamageCategory: { type: 'enum', values: ['Slash', 'Stab', 'Blunt', 'Burn', 'Bite'] },
-    Categories: { type: 'string' }, // Can be multiple values separated by ;
-    
+    Type: {
+      type: "enum",
+      values: [
+        "Normal",
+        "Weapon",
+        "Food",
+        "Literature",
+        "Container",
+        "Clothing",
+        "AlarmClock",
+        "Key",
+        "Drainable",
+        "Moveable",
+      ],
+    },
+    DisplayCategory: {
+      type: "enum",
+      values: [
+        "Weapon",
+        "Food",
+        "Medical",
+        "Literature",
+        "Tool",
+        "Clothing",
+        "Container",
+        "Electronics",
+        "Survival",
+      ],
+    },
+    DamageCategory: {
+      type: "enum",
+      values: ["Slash", "Stab", "Blunt", "Burn", "Bite"],
+    },
+    Categories: { type: "string" }, // Can be multiple values separated by ;
+
     // Item references
-    Icon: { type: 'reference', referenceType: 'sprite' },
-    WeaponSprite: { type: 'reference', referenceType: 'sprite' },
-    AttachmentType: { type: 'reference', referenceType: 'item' },
-    
+    Icon: { type: "reference", referenceType: "sprite" },
+    WeaponSprite: { type: "reference", referenceType: "sprite" },
+    AttachmentType: { type: "reference", referenceType: "item" },
+
     // Sound references
-    SwingSound: { type: 'reference', referenceType: 'sound' },
-    HitSound: { type: 'reference', referenceType: 'sound' },
-    BreakSound: { type: 'reference', referenceType: 'sound' },
+    SwingSound: { type: "reference", referenceType: "sound" },
+    HitSound: { type: "reference", referenceType: "sound" },
+    BreakSound: { type: "reference", referenceType: "sound" },
   };
 
   constructor(db: DatabaseManager) {
@@ -87,11 +123,10 @@ export class ValidationEngine {
   }
 
   async validateScript(
-    content: string, 
-    expectedType?: string, 
-    strict: boolean = false
+    content: string,
+    expectedType?: string,
+    strict: boolean = false,
   ): Promise<ValidationResult> {
-    
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -102,7 +137,7 @@ export class ValidationEngine {
 
     try {
       const blocks = this.parseScriptBlocks(content);
-      
+
       for (const block of blocks) {
         await this.validateBlock(block, result, strict);
       }
@@ -110,7 +145,7 @@ export class ValidationEngine {
       // Additional validations
       this.validateModuleStructure(content, result);
       this.validateSyntax(content, result);
-      
+
       // Type consistency check
       if (expectedType) {
         this.validateTypeConsistency(blocks, expectedType, result);
@@ -119,13 +154,12 @@ export class ValidationEngine {
       // Calculate final validity and score
       result.isValid = result.errors.length === 0;
       result.score = this.calculateQualityScore(result);
-
     } catch (error) {
       result.errors.push({
         line: 0,
         message: `Parse error: ${error instanceof Error ? error.message : String(error)}`,
-        severity: 'error',
-        code: 'PARSE_ERROR',
+        severity: "error",
+        code: "PARSE_ERROR",
       });
       result.isValid = false;
       result.score = 0;
@@ -135,10 +169,9 @@ export class ValidationEngine {
   }
 
   async checkReferences(
-    references: string[], 
-    type: string = 'all'
+    references: string[],
+    type: string = "all",
   ): Promise<ReferenceValidationResult[]> {
-    
     const results: ReferenceValidationResult[] = [];
 
     for (const reference of references) {
@@ -151,18 +184,20 @@ export class ValidationEngine {
 
       try {
         // Check if reference exists in database
-        const exists = await this.db.checkReference(reference, type === 'all' ? undefined : type);
-        
+        const exists = await this.db.checkReference(
+          reference,
+          type === "all" ? undefined : type,
+        );
+
         if (exists) {
           result.isValid = true;
         } else {
           result.error = `Reference '${reference}' not found`;
-          
+
           // Get similar references for suggestions
           const suggestions = await this.db.getSimilarItems(reference, 5);
           result.suggestions = suggestions;
         }
-
       } catch (error) {
         result.error = `Validation error: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -181,10 +216,9 @@ export class ValidationEngine {
     endLine: number;
     rawContent: string;
   }> {
-    
     const blocks: Array<any> = [];
-    const lines = content.split('\n');
-    
+    const lines = content.split("\n");
+
     let currentBlock: any = null;
     let braceLevel = 0;
     let inModule = false;
@@ -194,12 +228,17 @@ export class ValidationEngine {
       const lineNumber = i + 1;
 
       // Skip empty lines and comments
-      if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) {
+      if (
+        !line ||
+        line.startsWith("//") ||
+        line.startsWith("/*") ||
+        line.startsWith("*")
+      ) {
         continue;
       }
 
       // Handle module declarations
-      if (line.startsWith('module ') && !inModule) {
+      if (line.startsWith("module ") && !inModule) {
         inModule = true;
         continue;
       }
@@ -210,34 +249,47 @@ export class ValidationEngine {
       braceLevel += openBraces - closeBraces;
 
       // Check for block start
-      const blockMatch = line.match(/^(item|recipe|evolvedrecipe|fixing|sound|vehicle)\s+([^\s{]+)/);
+      // "craftRecipe" (capital R) is the real B42 recipe keyword; normalize
+      // it (and "craftrecipe") to type 'recipe' so B42 scripts validate like
+      // legacy ones (F5). Names may contain spaces (B42: "fixing Fix
+      // Pistol"), so capture the remainder up to the '{'.
+      const blockMatch = line.match(
+        /^(item|recipe|craftRecipe|craftrecipe|evolvedrecipe|fixing|sound|vehicle)\s+([^{]+)/,
+      );
       if (blockMatch && !currentBlock) {
         currentBlock = {
-          type: blockMatch[1],
-          name: blockMatch[2],
+          type:
+            blockMatch[1].toLowerCase() === "craftrecipe"
+              ? "recipe"
+              : blockMatch[1],
+          name: blockMatch[2].trim(),
           properties: {},
           startLine: lineNumber,
           endLine: 0,
-          rawContent: '',
+          rawContent: "",
         };
         continue;
       }
 
       // Parse properties within block
       if (currentBlock && braceLevel > 0) {
-        currentBlock.rawContent += line + '\n';
+        currentBlock.rawContent += line + "\n";
         this.parseProperty(line, currentBlock.properties, currentBlock.type);
       }
 
       // Check if block is complete
-      if (currentBlock && braceLevel === (inModule ? 1 : 0) && line.includes('}')) {
+      if (
+        currentBlock &&
+        braceLevel === (inModule ? 1 : 0) &&
+        line.includes("}")
+      ) {
         currentBlock.endLine = lineNumber;
         blocks.push(currentBlock);
         currentBlock = null;
       }
 
       // Check if exiting module
-      if (inModule && braceLevel === 0 && line.includes('}')) {
+      if (inModule && braceLevel === 0 && line.includes("}")) {
         inModule = false;
       }
     }
@@ -245,79 +297,85 @@ export class ValidationEngine {
     return blocks;
   }
 
-  private parseProperty(line: string, properties: Record<string, any>, blockType: string): void {
-    // Different block types use different syntax
-    let match: RegExpMatchArray | null = null;
-
-    if (blockType === 'item' || blockType === 'sound' || blockType === 'vehicle') {
-      // Use "property = value," format
-      match = line.match(/^\s*(\w+)\s*=\s*([^,]+),?\s*$/);
-    } else if (blockType === 'recipe' || blockType === 'evolvedrecipe') {
-      // Use "property:value," format
-      match = line.match(/^\s*(\w+)\s*:\s*([^,]+),?\s*$/);
-    } else if (blockType === 'fixing') {
+  private parseProperty(
+    line: string,
+    properties: Record<string, any>,
+    blockType: string,
+  ): void {
+    if (blockType === "fixing") {
       // Special handling for fixing blocks
-      if (line.includes('Require :')) {
-        match = line.match(/Require\s*:\s*([^,]+),?\s*$/);
-        if (match) {
-          properties.Require = match[1].trim();
+      if (line.includes("Require :")) {
+        const requireMatch = line.match(/Require\s*:\s*([^,]+),?\s*$/);
+        if (requireMatch) {
+          properties.Require = requireMatch[1].trim();
         }
         return;
-      } else if (line.includes('Fixer :')) {
-        match = line.match(/Fixer\s*:\s*([^,]+),?\s*$/);
-        if (match) {
+      } else if (line.includes("Fixer :")) {
+        const fixerMatch = line.match(/Fixer\s*:\s*([^,]+),?\s*$/);
+        if (fixerMatch) {
           if (!properties.Fixer) properties.Fixer = [];
-          properties.Fixer.push(match[1].trim());
+          properties.Fixer.push(fixerMatch[1].trim());
         }
         return;
       }
+      return;
+    }
+
+    // Shared "key = value," / "key:value," matching (F10). Recipes accept
+    // both separators: legacy B41 uses "property:value,", B42 craftRecipe
+    // uses "property = value," (F6).
+    let match: { key: string; value: string } | null = null;
+    if (
+      blockType === "item" ||
+      blockType === "sound" ||
+      blockType === "vehicle"
+    ) {
+      // Use "property = value," format
+      match = matchPropertyLine(line, "=");
+    } else if (blockType === "recipe") {
+      match = matchPropertyLine(line, "[:=]");
+    } else if (blockType === "evolvedrecipe") {
+      // Use "property:value," format
+      match = matchPropertyLine(line, ":");
     }
 
     if (match) {
-      const [, key, value] = match;
-      properties[key] = this.parseValue(value.trim());
+      properties[match.key] = this.parseValue(match.value);
     }
   }
 
   private parseValue(value: string): any {
-    // Remove quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || 
-        (value.startsWith("'") && value.endsWith("'"))) {
-      return value.slice(1, -1);
-    }
-
-    // Parse numbers
-    if (/^\d+$/.test(value)) {
-      return parseInt(value, 10);
-    }
-    
-    if (/^\d*\.\d+$/.test(value)) {
-      return parseFloat(value);
-    }
-
-    // Parse booleans
-    if (value.toLowerCase() === 'true') return true;
-    if (value.toLowerCase() === 'false') return false;
-
-    return value;
+    // Shared with the game-file parser so values are typed identically (F10).
+    return parseScriptValue(value);
   }
 
   private async validateBlock(
-    block: any, 
-    result: ValidationResult, 
-    strict: boolean
+    block: any,
+    result: ValidationResult,
+    strict: boolean,
   ): Promise<void> {
-    
     // Check required properties
-    const required = this.requiredProperties[block.type as keyof typeof this.requiredProperties];
+    const required =
+      this.requiredProperties[
+        block.type as keyof typeof this.requiredProperties
+      ];
     if (required) {
       for (const prop of required) {
         if (!block.properties[prop]) {
+          // B42 craftRecipe blocks declare their result in an "outputs"
+          // sub-block instead of a "Result" property (F5/F9).
+          if (
+            block.type === "recipe" &&
+            prop === "Result" &&
+            /\boutputs\b/.test(block.rawContent || "")
+          ) {
+            continue;
+          }
           result.errors.push({
             line: block.startLine,
             message: `Missing required property: ${prop}`,
-            severity: 'error',
-            code: 'MISSING_PROPERTY',
+            severity: "error",
+            code: "MISSING_PROPERTY",
             suggestion: `Add "${prop} = <value>," to the ${block.type} block`,
           });
         }
@@ -334,34 +392,34 @@ export class ValidationEngine {
   }
 
   private async validateProperty(
-    key: string, 
-    value: any, 
-    block: any, 
-    result: ValidationResult, 
-    strict: boolean
+    key: string,
+    value: any,
+    block: any,
+    result: ValidationResult,
+    strict: boolean,
   ): Promise<void> {
-    
-    const validator = this.propertyValidators[key as keyof typeof this.propertyValidators];
+    const validator =
+      this.propertyValidators[key as keyof typeof this.propertyValidators];
     if (!validator) {
       if (strict) {
         result.warnings.push({
           line: block.startLine,
           message: `Unknown property: ${key}`,
-          severity: 'warning',
-          code: 'UNKNOWN_PROPERTY',
+          severity: "warning",
+          code: "UNKNOWN_PROPERTY",
         });
       }
       return;
     }
 
     // Type validation
-    if (validator.type === 'number') {
-      if (typeof value !== 'number') {
+    if (validator.type === "number") {
+      if (typeof value !== "number") {
         result.errors.push({
           line: block.startLine,
           message: `Property ${key} must be a number, got ${typeof value}`,
-          severity: 'error',
-          code: 'INVALID_TYPE',
+          severity: "error",
+          code: "INVALID_TYPE",
         });
         return;
       }
@@ -371,8 +429,8 @@ export class ValidationEngine {
         result.errors.push({
           line: block.startLine,
           message: `Property ${key} value ${value} is below minimum ${validator.min}`,
-          severity: 'error',
-          code: 'VALUE_OUT_OF_RANGE',
+          severity: "error",
+          code: "VALUE_OUT_OF_RANGE",
         });
       }
 
@@ -380,45 +438,48 @@ export class ValidationEngine {
         result.errors.push({
           line: block.startLine,
           message: `Property ${key} value ${value} is above maximum ${validator.max}`,
-          severity: 'error',
-          code: 'VALUE_OUT_OF_RANGE',
+          severity: "error",
+          code: "VALUE_OUT_OF_RANGE",
         });
       }
     }
 
-    if (validator.type === 'boolean') {
-      if (typeof value !== 'boolean') {
+    if (validator.type === "boolean") {
+      if (typeof value !== "boolean") {
         result.errors.push({
           line: block.startLine,
           message: `Property ${key} must be TRUE or FALSE, got ${value}`,
-          severity: 'error',
-          code: 'INVALID_TYPE',
+          severity: "error",
+          code: "INVALID_TYPE",
         });
       }
     }
 
-    if (validator.type === 'enum') {
+    if (validator.type === "enum") {
       if (!validator.values?.includes(String(value))) {
         result.errors.push({
           line: block.startLine,
-          message: `Property ${key} has invalid value "${value}". Valid values: ${validator.values?.join(', ')}`,
-          severity: 'error',
-          code: 'INVALID_ENUM_VALUE',
+          message: `Property ${key} has invalid value "${value}". Valid values: ${validator.values?.join(", ")}`,
+          severity: "error",
+          code: "INVALID_ENUM_VALUE",
         });
       }
     }
 
     // Reference validation
-    if (validator.type === 'reference') {
-      const referenceResults = await this.checkReferences([String(value)], validator.referenceType);
+    if (validator.type === "reference") {
+      const referenceResults = await this.checkReferences(
+        [String(value)],
+        validator.referenceType,
+      );
       const refResult = referenceResults[0];
-      
+
       if (!refResult.isValid) {
         const warning: ValidationWarning = {
           line: block.startLine,
           message: `Reference "${value}" not found in game database`,
-          severity: 'warning',
-          code: 'INVALID_REFERENCE',
+          severity: "warning",
+          code: "INVALID_REFERENCE",
         };
         if (refResult.suggestions.length > 0) {
           warning.suggestion = `Did you mean: ${refResult.suggestions[0]}?`;
@@ -429,57 +490,62 @@ export class ValidationEngine {
   }
 
   private async validateBlockSpecific(
-    block: any, 
-    result: ValidationResult, 
-    _strict: boolean
+    block: any,
+    result: ValidationResult,
+    _strict: boolean,
   ): Promise<void> {
-    
     switch (block.type) {
-      case 'item':
+      case "item":
         this.validateItemBlock(block, result);
         break;
-      case 'recipe':
+      case "recipe":
         await this.validateRecipeBlock(block, result);
         break;
-      case 'fixing':
+      case "fixing":
         this.validateFixingBlock(block, result);
         break;
-      case 'sound':
+      case "sound":
         this.validateSoundBlock(block, result);
+        break;
+      case "evolvedrecipe":
+        this.validateEvolvedRecipeBlock(block, result);
         break;
     }
   }
 
   private validateItemBlock(block: any, result: ValidationResult): void {
     // Weapon-specific validations
-    if (block.properties.Type === 'Weapon') {
+    if (block.properties.Type === "Weapon") {
       if (!block.properties.MaxDamage && !block.properties.MinDamage) {
         result.warnings.push({
           line: block.startLine,
-          message: 'Weapon items should have damage properties (MaxDamage, MinDamage)',
-          severity: 'warning',
-          code: 'MISSING_WEAPON_STATS',
+          message:
+            "Weapon items should have damage properties (MaxDamage, MinDamage)",
+          severity: "warning",
+          code: "MISSING_WEAPON_STATS",
         });
       }
 
       if (!block.properties.Categories) {
         result.warnings.push({
           line: block.startLine,
-          message: 'Weapon items should specify Categories (e.g., SmallBlade, LongBlade, Blunt)',
-          severity: 'warning',
-          code: 'MISSING_WEAPON_CATEGORY',
+          message:
+            "Weapon items should specify Categories (e.g., SmallBlade, LongBlade, Blunt)",
+          severity: "warning",
+          code: "MISSING_WEAPON_CATEGORY",
         });
       }
     }
 
     // Food-specific validations
-    if (block.properties.Type === 'Food') {
+    if (block.properties.Type === "Food") {
       if (!block.properties.HungerChange && !block.properties.Calories) {
         result.warnings.push({
           line: block.startLine,
-          message: 'Food items should have nutrition properties (HungerChange, Calories)',
-          severity: 'warning',
-          code: 'MISSING_FOOD_STATS',
+          message:
+            "Food items should have nutrition properties (HungerChange, Calories)",
+          severity: "warning",
+          code: "MISSING_FOOD_STATS",
         });
       }
     }
@@ -489,22 +555,28 @@ export class ValidationEngine {
       result.warnings.push({
         line: block.startLine,
         message: `Item weight ${block.properties.Weight} seems very high for normal gameplay`,
-        severity: 'warning',
-        code: 'BALANCE_WARNING',
+        severity: "warning",
+        code: "BALANCE_WARNING",
       });
     }
   }
 
-  private async validateRecipeBlock(block: any, result: ValidationResult): Promise<void> {
+  private async validateRecipeBlock(
+    block: any,
+    result: ValidationResult,
+  ): Promise<void> {
     // Check if result item exists or is defined
     if (block.properties.Result) {
-      const resultCheck = await this.checkReferences([block.properties.Result], 'item');
+      const resultCheck = await this.checkReferences(
+        [block.properties.Result],
+        "item",
+      );
       if (!resultCheck[0].isValid) {
         result.warnings.push({
           line: block.startLine,
           message: `Recipe result "${block.properties.Result}" not found in game database`,
-          severity: 'warning',
-          code: 'UNKNOWN_RESULT_ITEM',
+          severity: "warning",
+          code: "UNKNOWN_RESULT_ITEM",
         });
       }
     }
@@ -514,8 +586,8 @@ export class ValidationEngine {
       result.warnings.push({
         line: block.startLine,
         message: `Recipe time ${block.properties.Time} seems very long (over 16 minutes)`,
-        severity: 'warning',
-        code: 'BALANCE_WARNING',
+        severity: "warning",
+        code: "BALANCE_WARNING",
       });
     }
   }
@@ -524,18 +596,18 @@ export class ValidationEngine {
     if (!block.properties.Require) {
       result.errors.push({
         line: block.startLine,
-        message: 'Fixing block must specify a required item to repair',
-        severity: 'error',
-        code: 'MISSING_REQUIRED_ITEM',
+        message: "Fixing block must specify a required item to repair",
+        severity: "error",
+        code: "MISSING_REQUIRED_ITEM",
       });
     }
 
     if (!block.properties.Fixer || block.properties.Fixer.length === 0) {
       result.errors.push({
         line: block.startLine,
-        message: 'Fixing block must specify at least one fixer option',
-        severity: 'error',
-        code: 'MISSING_FIXER',
+        message: "Fixing block must specify at least one fixer option",
+        severity: "error",
+        code: "MISSING_FIXER",
       });
     }
   }
@@ -544,33 +616,54 @@ export class ValidationEngine {
     if (!block.properties.category) {
       result.errors.push({
         line: block.startLine,
-        message: 'Sound block must specify a category',
-        severity: 'error',
-        code: 'MISSING_SOUND_CATEGORY',
+        message: "Sound block must specify a category",
+        severity: "error",
+        code: "MISSING_SOUND_CATEGORY",
       });
     }
   }
 
-  private validateModuleStructure(content: string, result: ValidationResult): void {
-    if (!content.includes('module ')) {
+  private validateEvolvedRecipeBlock(
+    block: any,
+    result: ValidationResult,
+  ): void {
+    // B42 evolved recipes identify the base item via "BaseItem"; legacy
+    // scripts used "ResultItem". Either satisfies the requirement (F8).
+    if (!block.properties.BaseItem && !block.properties.ResultItem) {
+      result.errors.push({
+        line: block.startLine,
+        message: "Evolved recipe must specify BaseItem (or legacy ResultItem)",
+        severity: "error",
+        code: "MISSING_BASE_ITEM",
+        suggestion: 'Add "BaseItem: <Module.Item>," to the evolvedrecipe block',
+      });
+    }
+  }
+
+  private validateModuleStructure(
+    content: string,
+    result: ValidationResult,
+  ): void {
+    if (!content.includes("module ")) {
       result.warnings.push({
         line: 1,
-        message: 'Script should be wrapped in a module block (e.g., "module Base { ... }")',
-        severity: 'warning',
-        code: 'MISSING_MODULE',
+        message:
+          'Script should be wrapped in a module block (e.g., "module Base { ... }")',
+        severity: "warning",
+        code: "MISSING_MODULE",
       });
     }
   }
 
   private validateSyntax(content: string, result: ValidationResult): void {
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     let braceLevel = 0;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
 
-      if (!line || line.startsWith('//') || line.startsWith('/*')) continue;
+      if (!line || line.startsWith("//") || line.startsWith("/*")) continue;
 
       // Count braces
       const openBraces = (line.match(/\{/g) || []).length;
@@ -582,8 +675,8 @@ export class ValidationEngine {
         result.errors.push({
           line: lineNumber,
           message: 'Unexpected closing brace "}"',
-          severity: 'error',
-          code: 'SYNTAX_ERROR',
+          severity: "error",
+          code: "SYNTAX_ERROR",
         });
         braceLevel = 0; // Reset to continue parsing
       }
@@ -594,25 +687,24 @@ export class ValidationEngine {
       result.errors.push({
         line: lines.length,
         message: `Missing ${braceLevel} closing brace(s) "}"`,
-        severity: 'error',
-        code: 'SYNTAX_ERROR',
+        severity: "error",
+        code: "SYNTAX_ERROR",
       });
     }
   }
 
   private validateTypeConsistency(
-    blocks: any[], 
-    expectedType: string, 
-    result: ValidationResult
+    blocks: any[],
+    expectedType: string,
+    result: ValidationResult,
   ): void {
-    
     for (const block of blocks) {
       if (block.type !== expectedType) {
         result.warnings.push({
           line: block.startLine,
           message: `Expected ${expectedType} block but found ${block.type}`,
-          severity: 'warning',
-          code: 'TYPE_MISMATCH',
+          severity: "warning",
+          code: "TYPE_MISMATCH",
         });
       }
     }

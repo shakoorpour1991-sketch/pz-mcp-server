@@ -19,8 +19,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { pathToFileURL } from "url";
-import { existsSync } from "fs";
+import { pathToFileURL, fileURLToPath } from "url";
+import { existsSync, readFileSync } from "fs";
+import { dirname, resolve } from "path";
 import { DatabaseManager } from "./database/DatabaseManager.js";
 import { ProjectZomboidParser } from "./parsers/ProjectZomboidParser.js";
 import { ModAnalyzer } from "./analyzers/ModAnalyzer.js";
@@ -30,10 +31,15 @@ import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
 import logger from "./utils/logger.js";
 
+// Read the server version from package.json (audit minor: was hardcoded '1.1.0')
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SERVER_VERSION =
+  JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8')).version || '1.1.0';
+
 const server = new Server(
   {
     name: "pz-mcp-server",
-    version: "1.1.0",
+    version: SERVER_VERSION,
   },
   {
     capabilities: {
@@ -84,7 +90,7 @@ async function initializeServer() {
 // Schema definitions for tool inputs
 const SearchVanillaSchema = z.object({
   query: z.string().describe("Search query for vanilla game content"),
-  type: z.enum(["item", "recipe", "sound", "vehicle", "all"]).optional().describe("Filter by content type"),
+  type: z.enum(["item", "recipe", "sound", "vehicle", "evolvedrecipe", "fixing", "all"]).optional().describe("Filter by content type"),
   category: z.string().optional().describe("Filter by item category"),
   tags: z.string().optional().describe("Filter by tags (comma-separated, matches if ANY tag present)"),
   metalValueMin: z.number().optional().describe("Minimum metal value"),
@@ -134,9 +140,8 @@ const SearchKnowledgeBaseSchema = z.object({
   limit: z.number().min(1).max(100).default(10).describe("Maximum number of results"),
 });
 
-const ListKnowledgeTopicsSchema = z.object({
-  path: z.string().optional().describe("Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)"),
-});
+// 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
+const ListKnowledgeTopicsSchema = z.object({});
 
 // Tool definitions
 server.setRequestHandler(ListToolsRequestSchema, async () => {

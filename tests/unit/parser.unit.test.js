@@ -296,3 +296,120 @@ describe('ProjectZomboidParser', () => {
     });
   });
 });
+
+// ===========================================================================
+// M1 (F6/F9): B42 craftRecipe parsing — isolated DatabaseManager stub so the
+// refs context bucket (ingredient vs output) is captured directly.
+// ===========================================================================
+
+describe('M1 F6/F9: B42 craftRecipe parsing', () => {
+  let tmpDir;
+  let inserted;
+  let refs;
+  let dbStub;
+  let parser;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-mcp-m1-'));
+    inserted = [];
+    refs = [];
+    dbStub = {
+      insertItems: async (items) => {
+        inserted.push(...items);
+      },
+      addReference: async (id, ref, type, context) => {
+        refs.push({ id, ref, type, context });
+      },
+      getStats: async () => ({ total: 0 }),
+      clearDatabase: async () => {},
+    };
+    parser = new ProjectZomboidParser(dbStub);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const writeScript = (relPath, content) => {
+    const fullPath = path.join(tmpDir, relPath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, 'utf-8');
+  };
+
+  const b42Script = [
+    'module TestMod',
+    '{',
+    '    craftRecipe Make TestPlank',
+    '    {',
+    '        category = Carpenters,',
+    '        timedAction = SawLog,',
+    '        inputs',
+    '        {',
+    '            item 1 Base.HandSaw,',
+    '            item 2 [Base.Log;Base.WoodenStick],',
+    '        }',
+    '        outputs',
+    '        {',
+    '            item 2 Base.TestPlank,',
+    '        }',
+    '    }',
+    '}',
+  ].join('\n');
+
+  test('craftRecipe: "=" properties parsed, inputs stay ingredients, outputs land in outputs', async () => {
+    writeScript('media/scripts/crafting.txt', b42Script);
+    const results = await parser.parseModDirectory(tmpDir);
+    expect(results.errors).toEqual([]);
+    expect(results.recipeCount).toBe(1);
+
+    const recipe = inserted.find((i) => i.type === 'recipe');
+    expect(recipe).toBeDefined();
+    // F6: B42 "key = value" properties
+    expect(recipe.properties.category).toBe('Carpenters');
+    expect(recipe.properties.timedAction).toBe('SawLog');
+    // F9: bracket-alternative inputs remain excluded, plain inputs captured
+    expect(recipe.properties.ingredients).toEqual([{ item: 'Base.HandSaw', count: 1 }]);
+    // F9: outputs must land in outputs, not leak into ingredients
+    expect(recipe.properties.outputs).toEqual([{ item: 'Base.TestPlank', count: 2 }]);
+    expect(recipe.properties.ingredients.some((i) => i.item === 'Base.TestPlank')).toBe(false);
+  });
+
+  test('craftRecipe outputs are extracted as "output" references', async () => {
+    writeScript('media/scripts/crafting.txt', b42Script);
+    await parser.parseModDirectory(tmpDir);
+    expect(refs).toContainEqual(
+      expect.objectContaining({ ref: 'Base.TestPlank', type: 'item', context: 'output' })
+    );
+    expect(refs).toContainEqual(
+      expect.objectContaining({ ref: 'Base.HandSaw', type: 'item', context: 'ingredient' })
+    );
+  });
+
+  test('legacy B41 recipe blocks keep parsing (colon properties, =count ingredients)', async () => {
+    writeScript(
+      'media/scripts/recipes.txt',
+      [
+        'module TestMod',
+        '{',
+        '    recipe Make LegacyPlank',
+        '    {',
+        '        Base.Log=4,',
+        '        keep [Base.Saw],',
+        '        Result:Base.LegacyPlank=2,',
+        '        Time:150.0,',
+        '        Category:Carpentry,',
+        '    }',
+        '}',
+      ].join('\n')
+    );
+    const results = await parser.parseModDirectory(tmpDir);
+    expect(results.errors).toEqual([]);
+    expect(results.recipeCount).toBe(1);
+
+    const recipe = inserted.find((i) => i.type === 'recipe');
+    expect(recipe.properties.Result).toBe('Base.LegacyPlank=2');
+    expect(recipe.properties.Time).toBe(150);
+    expect(recipe.properties.ingredients).toEqual([{ item: 'Base.Log', count: 4 }]);
+    expect(recipe.properties.outputs).toBeUndefined();
+  });
+});

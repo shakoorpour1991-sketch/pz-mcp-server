@@ -1,96 +1,82 @@
-# FIX PLAN: pz-mcp-server (from audit.md)
-
-Date: 2026-08-04
-Reference: audit.md (repo root). Note: audit written BEFORE the Cloudflare removal —
-Cloudflare-specific items (workers-types, D1/KV, wrangler, worker auth, MCP-on-worker)
-are now MOOT. Everything else stands.
-
-## Current baseline (re-measured post-removal)
-
-- npm run build: 69 TS errors across 6 files:
-  - src/database/DatabaseManager.ts      37
-  - src/validation/ValidationEngine.ts   11
-  - src/analyzers/ModAnalyzer.ts         11
-  - src/generators/ScriptGenerator.ts     5
-  - src/index.ts                          3
-  - src/utils/PathManager.ts              2
-- npm test: 0 tests. npm run lint: no ESLint config.
-- sqlite3 dep is UNUSED in src/ (better-sqlite3 is the real DB) — safe to drop.
-- npm audit: 15 vulns (1 critical, 12 high) per audit.md.
-
-## Constraints
-
-- opencode quota: hard ~32 requests/window, machine-wide (verified: two fresh sessions
-  both hit ResourceExhausted 32/32). => opencode gets ONE small task per window, sized
-  to finish in ~15-25 requests. Everything else: Hermes (no quota).
-- Parallel: opencode works ONLY on non-src files (docs/root config), Hermes works ONLY
-  on src/ — zero file overlap, no merge conflicts.
-- Milestone discipline: build -> live-verify -> fix -> commit per milestone.
-
-## Execution mechanism
-
-- Orca orchestration Run for the whole effort; one Task per milestone.
-- opencode tasks: dispatched via `orca orchestration worker-start --task <id>
-  --worktree current --agent opencode`; supervised with `check --wait` for worker_done;
-  continuation via `orchestration send --to dispatch:<id>`.
-- Hermes track: executed directly in this session, same worktree, parallel with opencode.
-
+---
+name: orchestration
+description: >-
+  Use Orca orchestration for structured multi-agent coordination: threaded
+  messages, blocking ask/reply flows, task dispatch, worker_done/escalation
+  waits, task DAGs, decision gates, coordinator loops, or decomposing work
+  across agents. Use `orca-cli` instead for full ownership handoffs, including
+  requests phrased as "hand off", "handoff", "handover", "give this to another
+  agent", or "another worktree" when the user did not explicitly ask to
+  supervise, monitor, wait for results, or coordinate a DAG. Use `orca-cli` for
+  ordinary terminal control, lightweight terminal prompts, shell commands, Orca
+  worktree management, reading or waiting on terminals, and automation of the
+  browser embedded inside Orca. Use Computer Use for browser windows, webviews,
+  Orca app UI, or desktop UI outside Orca's embedded browser.
 ---
 
-## M0 — Baseline commit (Hermes)
-1. Commit the verified Cloudflare removal + audit.md + this plan.
-   (git add README.md package.json package-lock.json scripts/install.sh todo.md
-   audit.md PLAN.md + the 3 deletions; NOT node_modules/dist — .gitignore comes in M4.)
-Gate: clean commit on master. Exit criteria recorded (69 errors).
+# Orca Orchestration
 
-## M1 — Build green + lint (Hermes, parallel with O1)
-- H1: Fix all 69 TS errors (6 files, see baseline). Mechanical + narrowing fixes;
-  keep exactOptionalPropertyTypes behavior, fix types properly (no `as any`).
-- H2: Add ESLint config (flat or .eslintrc w/ typescript-eslint 6.x), make
-  `npm run lint` pass (fixes unused vars/params surfaced by lint).
-- Verify: npm run build = 0 errors; npm run lint = 0; npm run start boots without
-  crash (smoke test, kill after ~5s).
-- Commit.
+This file is a discovery stub, not the usage guide. The full, version-matched Orca
+orchestration reference is served by the `orca` binary itself — kept out of this file on
+purpose so it can never drift from the binary that will actually run your commands.
 
-## M2 — Dependencies & security (Hermes)
-- H3: npm audit remediation: upgrade @modelcontextprotocol/sdk 0.4.0 -> latest 1.x
-  (verify Server API — index.ts:25 may need adapting), typescript-eslint 7.x,
-  drop unused sqlite3 + @types/sqlite3 (consolidate on better-sqlite3).
-- H4: SQL injection fix in DatabaseManager.searchContent (parameterized FTS query).
-- H5: Path-traversal guard on parse_game_files paths (input validation).
-- Verify: build+lint green; npm audit no critical/high (or documented); smoke test
-  search_vanilla + parse_game_files.
-- Commit.
+Engage Orca orchestration whenever you need structured multi-agent coordination: threaded
+messages, blocking ask/reply flows, task dispatch, worker_done/escalation waits, task DAGs,
+decision gates, coordinator loops, or decomposing work across agents. Use the orca-cli skill
+instead for full ownership handoffs ("hand off", "handoff", "handover", "give this to
+another agent", "another worktree") when the user did not ask to supervise, monitor, wait
+for results, or coordinate a DAG — and for ordinary terminal control, shell commands,
+worktree management, and the built-in browser. Coordination requires real Orca runtime
+state; never substitute a non-Orca subagent tool.
 
-## M3 — Tests (Hermes)
-- H6: jest integration tests for the 6 MCP tools (search_vanilla, generate_script,
-  validate_script, check_references, analyze_mod, parse_game_files) against fixtures.
-- Verify: npm test green.
-- Commit.
+## Resolve the CLI for this session
 
-## M4 — Docs & polish (opencode task O1, parallel with M1)
-- O1 (opencode, quota-bounded): 
-  1. Update README.md to reflect ACTUAL implemented features (use audit.md sec 5:
-     "implemented but not documented" + API discrepancy tables; keep Cloudflare
-     removal wording). 
-  2. Delete README.docx and README.pdf. 
-  3. Add .gitignore (node_modules, dist, *.log, .env). 
-  4. Add .editorconfig, LICENSE (MIT, from package.json), CHANGELOG.md (initial entry).
-  - STRICT: touch no src/ files. ~15-25 requests budget. worker_done when done.
-- H7 (Hermes): review O1 diff, verify, commit.
-Gate: git status clean after commit.
+Choose the executable once and reuse it for every later command:
 
----
+- If the `ORCA_CLI_COMMAND` environment variable is set, use its value. Orca exports this
+  for managed WSL sessions.
+- Otherwise, in a dev checkout whose session exposes `ORCA_DEV_REPO_ROOT`, use `orca-dev`.
+- Otherwise, on Linux outside an Orca-managed terminal, use `orca-ide`. Never run bare
+  `orca` there — outside Orca's terminals it normally resolves to the
+  GNOME Orca screen reader (`/usr/bin/orca`) and starts speech on the user's machine.
+- Otherwise, use `orca`.
 
-## Parallel timeline
+Below, `ORCA` is a placeholder for the executable you resolved. Substitute it before
+running anything; do not create a shell variable or run `ORCA` literally. This works the
+same way in POSIX shells, PowerShell, and cmd.exe.
 
-Phase 1 (simultaneous): Hermes M1 (H1+H2)  ||  opencode O1 (M4 docs)
-Phase 2 (after M1):      Hermes M2 (H3-H5), then M3 (H6)
-Phase 3 (after O1):      Hermes H7 review+commit of docs
-Optional O2 (if quota resets/window opens): small bounded task, e.g. .github CI
-workflow (audit P3 #20) or ScriptGenerator unused-param cleanup. Not committed in plan.
+If the selected executable cannot run, report its exact error and stop. Do not fall through
+to another executable, which could silently target a different Orca build.
 
-## Out of scope (deferred unless you ask)
+## Load the full guide before running Orca commands
 
-P2 feature completeness (extractReferences wiring, evolvedrecipe/vehicle generators),
-P4 nice-to-haves (structured logging, Steam registry, deeper balance analysis).
+```text
+ORCA skills get orchestration
+```
+
+That prints the complete, version-matched guide for the exact binary that will handle your
+next commands — task creation and dispatch, injected lifecycle preambles, worker_done
+authority, decision gates, and coordinator loops. Read it first, then run the specific
+command you need.
+
+Don't guess subcommands or flags from memory or from a cached copy of this stub. They
+change between Orca releases, and this file deliberately no longer lists them. Confirm the
+app is up with `ORCA status --json` (start it with `ORCA open --json` if needed), and
+prefer `--json` for agent-driven calls.
+
+## If an older Orca does not recognize `skills get`
+
+Use this fallback only when the selected binary explicitly reports that `skills get` is an
+unknown command. Another failure is not proof of an older binary; report it rather than
+guessing or changing executables. For a confirmed pre-guide binary, use only this bounded,
+read-only bootstrap to orient. Do not dead-end and do not invent commands:
+
+```text
+ORCA status --json
+ORCA orchestration task-list --json
+ORCA terminal list --json
+```
+
+Then tell the user that updating Orca restores the full, version-matched guide via
+`ORCA skills get orchestration`. Beyond these commands, ask the user rather than guessing a
+command surface this older binary may not support.

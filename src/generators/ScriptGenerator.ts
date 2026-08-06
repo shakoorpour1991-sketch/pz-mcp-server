@@ -1,4 +1,5 @@
-import { DatabaseManager, GameItem } from '../database/DatabaseManager.js';
+import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
+import { formatScriptValue } from "../utils/scriptSyntax.js";
 
 export interface ItemTemplate {
   type: string;
@@ -11,7 +12,7 @@ export interface ItemTemplate {
 
 export interface GenerationOptions {
   module?: string;
-  balance?: 'vanilla' | 'powerful' | 'weak' | 'custom';
+  balance?: "vanilla" | "powerful" | "weak" | "custom";
   includeComments?: boolean;
   useTemplate?: string;
 }
@@ -27,27 +28,33 @@ export class ScriptGenerator {
 
   private initializeTemplates(): void {
     // Weapon templates
-    this.templates.set('melee_weapon', {
-      type: 'item',
-      category: 'Weapon',
+    this.templates.set("melee_weapon", {
+      type: "item",
+      category: "Weapon",
       baseStats: {
-        DisplayCategory: 'Weapon',
-        Type: 'Weapon',
+        DisplayCategory: "Weapon",
+        Type: "Weapon",
         Weight: 1.0,
         BaseSpeed: 1.0,
         MaxDamage: 1.0,
         MinDamage: 0.8,
         ConditionMax: 10,
         ConditionLowerChanceOneIn: 20,
-        Categories: 'SmallBlade',
-        DamageCategory: 'Slash',
+        Categories: "SmallBlade",
+        DamageCategory: "Slash",
         SwingTime: 3,
         KnockBackOnNoDeath: true,
         TreeDamage: 0,
         DoorDamage: 5,
       },
-      requiredProperties: ['DisplayName', 'Icon', 'Type', 'Weight'],
-      optionalProperties: ['AttachmentType', 'WeaponSprite', 'SwingSound', 'HitSound', 'BreakSound'],
+      requiredProperties: ["DisplayName", "Icon", "Type", "Weight"],
+      optionalProperties: [
+        "AttachmentType",
+        "WeaponSprite",
+        "SwingSound",
+        "HitSound",
+        "BreakSound",
+      ],
       balanceMultipliers: {
         powerful: 1.5,
         weak: 0.7,
@@ -55,28 +62,33 @@ export class ScriptGenerator {
       },
     });
 
-    this.templates.set('ranged_weapon', {
-      type: 'item',
-      category: 'Weapon',
+    this.templates.set("ranged_weapon", {
+      type: "item",
+      category: "Weapon",
       baseStats: {
-        DisplayCategory: 'Weapon',
-        Type: 'Weapon',
+        DisplayCategory: "Weapon",
+        Type: "Weapon",
         Weight: 2.0,
         MaxRange: 20,
         MinRange: 0.8,
         AimingTime: 50,
         ConditionMax: 15,
-        Categories: 'Firearm',
+        Categories: "Firearm",
         RequiresEquippedBothHands: true,
-        SubCategory: 'Firearm',
+        SubCategory: "Firearm",
         AimingPerkRangeModifier: 1.5,
         HitChance: 75,
         ProjectileCount: 1,
         ShareDamage: false,
         MaxHitCount: 1,
       },
-      requiredProperties: ['DisplayName', 'Icon', 'Type', 'Weight', 'AmmoType'],
-      optionalProperties: ['WeaponSprite', 'SwingSound', 'ClickSound', 'EjectAmmoSound'],
+      requiredProperties: ["DisplayName", "Icon", "Type", "Weight", "AmmoType"],
+      optionalProperties: [
+        "WeaponSprite",
+        "SwingSound",
+        "ClickSound",
+        "EjectAmmoSound",
+      ],
       balanceMultipliers: {
         powerful: 1.3,
         weak: 0.8,
@@ -84,12 +96,12 @@ export class ScriptGenerator {
       },
     });
 
-    this.templates.set('food_item', {
-      type: 'item',
-      category: 'Food',
+    this.templates.set("food_item", {
+      type: "item",
+      category: "Food",
       baseStats: {
-        DisplayCategory: 'Food',
-        Type: 'Food',
+        DisplayCategory: "Food",
+        Type: "Food",
         Weight: 0.1,
         HungerChange: -10,
         ThirstChange: 0,
@@ -101,8 +113,8 @@ export class ScriptGenerator {
         DaysTotallyRotten: 14,
         IsCookable: true,
       },
-      requiredProperties: ['DisplayName', 'Icon', 'Type'],
-      optionalProperties: ['EvolvedRecipe', 'OnEat', 'CustomContextMenu'],
+      requiredProperties: ["DisplayName", "Icon", "Type"],
+      optionalProperties: ["EvolvedRecipe", "OnEat", "CustomContextMenu"],
       balanceMultipliers: {
         powerful: 1.2,
         weak: 0.8,
@@ -110,19 +122,19 @@ export class ScriptGenerator {
       },
     });
 
-    this.templates.set('tool_item', {
-      type: 'item',
-      category: 'Tool',
+    this.templates.set("tool_item", {
+      type: "item",
+      category: "Tool",
       baseStats: {
-        DisplayCategory: 'Tool',
-        Type: 'Normal',
+        DisplayCategory: "Tool",
+        Type: "Normal",
         Weight: 0.5,
         ConditionMax: 10,
         ConditionLowerChanceOneIn: 30,
-        Categories: 'Tool',
+        Categories: "Tool",
       },
-      requiredProperties: ['DisplayName', 'Icon', 'Type'],
-      optionalProperties: ['AttachmentType', 'Tags', 'MetalValue'],
+      requiredProperties: ["DisplayName", "Icon", "Type"],
+      optionalProperties: ["AttachmentType", "Tags", "MetalValue"],
       balanceMultipliers: {
         powerful: 1.1,
         weak: 0.9,
@@ -130,21 +142,21 @@ export class ScriptGenerator {
       },
     });
 
-    this.templates.set('clothing_item', {
-      type: 'item',
-      category: 'Clothing',
+    this.templates.set("clothing_item", {
+      type: "item",
+      category: "Clothing",
       baseStats: {
-        DisplayCategory: 'Clothing',
-        Type: 'Clothing',
+        DisplayCategory: "Clothing",
+        Type: "Clothing",
         Weight: 0.3,
-        BodyLocation: 'Torso',
-        CanBeEquipped: 'Torso',
-        BloodLocation: 'Torso',
-        FabricType: 'Cotton',
-        ClothingItem: 'Base.TShirt_DefaultTEXTURE',
+        BodyLocation: "Torso",
+        CanBeEquipped: "Torso",
+        BloodLocation: "Torso",
+        FabricType: "Cotton",
+        ClothingItem: "Base.TShirt_DefaultTEXTURE",
       },
-      requiredProperties: ['DisplayName', 'Icon', 'Type', 'BodyLocation'],
-      optionalProperties: ['Insulation', 'WindResistance', 'WaterResistance'],
+      requiredProperties: ["DisplayName", "Icon", "Type", "BodyLocation"],
+      optionalProperties: ["Insulation", "WindResistance", "WaterResistance"],
       balanceMultipliers: {
         powerful: 1.2,
         weak: 0.8,
@@ -153,34 +165,34 @@ export class ScriptGenerator {
     });
 
     // Recipe template
-    this.templates.set('basic_recipe', {
-      type: 'recipe',
-      category: 'Recipe',
+    this.templates.set("basic_recipe", {
+      type: "recipe",
+      category: "Recipe",
       baseStats: {
         Time: 50.0,
-        Category: 'Cooking',
-        OnCreate: 'Recipe.OnCreate.CannedFood',
-        OnGiveXP: 'Recipe.OnGiveXP.Cooking5',
+        Category: "Cooking",
+        OnCreate: "Recipe.OnCreate.CannedFood",
+        OnGiveXP: "Recipe.OnGiveXP.Cooking5",
       },
-      requiredProperties: ['Result'],
-      optionalProperties: ['Sound', 'Category', 'NeedToBeLearn'],
+      requiredProperties: ["Result"],
+      optionalProperties: ["Sound", "Category", "NeedToBeLearn"],
       balanceMultipliers: {
         powerful: 0.7, // Faster crafting
-        weak: 1.5,     // Slower crafting
+        weak: 1.5, // Slower crafting
         vanilla: 1.0,
       },
     });
 
     // Evolved recipe template (transforms a base item with additional ingredients)
-    this.templates.set('evolved_recipe', {
-      type: 'evolvedrecipe',
-      category: 'Recipe',
+    this.templates.set("evolved_recipe", {
+      type: "evolvedrecipe",
+      category: "Recipe",
       baseStats: {
         AllowFrozen: false,
         MaxItems: 3,
       },
-      requiredProperties: ['BaseItem'],
-      optionalProperties: ['Ingredients', 'AllowFrozen', 'MaxItems'],
+      requiredProperties: ["BaseItem"],
+      optionalProperties: ["Ingredients", "AllowFrozen", "MaxItems"],
       balanceMultipliers: {
         powerful: 1.0,
         weak: 1.0,
@@ -189,9 +201,9 @@ export class ScriptGenerator {
     });
 
     // Vehicle template (minimal top-level vehicle script)
-    this.templates.set('vehicle', {
-      type: 'vehicle',
-      category: 'Vehicle',
+    this.templates.set("vehicle", {
+      type: "vehicle",
+      category: "Vehicle",
       baseStats: {
         Mass: 1000,
         EngineLoudness: 100,
@@ -203,8 +215,13 @@ export class ScriptGenerator {
         AxleWeight: 50,
         MechanicalConditionMax: 100,
       },
-      requiredProperties: ['Mass'],
-      optionalProperties: ['EngineForce', 'MaxSpeed', 'BrakingForce', 'EngineLoudness'],
+      requiredProperties: ["Mass"],
+      optionalProperties: [
+        "EngineForce",
+        "MaxSpeed",
+        "BrakingForce",
+        "EngineLoudness",
+      ],
       balanceMultipliers: {
         powerful: 1.2,
         weak: 0.8,
@@ -217,13 +234,14 @@ export class ScriptGenerator {
     type: string,
     name: string,
     specifications: Record<string, any>,
-    module: string = 'Base',
-    options: GenerationOptions = {}
+    module: string = "Base",
+    options: GenerationOptions = {},
   ): Promise<string> {
-    
     const template = this.getTemplate(type, specifications.category);
     if (!template) {
-      throw new Error(`No template found for type: ${type}, category: ${specifications.category}`);
+      throw new Error(
+        `No template found for type: ${type}, category: ${specifications.category}`,
+      );
     }
 
     // Get balance reference from similar vanilla items
@@ -236,7 +254,7 @@ export class ScriptGenerator {
       specifications,
       template,
       balanceRef,
-      options
+      options,
     );
 
     // Wrap in module if needed
@@ -254,36 +272,42 @@ export class ScriptGenerator {
 
     // Try type-specific templates
     const typeTemplates = [
-      'melee_weapon',
-      'ranged_weapon', 
-      'food_item',
-      'tool_item',
-      'clothing_item',
-      'basic_recipe',
+      "melee_weapon",
+      "ranged_weapon",
+      "food_item",
+      "tool_item",
+      "clothing_item",
+      "basic_recipe",
     ];
 
     for (const templateKey of typeTemplates) {
-      if (templateKey.includes(type) || (category && templateKey.includes(category.toLowerCase()))) {
+      if (
+        templateKey.includes(type) ||
+        (category && templateKey.includes(category.toLowerCase()))
+      ) {
         return this.templates.get(templateKey)!;
       }
     }
 
     // Default fallback based on type
     switch (type) {
-      case 'item':
-        return this.templates.get('tool_item')!;
-      case 'recipe':
-        return this.templates.get('basic_recipe')!;
-      case 'evolvedrecipe':
-        return this.templates.get('evolved_recipe')!;
-      case 'vehicle':
-        return this.templates.get('vehicle')!;
+      case "item":
+        return this.templates.get("tool_item")!;
+      case "recipe":
+        return this.templates.get("basic_recipe")!;
+      case "evolvedrecipe":
+        return this.templates.get("evolved_recipe")!;
+      case "vehicle":
+        return this.templates.get("vehicle")!;
       default:
         return null;
     }
   }
 
-  private async getBalanceReference(type: string, specs: Record<string, any>): Promise<GameItem[]> {
+  private async getBalanceReference(
+    type: string,
+    specs: Record<string, any>,
+  ): Promise<GameItem[]> {
     const searchQueries = [];
 
     // Build search queries based on specifications
@@ -302,17 +326,17 @@ export class ScriptGenerator {
     // Default queries for different types
     if (searchQueries.length === 0) {
       switch (type) {
-        case 'item':
-          if (specs.category === 'Weapon') {
-            searchQueries.push('weapon damage');
-          } else if (specs.category === 'Food') {
-            searchQueries.push('food hunger');
+        case "item":
+          if (specs.category === "Weapon") {
+            searchQueries.push("weapon damage");
+          } else if (specs.category === "Food") {
+            searchQueries.push("food hunger");
           } else {
-            searchQueries.push('tool');
+            searchQueries.push("tool");
           }
           break;
-        case 'recipe':
-          searchQueries.push('recipe cooking');
+        case "recipe":
+          searchQueries.push("recipe cooking");
           break;
         default:
           searchQueries.push(type);
@@ -322,9 +346,9 @@ export class ScriptGenerator {
     // Search for similar items
     const references: GameItem[] = [];
     for (const query of searchQueries) {
-      const results = await this.db.searchContent(query, { 
-        type: type === 'item' ? 'item' : type, 
-        limit: 5 
+      const results = await this.db.searchContent(query, {
+        type: type === "item" ? "item" : type,
+        limit: 5,
       });
       references.push(...results);
     }
@@ -338,21 +362,56 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     template: ItemTemplate,
     references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): Promise<string> {
-    
-    if (type === 'item') {
-      return this.generateItemScript(name, specs, template, references, options);
-    } else if (type === 'recipe') {
-      return this.generateRecipeScript(name, specs, template, references, options);
-    } else if (type === 'fixing') {
-      return this.generateFixingScript(name, specs, template, references, options);
-    } else if (type === 'sound') {
-      return this.generateSoundScript(name, specs, template, references, options);
-    } else if (type === 'evolvedrecipe') {
-      return this.generateEvolvedRecipeScript(name, specs, template, references, options);
-    } else if (type === 'vehicle') {
-      return this.generateVehicleScript(name, specs, template, references, options);
+    if (type === "item") {
+      return this.generateItemScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
+    } else if (type === "recipe") {
+      return this.generateRecipeScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
+    } else if (type === "fixing") {
+      return this.generateFixingScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
+    } else if (type === "sound") {
+      return this.generateSoundScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
+    } else if (type === "evolvedrecipe") {
+      return this.generateEvolvedRecipeScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
+    } else if (type === "vehicle") {
+      return this.generateVehicleScript(
+        name,
+        specs,
+        template,
+        references,
+        options,
+      );
     }
 
     throw new Error(`Script generation for type '${type}' not implemented`);
@@ -363,15 +422,14 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     template: ItemTemplate,
     references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
-    
     const lines: string[] = [];
-    
+
     if (options.includeComments) {
       lines.push(`    /* ${specs.DisplayName || name} - Generated item */`);
     }
-    
+
     lines.push(`    item ${name}`);
     lines.push(`    {`);
 
@@ -379,8 +437,13 @@ export class ScriptGenerator {
     const properties = { ...template.baseStats, ...specs };
 
     // Apply balance adjustments
-    if (options.balance && options.balance !== 'custom') {
-      this.applyBalanceAdjustments(properties, template, options.balance, references);
+    if (options.balance && options.balance !== "custom") {
+      this.applyBalanceAdjustments(
+        properties,
+        template,
+        options.balance,
+        references,
+      );
     }
 
     // Generate properties
@@ -393,7 +456,7 @@ export class ScriptGenerator {
 
     lines.push(`    }`);
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private generateRecipeScript(
@@ -401,33 +464,34 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     template: ItemTemplate,
     references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
-    
     const lines: string[] = [];
-    
+
     if (options.includeComments) {
       lines.push(`    /* ${name} - Generated recipe */`);
     }
-    
+
     lines.push(`    recipe ${name}`);
     lines.push(`    {`);
 
     // Add ingredients
     if (specs.ingredients && Array.isArray(specs.ingredients)) {
       for (const ingredient of specs.ingredients) {
-        if (typeof ingredient === 'string') {
+        if (typeof ingredient === "string") {
           lines.push(`        ${ingredient},`);
         } else if (ingredient.item) {
           const count = ingredient.count || 1;
           if (ingredient.keep) {
             lines.push(`        keep ${ingredient.item},`);
           } else {
-            lines.push(`        ${ingredient.item}${count > 1 ? `=${count}` : ''},`);
+            lines.push(
+              `        ${ingredient.item}${count > 1 ? `=${count}` : ""},`,
+            );
           }
         }
       }
-      lines.push('');
+      lines.push("");
     }
 
     // Add result
@@ -438,15 +502,20 @@ export class ScriptGenerator {
 
     // Merge template properties with user specifications
     const properties = { ...template.baseStats };
-    Object.keys(specs).forEach(key => {
-      if (!['ingredients', 'result', 'resultCount'].includes(key)) {
+    Object.keys(specs).forEach((key) => {
+      if (!["ingredients", "result", "resultCount"].includes(key)) {
         properties[key] = specs[key];
       }
     });
 
     // Apply balance adjustments
-    if (options.balance && options.balance !== 'custom') {
-      this.applyRecipeBalanceAdjustments(properties, template, options.balance, references);
+    if (options.balance && options.balance !== "custom") {
+      this.applyRecipeBalanceAdjustments(
+        properties,
+        template,
+        options.balance,
+        references,
+      );
     }
 
     // Generate properties
@@ -459,7 +528,7 @@ export class ScriptGenerator {
 
     lines.push(`    }`);
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private generateFixingScript(
@@ -467,22 +536,21 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     _template: ItemTemplate,
     _references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
-    
     const lines: string[] = [];
-    
+
     if (options.includeComments) {
       lines.push(`    /* ${name} - Generated fixing script */`);
     }
-    
+
     lines.push(`    fixing ${name}`);
     lines.push(`    {`);
 
     // Add required item
     if (specs.require) {
       lines.push(`        Require : ${specs.require},`);
-      lines.push('');
+      lines.push("");
     }
 
     // Add fixers
@@ -492,14 +560,14 @@ export class ScriptGenerator {
         if (fixer.skill && fixer.skillLevel) {
           fixerLine += `; ${fixer.skill}=${fixer.skillLevel}`;
         }
-        fixerLine += ',';
+        fixerLine += ",";
         lines.push(fixerLine);
       }
     }
 
     lines.push(`    }`);
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private generateSoundScript(
@@ -507,15 +575,14 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     _template: ItemTemplate,
     _references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
-    
     const lines: string[] = [];
-    
+
     if (options.includeComments) {
       lines.push(`    /* ${name} - Generated sound */`);
     }
-    
+
     lines.push(`    sound ${name}`);
     lines.push(`    {`);
 
@@ -541,7 +608,7 @@ export class ScriptGenerator {
     lines.push(`        }`);
     lines.push(`    }`);
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private generateEvolvedRecipeScript(
@@ -549,7 +616,7 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     template: ItemTemplate,
     _references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
     const lines: string[] = [];
 
@@ -569,17 +636,17 @@ export class ScriptGenerator {
     // Ingredients: array of strings or {item, count} objects
     if (specs.ingredients && Array.isArray(specs.ingredients)) {
       const ingredients = specs.ingredients
-        .map((ing: any) => (typeof ing === 'string' ? ing : ing && ing.item))
-        .filter((v: any) => typeof v === 'string' && v.trim().length > 0);
+        .map((ing: any) => (typeof ing === "string" ? ing : ing && ing.item))
+        .filter((v: any) => typeof v === "string" && v.trim().length > 0);
       if (ingredients.length > 0) {
-        lines.push(`        Ingredients: ${ingredients.join(', ')},`);
+        lines.push(`        Ingredients: ${ingredients.join(", ")},`);
       }
     }
 
     // Merge remaining template defaults with user specs
     const properties = { ...template.baseStats };
-    Object.keys(specs).forEach(key => {
-      if (!['baseItem', 'BaseItem', 'ingredients'].includes(key)) {
+    Object.keys(specs).forEach((key) => {
+      if (!["baseItem", "BaseItem", "ingredients"].includes(key)) {
         properties[key] = specs[key];
       }
     });
@@ -591,7 +658,7 @@ export class ScriptGenerator {
     }
 
     lines.push(`    }`);
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private generateVehicleScript(
@@ -599,7 +666,7 @@ export class ScriptGenerator {
     specs: Record<string, any>,
     template: ItemTemplate,
     _references: GameItem[],
-    options: GenerationOptions
+    options: GenerationOptions,
   ): string {
     const lines: string[] = [];
 
@@ -620,37 +687,48 @@ export class ScriptGenerator {
     }
 
     lines.push(`    }`);
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   private applyBalanceAdjustments(
     properties: Record<string, any>,
     template: ItemTemplate,
     balance: string,
-    references: GameItem[]
+    references: GameItem[],
   ): void {
-    
     const multiplier = template.balanceMultipliers[balance] || 1.0;
 
     // Apply multipliers to damage-related properties
-    const damageProps = ['MaxDamage', 'MinDamage', 'CritDmgMultiplier', 'DoorDamage', 'TreeDamage'];
+    const damageProps = [
+      "MaxDamage",
+      "MinDamage",
+      "CritDmgMultiplier",
+      "DoorDamage",
+      "TreeDamage",
+    ];
     for (const prop of damageProps) {
-      if (properties[prop] && typeof properties[prop] === 'number') {
+      if (properties[prop] && typeof properties[prop] === "number") {
         properties[prop] = Math.round(properties[prop] * multiplier * 10) / 10;
       }
     }
 
     // Apply inverse multipliers to negative properties
-    const inverseProps = ['Weight', 'SwingTime'];
+    const inverseProps = ["Weight", "SwingTime"];
     for (const prop of inverseProps) {
-      if (properties[prop] && typeof properties[prop] === 'number') {
-        properties[prop] = Math.round(properties[prop] / multiplier * 10) / 10;
+      if (properties[prop] && typeof properties[prop] === "number") {
+        properties[prop] =
+          Math.round((properties[prop] / multiplier) * 10) / 10;
       }
     }
 
     // Adjust durability
-    if (properties.ConditionMax && typeof properties.ConditionMax === 'number') {
-      properties.ConditionMax = Math.round(properties.ConditionMax * multiplier);
+    if (
+      properties.ConditionMax &&
+      typeof properties.ConditionMax === "number"
+    ) {
+      properties.ConditionMax = Math.round(
+        properties.ConditionMax * multiplier,
+      );
     }
 
     // Use reference items for better balance
@@ -663,34 +741,34 @@ export class ScriptGenerator {
     properties: Record<string, any>,
     template: ItemTemplate,
     balance: string,
-    _references: GameItem[]
+    _references: GameItem[],
   ): void {
-    
     const multiplier = template.balanceMultipliers[balance] || 1.0;
 
     // Adjust recipe time (inverse for powerful)
-    if (properties.Time && typeof properties.Time === 'number') {
-      properties.Time = Math.round(properties.Time * (1 / multiplier) * 10) / 10;
+    if (properties.Time && typeof properties.Time === "number") {
+      properties.Time =
+        Math.round(properties.Time * (1 / multiplier) * 10) / 10;
     }
   }
 
   private adjustBasedOnReferences(
     properties: Record<string, any>,
     references: GameItem[],
-    balance: string
+    balance: string,
   ): void {
-    
     // Calculate average stats from references
     const avgStats: Record<string, number> = {};
-    const numericProps = ['MaxDamage', 'MinDamage', 'Weight', 'ConditionMax'];
+    const numericProps = ["MaxDamage", "MinDamage", "Weight", "ConditionMax"];
 
     for (const prop of numericProps) {
       const values = references
-        .map(ref => ref.properties[prop])
-        .filter(val => typeof val === 'number') as number[];
-      
+        .map((ref) => ref.properties[prop])
+        .filter((val) => typeof val === "number") as number[];
+
       if (values.length > 0) {
-        avgStats[prop] = values.reduce((sum, val) => sum + val, 0) / values.length;
+        avgStats[prop] =
+          values.reduce((sum, val) => sum + val, 0) / values.length;
       }
     }
 
@@ -701,7 +779,8 @@ export class ScriptGenerator {
       vanilla: 1.0,
     };
 
-    const multiplier = balanceMultipliers[balance as keyof typeof balanceMultipliers] || 1.0;
+    const multiplier =
+      balanceMultipliers[balance as keyof typeof balanceMultipliers] || 1.0;
 
     for (const [prop, avgValue] of Object.entries(avgStats)) {
       if (properties[prop] === undefined) {
@@ -711,52 +790,50 @@ export class ScriptGenerator {
   }
 
   private formatPropertyValue(value: any): string {
-    if (typeof value === 'string') {
-      return value;
-    } else if (typeof value === 'boolean') {
-      return value ? 'TRUE' : 'FALSE';
-    } else if (typeof value === 'number') {
-      return value.toString();
-    } else if (Array.isArray(value)) {
-      return value.join(';');
-    }
-    
-    return String(value);
+    // Shared with the parser/validator value handling (audit F10).
+    return formatScriptValue(value);
   }
 
-  private wrapInModule(content: string, module: string, includeComments: boolean = false): string {
+  private wrapInModule(
+    content: string,
+    module: string,
+    includeComments: boolean = false,
+  ): string {
     const lines: string[] = [];
-    
+
     if (includeComments) {
-      lines.push('/**');
-      lines.push(' * Generated by Project Zomboid MCP Server');
-      lines.push(' * https://github.com/minimax/pz-mcp-server');
-      lines.push(' */');
-      lines.push('');
+      lines.push("/**");
+      lines.push(" * Generated by Project Zomboid MCP Server");
+      lines.push(" * https://github.com/minimax/pz-mcp-server");
+      lines.push(" */");
+      lines.push("");
     }
-    
+
     lines.push(`module ${module}`);
-    lines.push('{');
+    lines.push("{");
     lines.push(content);
-    lines.push('}');
-    
-    return lines.join('\n');
+    lines.push("}");
+
+    return lines.join("\n");
   }
 
-  async generateModTemplate(modName: string, modId: string): Promise<{modInfo: string; exampleScript: string}> {
+  async generateModTemplate(
+    modName: string,
+    modId: string,
+  ): Promise<{ modInfo: string; exampleScript: string }> {
     const modInfo = this.generateModInfo(modName, modId);
     const exampleScript = await this.generateScript(
-      'item',
-      'ExampleItem',
+      "item",
+      "ExampleItem",
       {
-        DisplayName: 'Example Item',
-        DisplayCategory: 'Tool',
-        Type: 'Normal',
+        DisplayName: "Example Item",
+        DisplayCategory: "Tool",
+        Type: "Normal",
         Weight: 0.5,
-        Icon: 'Hammer',
+        Icon: "Hammer",
       },
-      'Base',
-      { includeComments: true, balance: 'vanilla' }
+      "Base",
+      { includeComments: true, balance: "vanilla" },
     );
 
     return { modInfo, exampleScript };
@@ -770,6 +847,6 @@ export class ScriptGenerator {
       `author=MCP Server User`,
       `poster=`,
       `icon=`,
-    ].join('\n');
+    ].join("\n");
   }
 }

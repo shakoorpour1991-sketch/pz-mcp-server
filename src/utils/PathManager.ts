@@ -495,14 +495,14 @@ export class PathManager {
       throw new Error('Path contains invalid characters');
     }
 
-    if (!isAbsolute(input)) {
-      throw new Error(`Path must be absolute: ${input}`);
-    }
-
     // Reject traversal sequences outright — no path may escape via '..'
     const segments = input.split(/[\\/]+/).filter(seg => seg.length > 0);
     if (segments.includes('..')) {
       throw new Error(`Path must not contain '..' segments: ${input}`);
+    }
+
+    if (!isAbsolute(input)) {
+      throw new Error(`Path must be absolute: ${input}`);
     }
 
     const resolved = resolve(input);

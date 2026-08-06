@@ -1,8 +1,18 @@
-import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
-import { join, extname, basename } from 'path';
-import { DatabaseManager, GameItem } from '../database/DatabaseManager.js';
-import { ProjectZomboidParser, ModInfo } from '../parsers/ProjectZomboidParser.js';
-import { ValidationEngine } from '../validation/ValidationEngine.js';
+import {
+  existsSync,
+  readdirSync,
+  statSync,
+  readFileSync,
+  unlinkSync,
+} from "fs";
+import { join, extname, basename } from "path";
+import { tmpdir } from "os";
+import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
+import {
+  ProjectZomboidParser,
+  ModInfo,
+} from "../parsers/ProjectZomboidParser.js";
+import { ValidationEngine } from "../validation/ValidationEngine.js";
 
 export interface ModAnalysisResult {
   modName?: string;
@@ -32,7 +42,7 @@ export interface StructureAnalysis {
 export interface Issue {
   file: string;
   line?: number;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   message: string;
   code: string;
   suggestion?: string;
@@ -41,13 +51,19 @@ export interface Issue {
 export interface BalanceAnalysis {
   itemCount: number;
   averageStats: Record<string, number>;
-  outliers: Array<{item: string; property: string; value: any; recommendation: string}>;
+  outliers: Array<{
+    item: string;
+    property: string;
+    value: any;
+    recommendation: string;
+    ratio?: number;
+  }>;
   score: number; // 0-100 balance score
   recommendations: string[];
 }
 
 export interface CompatibilityAnalysis {
-  conflicts: Array<{type: string; item: string; conflictsWith: string}>;
+  conflicts: Array<{ type: string; item: string; conflictsWith: string }>;
   missingDependencies: string[];
   incompatibleMods: string[];
   gameVersionCompatibility: {
@@ -58,8 +74,7 @@ export interface CompatibilityAnalysis {
 }
 
 export interface PerformanceAnalysis {
-  largeFiles: Array<{file: string; size: number}>;
-  complexScripts: Array<{file: string; complexity: number}>;
+  largeFiles: Array<{ file: string; size: number }>;
   recommendations: string[];
 }
 
@@ -91,10 +106,9 @@ export class ModAnalyzer {
   }
 
   async analyzeMod(
-    modPath: string, 
-    options: AnalysisOptions = {}
+    modPath: string,
+    options: AnalysisOptions = {},
   ): Promise<ModAnalysisResult> {
-    
     const {
       checkBalance = true,
       checkCompatibility = true,
@@ -148,13 +162,12 @@ export class ModAnalyzer {
 
       // Generate recommendations
       this.generateRecommendations(result);
-
     } catch (error) {
       result.issues.push({
-        file: 'analyzer',
-        severity: 'error',
+        file: "analyzer",
+        severity: "error",
         message: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'ANALYSIS_ERROR',
+        code: "ANALYSIS_ERROR",
       });
     }
 
@@ -175,14 +188,14 @@ export class ModAnalyzer {
     };
 
     if (!existsSync(modPath)) {
-      structure.missingFiles.push('Mod directory does not exist');
+      structure.missingFiles.push("Mod directory does not exist");
       return structure;
     }
 
     // Check for mod.info
     const modInfoPaths = [
-      join(modPath, 'mod.info'),
-      join(modPath, '42', 'mod.info'),
+      join(modPath, "mod.info"),
+      join(modPath, "42", "mod.info"),
     ];
 
     for (const modInfoPath of modInfoPaths) {
@@ -193,7 +206,7 @@ export class ModAnalyzer {
     }
 
     // Check for proper Build 42 structure
-    const commonPath = join(modPath, 'common');
+    const commonPath = join(modPath, "common");
     structure.hasCommonFolder = existsSync(commonPath);
 
     // Find build version folders
@@ -209,24 +222,28 @@ export class ModAnalyzer {
 
     // Check for correct structure (Build 42 style)
     const hasVersionFolder = structure.buildVersions.length > 0;
-    structure.hasCorrectStructure = structure.hasCommonFolder && hasVersionFolder;
+    structure.hasCorrectStructure =
+      structure.hasCommonFolder && hasVersionFolder;
 
     // Count files
     await this.countFiles(modPath, structure);
 
     // Check for missing essential files
     if (!structure.hasModInfo) {
-      structure.missingFiles.push('mod.info');
+      structure.missingFiles.push("mod.info");
     }
 
     if (structure.scriptCount === 0 && structure.luaCount === 0) {
-      structure.missingFiles.push('No script or Lua files found');
+      structure.missingFiles.push("No script or Lua files found");
     }
 
     return structure;
   }
 
-  private async countFiles(dirPath: string, structure: StructureAnalysis): Promise<void> {
+  private async countFiles(
+    dirPath: string,
+    structure: StructureAnalysis,
+  ): Promise<void> {
     try {
       const entries = readdirSync(dirPath);
 
@@ -238,12 +255,14 @@ export class ModAnalyzer {
           await this.countFiles(fullPath, structure);
         } else {
           const ext = extname(entry).toLowerCase();
-          
-          if (ext === '.txt' && fullPath.includes('scripts')) {
+
+          if (ext === ".txt" && fullPath.includes("scripts")) {
             structure.scriptCount++;
-          } else if (ext === '.lua') {
+          } else if (ext === ".lua") {
             structure.luaCount++;
-          } else if (['.png', '.jpg', '.jpeg', '.ogg', '.wav', '.mp3'].includes(ext)) {
+          } else if (
+            [".png", ".jpg", ".jpeg", ".ogg", ".wav", ".mp3"].includes(ext)
+          ) {
             structure.assetCount++;
           }
         }
@@ -255,8 +274,8 @@ export class ModAnalyzer {
 
   private parseModInfo(modPath: string): ModInfo | undefined {
     const modInfoPaths = [
-      join(modPath, 'mod.info'),
-      join(modPath, '42', 'mod.info'),
+      join(modPath, "mod.info"),
+      join(modPath, "42", "mod.info"),
     ];
 
     for (const modInfoPath of modInfoPaths) {
@@ -273,15 +292,14 @@ export class ModAnalyzer {
   }
 
   private async analyzeScripts(
-    modPath: string, 
-    result: ModAnalysisResult, 
-    strict: boolean
+    modPath: string,
+    result: ModAnalysisResult,
+    strict: boolean,
   ): Promise<void> {
-    
     const scriptPaths = [
-      join(modPath, 'media', 'scripts'),
-      join(modPath, '42', 'media', 'scripts'),
-      join(modPath, 'common', 'media', 'scripts'),
+      join(modPath, "media", "scripts"),
+      join(modPath, "42", "media", "scripts"),
+      join(modPath, "common", "media", "scripts"),
     ];
 
     for (const scriptsPath of scriptPaths) {
@@ -292,11 +310,10 @@ export class ModAnalyzer {
   }
 
   private async analyzeScriptDirectory(
-    dirPath: string, 
-    result: ModAnalysisResult, 
-    strict: boolean
+    dirPath: string,
+    result: ModAnalysisResult,
+    strict: boolean,
   ): Promise<void> {
-    
     try {
       const entries = readdirSync(dirPath);
 
@@ -306,29 +323,32 @@ export class ModAnalyzer {
 
         if (stat.isDirectory()) {
           await this.analyzeScriptDirectory(fullPath, result, strict);
-        } else if (extname(entry).toLowerCase() === '.txt') {
+        } else if (extname(entry).toLowerCase() === ".txt") {
           await this.analyzeScriptFile(fullPath, result, strict);
         }
       }
     } catch (error) {
       result.issues.push({
         file: dirPath,
-        severity: 'error',
+        severity: "error",
         message: `Failed to read scripts directory: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'READ_ERROR',
+        code: "READ_ERROR",
       });
     }
   }
 
   private async analyzeScriptFile(
-    filePath: string, 
-    result: ModAnalysisResult, 
-    strict: boolean
+    filePath: string,
+    result: ModAnalysisResult,
+    strict: boolean,
   ): Promise<void> {
-    
     try {
-      const content = readFileSync(filePath, 'utf-8');
-      const validation = await this.validator.validateScript(content, undefined, strict);
+      const content = readFileSync(filePath, "utf-8");
+      const validation = await this.validator.validateScript(
+        content,
+        undefined,
+        strict,
+      );
 
       // Add validation issues to result
       for (const error of validation.errors) {
@@ -358,22 +378,24 @@ export class ModAnalyzer {
         }
         result.issues.push(issue);
       }
-
     } catch (error) {
       result.issues.push({
         file: filePath,
-        severity: 'error',
+        severity: "error",
         message: `Failed to analyze script: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'SCRIPT_ANALYSIS_ERROR',
+        code: "SCRIPT_ANALYSIS_ERROR",
       });
     }
   }
 
-  private async analyzeLuaFiles(modPath: string, result: ModAnalysisResult): Promise<void> {
+  private async analyzeLuaFiles(
+    modPath: string,
+    result: ModAnalysisResult,
+  ): Promise<void> {
     const luaPaths = [
-      join(modPath, 'media', 'lua'),
-      join(modPath, '42', 'media', 'lua'),
-      join(modPath, 'common', 'media', 'lua'),
+      join(modPath, "media", "lua"),
+      join(modPath, "42", "media", "lua"),
+      join(modPath, "common", "media", "lua"),
     ];
 
     for (const luaPath of luaPaths) {
@@ -383,7 +405,10 @@ export class ModAnalyzer {
     }
   }
 
-  private async analyzeLuaDirectory(dirPath: string, result: ModAnalysisResult): Promise<void> {
+  private async analyzeLuaDirectory(
+    dirPath: string,
+    result: ModAnalysisResult,
+  ): Promise<void> {
     try {
       const entries = readdirSync(dirPath);
 
@@ -393,31 +418,34 @@ export class ModAnalyzer {
 
         if (stat.isDirectory()) {
           await this.analyzeLuaDirectory(fullPath, result);
-        } else if (extname(entry).toLowerCase() === '.lua') {
+        } else if (extname(entry).toLowerCase() === ".lua") {
           await this.analyzeLuaFile(fullPath, result);
         }
       }
     } catch (error) {
       result.issues.push({
         file: dirPath,
-        severity: 'error',
+        severity: "error",
         message: `Failed to read Lua directory: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'READ_ERROR',
+        code: "READ_ERROR",
       });
     }
   }
 
-  private async analyzeLuaFile(filePath: string, result: ModAnalysisResult): Promise<void> {
+  private async analyzeLuaFile(
+    filePath: string,
+    result: ModAnalysisResult,
+  ): Promise<void> {
     try {
-      const content = readFileSync(filePath, 'utf-8');
-      
+      const content = readFileSync(filePath, "utf-8");
+
       // Basic Lua syntax checks
       if (!content.trim()) {
         result.issues.push({
           file: filePath,
-          severity: 'warning',
-          message: 'Empty Lua file',
-          code: 'EMPTY_FILE',
+          severity: "warning",
+          message: "Empty Lua file",
+          code: "EMPTY_FILE",
         });
         return;
       }
@@ -430,19 +458,22 @@ export class ModAnalyzer {
 
       // Check for semantic issues
       this.checkSemanticIssues(content, filePath, result);
-
     } catch (error) {
       result.issues.push({
         file: filePath,
-        severity: 'error',
+        severity: "error",
         message: `Failed to analyze Lua file: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'LUA_ANALYSIS_ERROR',
+        code: "LUA_ANALYSIS_ERROR",
       });
     }
   }
 
-  private checkLuaSyntax(content: string, filePath: string, result: ModAnalysisResult): void {
-    const lines = content.split('\n');
+  private checkLuaSyntax(
+    content: string,
+    filePath: string,
+    result: ModAnalysisResult,
+  ): void {
+    const lines = content.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -454,62 +485,94 @@ export class ModAnalyzer {
       const openBrackets = (line.match(/\[/g) || []).length;
       const closeBrackets = (line.match(/\]/g) || []).length;
 
-      if (openParens !== closeParens && !line.includes('--')) {
+      if (openParens !== closeParens && !line.includes("--")) {
         result.issues.push({
           file: filePath,
           line: lineNumber,
-          severity: 'warning',
-          message: 'Unbalanced parentheses',
-          code: 'LUA_SYNTAX_WARNING',
+          severity: "warning",
+          message: "Unbalanced parentheses",
+          code: "LUA_SYNTAX_WARNING",
         });
       }
 
-      if (openBrackets !== closeBrackets && !line.includes('--')) {
+      if (openBrackets !== closeBrackets && !line.includes("--")) {
         result.issues.push({
           file: filePath,
           line: lineNumber,
-          severity: 'warning',
-          message: 'Unbalanced brackets',
-          code: 'LUA_SYNTAX_WARNING',
+          severity: "warning",
+          message: "Unbalanced brackets",
+          code: "LUA_SYNTAX_WARNING",
         });
       }
 
       // Check for common typos
-      if (line.includes('Events.OnPreMapLoad.Add') && line.includes('Events.OnPreMapLoad.Add')) {
+      if (
+        line.includes("Events.OnPreMapLoad.Add") &&
+        line.includes("Events.OnPreMapLoad.Add")
+      ) {
         result.issues.push({
           file: filePath,
           line: lineNumber,
-          severity: 'info',
-          message: 'Consider using Events.OnGameBoot.Add for initialization code',
-          code: 'LUA_BEST_PRACTICE',
+          severity: "info",
+          message:
+            "Consider using Events.OnGameBoot.Add for initialization code",
+          code: "LUA_BEST_PRACTICE",
         });
       }
     }
   }
 
-  private checkDeprecatedAPI(content: string, filePath: string, result: ModAnalysisResult): void {
+  private checkDeprecatedAPI(
+    content: string,
+    filePath: string,
+    result: ModAnalysisResult,
+  ): void {
     const deprecatedPatterns = [
-      { pattern: 'getCell():getGridSquare()', new: 'getSquare()', message: 'Use getSquare() instead of getCell():getGridSquare()' },
-      { pattern: 'getSpecificPlayer(0)', new: 'getPlayer()', message: 'Use getPlayer() instead of getSpecificPlayer(0)' },
-      { pattern: 'getSpecificPlayer(1)', new: 'getPlayer()', message: 'Use getPlayer() instead of getSpecificPlayer(1)' },
-      { pattern: 'instanceof', new: 'type checking', message: 'instanceof may not work as expected in Lua' },
-      { pattern: 'getClosestPlayer()', new: 'getPlayer()', message: 'getClosestPlayer() is deprecated, use getPlayer()' },
-      { pattern: 'getLocalPlayer()', new: 'getPlayer()', message: 'getLocalPlayer() is deprecated, use getPlayer()' },
+      {
+        pattern: "getCell():getGridSquare()",
+        new: "getSquare()",
+        message: "Use getSquare() instead of getCell():getGridSquare()",
+      },
+      {
+        pattern: "getSpecificPlayer(0)",
+        new: "getPlayer()",
+        message: "Use getPlayer() instead of getSpecificPlayer(0)",
+      },
+      {
+        pattern: "getSpecificPlayer(1)",
+        new: "getPlayer()",
+        message: "Use getPlayer() instead of getSpecificPlayer(1)",
+      },
+      {
+        pattern: "instanceof",
+        new: "type checking",
+        message: "instanceof may not work as expected in Lua",
+      },
+      {
+        pattern: "getClosestPlayer()",
+        new: "getPlayer()",
+        message: "getClosestPlayer() is deprecated, use getPlayer()",
+      },
+      {
+        pattern: "getLocalPlayer()",
+        new: "getPlayer()",
+        message: "getLocalPlayer() is deprecated, use getPlayer()",
+      },
     ];
 
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
-      
+
       for (const pattern of deprecatedPatterns) {
         if (line.includes(pattern.pattern)) {
           result.issues.push({
             file: filePath,
             line: lineNumber,
-            severity: 'warning',
+            severity: "warning",
             message: pattern.message,
-            code: 'DEPRECATED_API',
+            code: "DEPRECATED_API",
             suggestion: `Replace with: ${pattern.new}`,
           });
         }
@@ -517,75 +580,81 @@ export class ModAnalyzer {
     }
   }
 
-  private checkSemanticIssues(content: string, filePath: string, result: ModAnalysisResult): void {
-    const lines = content.split('\n');
+  private checkSemanticIssues(
+    content: string,
+    filePath: string,
+    result: ModAnalysisResult,
+  ): void {
+    const lines = content.split("\n");
     const ifKeywordCount = (content.match(/\bif\b/g) || []).length;
     const endKeywordCount = (content.match(/\bend\b/g) || []).length;
-    
+
     if (ifKeywordCount !== endKeywordCount) {
       result.issues.push({
         file: filePath,
-        severity: 'error',
+        severity: "error",
         message: `Unbalanced if/end: ${ifKeywordCount} 'if' statements but ${endKeywordCount} 'end' keywords`,
-        code: 'SEMANTIC_ERROR',
+        code: "SEMANTIC_ERROR",
       });
     }
-    
+
     const globalVarPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*/g;
     const globalVars = new Set<string>();
     let inStrictContext = false;
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
-      
-      if (line.includes('--strict') || line.includes('--strict-context')) {
+
+      if (line.includes("--strict") || line.includes("--strict-context")) {
         inStrictContext = true;
       }
-      
-      if (inStrictContext && line.includes('local ')) {
+
+      if (inStrictContext && line.includes("local ")) {
         const localMatch = line.match(/local\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
         if (localMatch) {
           const varName = localMatch[1];
           globalVars.add(varName);
         }
       }
-      
+
       const varMatches = Array.from(line.matchAll(globalVarPattern));
       for (const match of varMatches) {
         const varName = match[1];
-        if (!varName.startsWith('_') && !globalVars.has(varName)) {
+        if (!varName.startsWith("_") && !globalVars.has(varName)) {
           result.issues.push({
             file: filePath,
             line: lineNumber,
-            severity: 'warning',
+            severity: "warning",
             message: `Potential global variable leak: '${varName}' is assigned without 'local' keyword`,
-            code: 'GLOBAL_VAR',
+            code: "GLOBAL_VAR",
           });
         }
       }
     }
-    
+
     const requirePattern = /\brequire\s*\(\s*['"]([^'']+)['"]/g;
     let match: RegExpExecArray | null;
     const requiredModules = new Set<string>();
-    
+
     while ((match = requirePattern.exec(content)) !== null) {
       requiredModules.add(match[1]);
     }
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
-      
-      const unusedRequireMatch = line.match(/\brequire\s*\(\s*['"]([^'']+)['"]/);
+
+      const unusedRequireMatch = line.match(
+        /\brequire\s*\(\s*['"]([^'']+)['"]/,
+      );
       if (unusedRequireMatch && !requiredModules.has(unusedRequireMatch[1])) {
         result.issues.push({
           file: filePath,
           line: lineNumber,
-          severity: 'warning',
+          severity: "warning",
           message: `Potential unused require: '${unusedRequireMatch[1]}' appears to be unused`,
-          code: 'UNUSED_REQUIRE',
+          code: "UNUSED_REQUIRE",
         });
       }
     }
@@ -597,13 +666,32 @@ export class ModAnalyzer {
    * matter for that category (P4 #23).
    */
   private static readonly BALANCE_CATEGORIES = [
-    { type: 'Weapon', keyword: 'weapon', stats: ['MaxDamage', 'MinDamage', 'Weight'] },
-    { type: 'Armor', keyword: 'armor', stats: ['BiteDefense', 'ScratchDefense', 'BulletDefense', 'Weight'] },
-    { type: 'Clothing', keyword: 'clothing', stats: ['Insulation', 'WindResistance', 'WaterResistance', 'Weight'] },
-    { type: 'Food', keyword: 'food', stats: ['HungerChange', 'ThirstChange', 'Calories', 'Weight'] },
+    {
+      type: "Weapon",
+      keyword: "weapon",
+      stats: ["MaxDamage", "MinDamage", "Weight"],
+    },
+    {
+      type: "Armor",
+      keyword: "armor",
+      stats: ["BiteDefense", "ScratchDefense", "BulletDefense", "Weight"],
+    },
+    {
+      type: "Clothing",
+      keyword: "clothing",
+      stats: ["Insulation", "WindResistance", "WaterResistance", "Weight"],
+    },
+    {
+      type: "Food",
+      keyword: "food",
+      stats: ["HungerChange", "ThirstChange", "Calories", "Weight"],
+    },
   ] as const;
 
-  private async analyzeBalance(modPath: string, _result: ModAnalysisResult): Promise<BalanceAnalysis> {
+  private async analyzeBalance(
+    modPath: string,
+    _result: ModAnalysisResult,
+  ): Promise<BalanceAnalysis> {
     const balance: BalanceAnalysis = {
       itemCount: 0,
       averageStats: {},
@@ -613,19 +701,37 @@ export class ModAnalyzer {
     };
 
     try {
-      // Parse mod items
-      await this.parser.parseModDirectory(modPath);
-      const modItems = await this.db.getItemsByType('item');
+      // Parse mod items into an isolated temp DB so the vanilla game DB is
+      // never polluted (audit P3). Vanilla comparisons in findBalanceOutliers
+      // still read the main DB.
+      const tempPath = join(
+        tmpdir(),
+        `pz-balance-${process.pid}-${Date.now()}.db`,
+      );
+      const tempDb = new DatabaseManager(tempPath);
+      let modItems: GameItem[] = [];
+      try {
+        await tempDb.initialize();
+        await new ProjectZomboidParser(tempDb).parseModDirectory(modPath);
+        modItems = await tempDb.getItemsByType("item");
+      } finally {
+        tempDb.close();
+        try {
+          unlinkSync(tempPath);
+        } catch {
+          /* best-effort cleanup */
+        }
+      }
 
       if (modItems.length === 0) {
-        balance.recommendations.push('No items found to analyze');
+        balance.recommendations.push("No items found to analyze");
         return balance;
       }
 
       balance.itemCount = modItems.length;
 
       // Collect stats from mod items (all categories)
-      const stats = ModAnalyzer.BALANCE_CATEGORIES.flatMap(c => c.stats);
+      const stats = ModAnalyzer.BALANCE_CATEGORIES.flatMap((c) => c.stats);
       const statValues: Record<string, number[]> = {};
 
       for (const stat of stats) {
@@ -635,7 +741,7 @@ export class ModAnalyzer {
       for (const item of modItems) {
         for (const stat of stats) {
           const value = item.properties[stat];
-          if (typeof value === 'number') {
+          if (typeof value === "number") {
             statValues[stat].push(value);
           }
         }
@@ -644,7 +750,8 @@ export class ModAnalyzer {
       // Calculate averages
       for (const [stat, values] of Object.entries(statValues)) {
         if (values.length > 0) {
-          balance.averageStats[stat] = values.reduce((sum, val) => sum + val, 0) / values.length;
+          balance.averageStats[stat] =
+            values.reduce((sum, val) => sum + val, 0) / values.length;
         }
       }
 
@@ -656,22 +763,28 @@ export class ModAnalyzer {
 
       // Generate balance recommendations
       this.generateBalanceRecommendations(balance);
-
     } catch (error) {
-      balance.recommendations.push(`Balance analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+      balance.recommendations.push(
+        `Balance analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     return balance;
   }
 
   private async findBalanceOutliers(
-    modItems: GameItem[], 
-    balance: BalanceAnalysis
+    modItems: GameItem[],
+    balance: BalanceAnalysis,
   ): Promise<void> {
     for (const category of ModAnalyzer.BALANCE_CATEGORIES) {
       // Get vanilla items of this category for comparison
-      const vanillaResults = await this.db.searchContent(category.keyword, { type: 'item', limit: 100 });
-      const vanillaItems = vanillaResults.filter(v => v.properties.Type === category.type);
+      const vanillaResults = await this.db.searchContent(category.keyword, {
+        type: "item",
+        limit: 100,
+      });
+      const vanillaItems = vanillaResults.filter(
+        (v) => v.properties.Type === category.type,
+      );
 
       if (vanillaItems.length === 0) continue;
 
@@ -679,11 +792,12 @@ export class ModAnalyzer {
       const vanillaStats: Record<string, number> = {};
       for (const stat of category.stats) {
         const values = vanillaItems
-          .map(w => w.properties[stat])
-          .filter(v => typeof v === 'number') as number[];
+          .map((w) => w.properties[stat])
+          .filter((v) => typeof v === "number") as number[];
 
         if (values.length > 0) {
-          vanillaStats[stat] = values.reduce((sum, val) => sum + val, 0) / values.length;
+          vanillaStats[stat] =
+            values.reduce((sum, val) => sum + val, 0) / values.length;
         }
       }
 
@@ -694,7 +808,7 @@ export class ModAnalyzer {
             const value = item.properties[stat];
             const vanillaAvg = vanillaStats[stat];
 
-            if (typeof value === 'number' && vanillaAvg) {
+            if (typeof value === "number" && vanillaAvg) {
               const ratio = value / vanillaAvg;
 
               if (ratio > 2.0) {
@@ -702,6 +816,7 @@ export class ModAnalyzer {
                   item: item.name,
                   property: stat,
                   value,
+                  ratio,
                   recommendation: `${stat} is ${ratio.toFixed(1)}x higher than vanilla average (${vanillaAvg.toFixed(1)})`,
                 });
               } else if (ratio < 0.3) {
@@ -709,7 +824,7 @@ export class ModAnalyzer {
                   item: item.name,
                   property: stat,
                   value,
-                  recommendation: `${stat} is ${(1/ratio).toFixed(1)}x lower than vanilla average (${vanillaAvg.toFixed(1)})`,
+                  recommendation: `${stat} is ${(1 / ratio).toFixed(1)}x lower than vanilla average (${vanillaAvg.toFixed(1)})`,
                 });
               }
             }
@@ -725,9 +840,9 @@ export class ModAnalyzer {
     // Deduct points for outliers
     score -= balance.outliers.length * 5;
 
-    // Deduct points for extreme outliers
-    const extremeOutliers = balance.outliers.filter(o => 
-      o.recommendation.includes('10x') || o.recommendation.includes('100x')
+    // Deduct points for extreme outliers (numeric ratio >= 10x — audit minor #7)
+    const extremeOutliers = balance.outliers.filter(
+      (o) => o.ratio !== undefined && o.ratio >= 10,
     );
     score -= extremeOutliers.length * 15;
 
@@ -736,23 +851,28 @@ export class ModAnalyzer {
 
   private generateBalanceRecommendations(balance: BalanceAnalysis): void {
     if (balance.outliers.length > 0) {
-      balance.recommendations.push(`Found ${balance.outliers.length} potential balance issues`);
-      
+      balance.recommendations.push(
+        `Found ${balance.outliers.length} potential balance issues`,
+      );
+
       if (balance.outliers.length > 5) {
-        balance.recommendations.push('Consider reviewing item stats for better game balance');
+        balance.recommendations.push(
+          "Consider reviewing item stats for better game balance",
+        );
       }
     }
 
     if (balance.score < 50) {
-      balance.recommendations.push('Many items appear to be overpowered or underpowered compared to vanilla');
+      balance.recommendations.push(
+        "Many items appear to be overpowered or underpowered compared to vanilla",
+      );
     }
   }
 
   private async analyzeCompatibility(
-    _modPath: string, 
-    result: ModAnalysisResult
+    _modPath: string,
+    result: ModAnalysisResult,
   ): Promise<CompatibilityAnalysis> {
-    
     const compatibility: CompatibilityAnalysis = {
       conflicts: [],
       missingDependencies: [],
@@ -766,7 +886,7 @@ export class ModAnalyzer {
     if (result.modInfo?.require) {
       for (const dep of result.modInfo.require) {
         // Check if dependency is available (simplified check)
-        const exists = await this.db.checkReference(dep, 'item');
+        const exists = await this.db.checkReference(dep, "item");
         if (!exists) {
           compatibility.missingDependencies.push(dep);
         }
@@ -783,11 +903,21 @@ export class ModAnalyzer {
       if (maxVersion !== undefined) {
         compatibility.gameVersionCompatibility.maxVersion = maxVersion;
       }
-      
-      // Simple version check (could be more sophisticated)
-      const currentVersion = '42.0'; // This should come from game detection
-      if (maxVersion !== undefined && currentVersion > maxVersion) {
-        compatibility.gameVersionCompatibility.compatible = false;
+
+      // Numeric version comparison (audit minor #6 — was string-lexical).
+      // Default game version = actual B42.20 install; PZ_GAME_VERSION env
+      // overrides for testing against other builds.
+      const [curMajor, curMinor] = (process.env.PZ_GAME_VERSION || "42.20")
+        .split(".")
+        .map(Number);
+      if (maxVersion !== undefined) {
+        const [maxMajor, maxMinor] = maxVersion.split(".").map(Number);
+        if (
+          curMajor > maxMajor ||
+          (curMajor === maxMajor && curMinor > maxMinor)
+        ) {
+          compatibility.gameVersionCompatibility.compatible = false;
+        }
       }
     }
 
@@ -795,13 +925,11 @@ export class ModAnalyzer {
   }
 
   private async analyzePerformance(
-    modPath: string, 
-    _result: ModAnalysisResult
+    modPath: string,
+    _result: ModAnalysisResult,
   ): Promise<PerformanceAnalysis> {
-    
     const performance: PerformanceAnalysis = {
       largeFiles: [],
-      complexScripts: [],
       recommendations: [],
     };
 
@@ -811,7 +939,10 @@ export class ModAnalyzer {
     return performance;
   }
 
-  private async findLargeFiles(dirPath: string, performance: PerformanceAnalysis): Promise<void> {
+  private async findLargeFiles(
+    dirPath: string,
+    performance: PerformanceAnalysis,
+  ): Promise<void> {
     try {
       const entries = readdirSync(dirPath);
 
@@ -823,8 +954,9 @@ export class ModAnalyzer {
           await this.findLargeFiles(fullPath, performance);
         } else {
           const sizeInMB = stat.size / (1024 * 1024);
-          
-          if (sizeInMB > 5) { // Files larger than 5MB
+
+          if (sizeInMB > 5) {
+            // Files larger than 5MB
             performance.largeFiles.push({
               file: fullPath,
               size: stat.size,
@@ -837,14 +969,16 @@ export class ModAnalyzer {
     }
   }
 
-  private generatePerformanceRecommendations(performance: PerformanceAnalysis): void {
+  private generatePerformanceRecommendations(
+    performance: PerformanceAnalysis,
+  ): void {
     if (performance.largeFiles.length > 0) {
-      performance.recommendations.push(`Found ${performance.largeFiles.length} large files that may impact loading time`);
-      performance.recommendations.push('Consider optimizing textures and audio files');
-    }
-
-    if (performance.complexScripts.length > 0) {
-      performance.recommendations.push('Some scripts may be complex and could impact performance');
+      performance.recommendations.push(
+        `Found ${performance.largeFiles.length} large files that may impact loading time`,
+      );
+      performance.recommendations.push(
+        "Consider optimizing textures and audio files",
+      );
     }
   }
 
@@ -859,9 +993,13 @@ export class ModAnalyzer {
     if (result.structure.missingFiles.length === 0) metrics.structure += 10;
 
     // Syntax score (based on issues)
-    const syntaxErrors = result.issues.filter(i => i.severity === 'error').length;
-    const syntaxWarnings = result.issues.filter(i => i.severity === 'warning').length;
-    metrics.syntax = Math.max(0, 100 - (syntaxErrors * 15) - (syntaxWarnings * 5));
+    const syntaxErrors = result.issues.filter(
+      (i) => i.severity === "error",
+    ).length;
+    const syntaxWarnings = result.issues.filter(
+      (i) => i.severity === "warning",
+    ).length;
+    metrics.syntax = Math.max(0, 100 - syntaxErrors * 15 - syntaxWarnings * 5);
 
     // Balance score
     metrics.balance = result.balance?.score || 100;
@@ -874,7 +1012,11 @@ export class ModAnalyzer {
 
     // Overall score
     metrics.overall = Math.round(
-      (metrics.structure + metrics.syntax + metrics.balance + metrics.documentation) / 4
+      (metrics.structure +
+        metrics.syntax +
+        metrics.balance +
+        metrics.documentation) /
+        4,
     );
   }
 
@@ -883,32 +1025,44 @@ export class ModAnalyzer {
 
     // Structure recommendations
     if (!result.structure.hasModInfo) {
-      recommendations.push('Add a mod.info file with proper metadata');
+      recommendations.push("Add a mod.info file with proper metadata");
     }
 
     if (!result.structure.hasCorrectStructure) {
-      recommendations.push('Use Build 42 mod structure with common/ and version folders');
+      recommendations.push(
+        "Use Build 42 mod structure with common/ and version folders",
+      );
     }
 
     // Issue-based recommendations
-    const errorCount = result.issues.filter(i => i.severity === 'error').length;
+    const errorCount = result.issues.filter(
+      (i) => i.severity === "error",
+    ).length;
     if (errorCount > 0) {
-      recommendations.push(`Fix ${errorCount} error(s) to ensure mod functionality`);
+      recommendations.push(
+        `Fix ${errorCount} error(s) to ensure mod functionality`,
+      );
     }
 
-    const warningCount = result.issues.filter(i => i.severity === 'warning').length;
+    const warningCount = result.issues.filter(
+      (i) => i.severity === "warning",
+    ).length;
     if (warningCount > 5) {
-      recommendations.push('Address warnings to improve mod quality');
+      recommendations.push("Address warnings to improve mod quality");
     }
 
     // Balance recommendations
     if (result.balance?.outliers.length && result.balance.outliers.length > 0) {
-      recommendations.push('Review item balance for better gameplay experience');
+      recommendations.push(
+        "Review item balance for better gameplay experience",
+      );
     }
 
     // Quality recommendations
     if (result.quality.overall < 70) {
-      recommendations.push('Consider improving mod structure and documentation');
+      recommendations.push(
+        "Consider improving mod structure and documentation",
+      );
     }
 
     result.recommendations = recommendations;

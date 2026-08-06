@@ -14,15 +14,15 @@ Hermes references this file in every task prompt sent to OpenCode for this repo.
 ## Project overview
 
 - `pz-mcp-server` — a **Model Context Protocol (MCP) stdio server** for **Project Zomboid mod development** (Build 42).
-- TypeScript, **ESM** (`"type": "module"`), Node >= 18. Entry point: `src/index.ts`, compiles to `dist/` via `tsc`.
-- Local SQLite database via native `better-sqlite3` (12.x) — if a rebuild is ever triggered on Windows it needs Visual Studio C++ Build Tools; don't touch `node_modules` unless asked.
+- TypeScript, **ESM** (`"type": "module"`), Node >= 22.5. Entry point: `src/index.ts`, compiles to `dist/` via `tsc`.
+- **Local SQLite database via built-in `node:sqlite`** (Node >= 22.5, no native dependencies — don't touch `node_modules` unless asked).
 
 ## Commands (canonical verify steps — run exactly these)
 
 | Purpose | Command |
 |---|---|
 | Compile | `npm run build` |
-| Tests (build + Jest) | `npm test` — 32 tests, 4 suites, must stay green |
+| Tests (build + Jest) | `npm test` — 66 tests, 6 suites, must stay green |
 | Lint | `npm run lint` |
 | Format | `npm run format` |
 | Run server | `npm start` (compiled) / `npm run dev` (tsx) |

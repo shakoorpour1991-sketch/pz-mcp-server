@@ -25,18 +25,17 @@ A local-only Model Context Protocol (MCP) stdio server for Project Zomboid mod d
 
 ### Dependencies
 - `@modelcontextprotocol/sdk` 1.30
-- `better-sqlite3` 12 (native, requires C++ build tools on Windows)
+- `node:sqlite` (built-in, no native dependencies)
 - `zod` 3.25
-- Node >= 18
+- Node >= 22.5
 
 ---
 
 ## Installation
 
 ### Prerequisites
-- **Node.js 18.0.0 or higher**
+- **Node.js 22.5.0 or higher**
 - **npm** package manager
-- **Visual Studio C++ Build Tools** (Windows) — required to compile the native `better-sqlite3` module during `npm install`
 
 ### Setup
 ```bash
@@ -53,7 +52,7 @@ npm run build
 | `npm run dev` | Run with `tsx` (dev mode, requires successful build) |
 | `npm start` | Run compiled server (`node dist/index.js`) |
 | `npm run lint` | ESLint |
-| `npm test` | Build + Jest (30 tests: 12 integration + 18 unit) |
+| `npm test` | Build + Jest (66 tests: 20 integration + 46 unit) |
 
 ---
 

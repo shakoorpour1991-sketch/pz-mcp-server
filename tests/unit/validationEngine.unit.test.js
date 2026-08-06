@@ -82,3 +82,159 @@ describe('ValidationEngine', () => {
     expect(byName.GhostItem.error).toBeDefined();
   });
 });
+
+// ===========================================================================
+// M1 (F5-F8): B42 validator consistency
+// ===========================================================================
+
+describe('M1 F5/F6: B42 craftRecipe validation', () => {
+  // DatabaseManager stub: reference lookups always succeed so these tests
+  // focus on block recognition / separators / required properties.
+  const dbStub = {
+    checkReference: async () => true,
+    getSimilarItems: async () => [],
+  };
+
+  test('recognizes craftRecipe blocks with B42 "key = value" properties and outputs section', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    craftRecipe Make TestPlank',
+      '    {',
+      '        category = Carpenters,',
+      '        timedAction = SawLog,',
+      '        Time = 150,',
+      '        inputs',
+      '        {',
+      '            item 1 [Base.Log;Base.WoodenStick],',
+      '        }',
+      '        outputs',
+      '        {',
+      '            item 2 Base.Plank,',
+      '        }',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'recipe');
+    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(true);
+  });
+
+  test('craftRecipe without Result property and without outputs section errors', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    craftRecipe Broken Recipe',
+      '    {',
+      '        category = Carpenters,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'recipe');
+    expect(
+      result.errors.some((e) => e.code === 'MISSING_PROPERTY' && /Result/.test(e.message))
+    ).toBe(true);
+    expect(result.isValid).toBe(false);
+  });
+
+  test('legacy B41 recipe with colon properties still validates', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    recipe Make LegacyPlank',
+      '    {',
+      '        Result:Base.Plank=2,',
+      '        Time:150.0,',
+      '        Category:Carpentry,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'recipe');
+    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(true);
+  });
+});
+
+describe('M1 F7: vehicle validation', () => {
+  const dbStub = {
+    checkReference: async () => true,
+    getSimilarItems: async () => [],
+  };
+
+  test('vehicle scripts validate without a "template" property (generator parity)', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    vehicle TestCar',
+      '    {',
+      '        Mass = 1000,',
+      '        EngineForce = 280,',
+      '        MaxSpeed = 130,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'vehicle');
+    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(true);
+  });
+});
+
+describe('M1 F8: evolved recipe validation', () => {
+  const dbStub = {
+    checkReference: async () => true,
+    getSimilarItems: async () => [],
+  };
+
+  test('BaseItem alone satisfies the evolved recipe requirement', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    evolvedrecipe TestSoup',
+      '    {',
+      '        BaseItem: Base.Soup,',
+      '        MaxItems: 3,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'evolvedrecipe');
+    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(true);
+  });
+
+  test('legacy ResultItem alone also satisfies the requirement', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    evolvedrecipe TestSoup',
+      '    {',
+      '        ResultItem: Base.Soup,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'evolvedrecipe');
+    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(true);
+  });
+
+  test('missing both BaseItem and ResultItem is an error', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    evolvedrecipe TestSoup',
+      '    {',
+      '        MaxItems: 3,',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'evolvedrecipe');
+    expect(result.errors.some((e) => e.code === 'MISSING_BASE_ITEM')).toBe(true);
+    expect(result.isValid).toBe(false);
+  });
+});

@@ -36,7 +36,8 @@ const logs = [];                   // stderr ring buffer
 
 function serverEntry() {
   const dist = join(ROOT, 'dist', 'index.js');
-  if (existsSync(dist)) return { cmd: process.execPath, args: [dist], label: 'dist/index.js' };
+  // --no-warnings silences the node:sqlite ExperimentalWarning on Node 22
+  if (existsSync(dist)) return { cmd: process.execPath, args: ['--no-warnings', dist], label: 'dist/index.js' };
   const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
   return { cmd: npx, args: ['tsx', 'src/index.ts'], label: 'tsx src/index.ts (dev)' };
 }
@@ -51,11 +52,21 @@ function pushLog(line) {
 function spawnChild() {
   const { cmd, args, label } = serverEntry();
   startedAt = Date.now();
-  child = spawn(cmd, args, { shell: process.platform === 'win32',
+  // Windows pitfall: `shell: true` joins cmd+args WITHOUT quoting, so a node.exe
+  // under "C:\Program Files\..." breaks ("'C:\Program' is not recognized").
+  // .exe → spawn directly (no shell). .cmd/.bat → build a quoted command line.
+  const needsShell = /\.(cmd|bat)$/i.test(cmd);
+  const spawnOpts = {
     cwd: ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PZ_MCP_LOG_LEVEL: process.env.PZ_MCP_LOG_LEVEL || 'info' },
-  });
+  };
+  if (needsShell) {
+    const line = '"' + cmd + '" ' + args.map(a => '"' + a.replace(/"/g, '\\"') + '"').join(' ');
+    child = spawn(line, { ...spawnOpts, shell: true });
+  } else {
+    child = spawn(cmd, args, spawnOpts);
+  }
   state = 'starting';
   broadcast('status', { state, pid: child.pid, entry: label });
   pushLog(`▸ spawning MCP server (${label}) pid=${child.pid}`);
@@ -128,13 +139,12 @@ function sendToServer(msg, timeout = 120000) {
 }
 
 /* ================= real telemetry ================= */
-let Database = null;
-try { Database = (await import('better-sqlite3')).default; } catch { /* not installed yet */ }
+import { DatabaseSync } from 'node:sqlite';
 
 function dbStats() {
-  if (!Database || !existsSync(DB_PATH)) return null;
+  if (!existsSync(DB_PATH)) return null;
   try {
-    const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
+    const db = new DatabaseSync(DB_PATH, { readOnly: true });
     const out = { total: 0, byType: {}, references: 0, mods: 0 };
     try {
       for (const r of db.prepare('SELECT type, COUNT(*) AS c FROM items GROUP BY type').all()) {

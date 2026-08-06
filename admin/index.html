@@ -764,7 +764,7 @@ const EXAMPLES = {
   validate_script: { content:'module Base {\n  item MyAxe {\n    Type = Weapon,\n    DisplayName = My Axe,\n    Weight = 3,\n    MaxDamage = 15,\n    MinDamage = 8,\n  }\n}', strict:false },
   generate_script: { type:'item', name:'Katana_Custom', module:'Base',
     properties:{ category:'Weapon', DisplayName:'Custom Katana', Icon:'Katana', Type:'Weapon', Weight:1.6, MaxDamage:22, MinDamage:12, ConditionMax:30, Categories:'LongBlade', DamageCategory:'Slash', SwingTime:1.2 } },
-  check_references: { references:['Base.Axe','Base.HandAxe','Sound_AxeSwing'], type:'all' },
+  check_references: { references:['Axe','HandAxe','Sound_AxeSwing'], type:'all' },
   analyze_mod: { modPath:'C:/Users/Administrator/Zomboid/mods/MyMod' },
   parse_game_files: {},
   index_knowledge_base: {},
