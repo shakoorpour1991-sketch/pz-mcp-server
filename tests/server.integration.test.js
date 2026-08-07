@@ -138,6 +138,8 @@ const TOOLS = [
   'analyze_recipe_chain',
   'detect_recipe_conflicts',
   'export_mod_script',
+  'workshop_search',
+  'workshop_get_details',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -177,7 +179,7 @@ describe('pz-mcp-server integration', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('tools/list exposes all 12 MCP tools', async () => {
+  test('tools/list exposes all 14 MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());

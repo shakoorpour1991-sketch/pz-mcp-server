@@ -34,6 +34,7 @@ import {
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
+import { SteamWorkshopClient } from "./workshop/SteamWorkshopClient.js";
 import { knowledgeBasePath } from "./utils/config.js";
 import { BLOCK_TYPES, SEARCH_TYPES } from "./utils/blockTypes.js";
 import logger from "./utils/logger.js";
@@ -67,6 +68,7 @@ let validator: ValidationEngine;
 let pathManager: PathManager;
 let knowledgeBaseManager: KnowledgeBaseManager;
 let recipeAnalyzer: RecipeAnalyzer;
+let workshopClient: SteamWorkshopClient;
 
 async function initializeServer() {
   try {
@@ -89,6 +91,9 @@ async function initializeServer() {
     // Initialize knowledge base manager
     knowledgeBaseManager = new KnowledgeBaseManager();
     await knowledgeBaseManager.initialize();
+
+    // Initialize Steam Workshop metadata client (keyless)
+    workshopClient = new SteamWorkshopClient();
 
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");
   } catch (error) {
@@ -262,6 +267,30 @@ const SearchKnowledgeBaseSchema = z.object({
     .describe("Maximum number of results"),
 });
 
+const WorkshopSearchSchema = z.object({
+  query: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe("Workshop search text (browse the Project Zomboid workshop)"),
+  limit: z
+    .number()
+    .min(1)
+    .max(100)
+    .default(20)
+    .describe("Maximum number of results (default 20)"),
+});
+
+const WorkshopGetDetailsSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      "Workshop item id or URL, e.g. 2696145877 or https://steamcommunity.com/sharedfiles/filedetails/?id=2696145877",
+    ),
+});
+
 // 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
 const ListKnowledgeTopicsSchema = z.object({});
 
@@ -339,6 +368,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           "Generate a script and (optionally) write it into a mod's media/scripts folder (overwrites an existing file of the same name). Dry-run by default — no disk changes unless dryRun=false",
         inputSchema: ExportModScriptSchema,
+      },
+      {
+        name: "workshop_search",
+        description:
+          "Browse the Project Zomboid Steam Workshop (AppID 108600) by text. Best-effort: uses the public community browse page (keyless). Paste a workshop URL/id with workshop_get_details for guaranteed resolution",
+        inputSchema: WorkshopSearchSchema,
+      },
+      {
+        name: "workshop_get_details",
+        description:
+          "Resolve full metadata for a Project Zomboid workshop item from its id or steamcommunity URL (Steam Web API, keyless, 24h cache)",
+        inputSchema: WorkshopGetDetailsSchema,
       },
     ],
   };
@@ -883,6 +924,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "workshop_search": {
+        const { query, limit } = WorkshopSearchSchema.parse(args);
+        const items = await workshopClient.search(query, limit);
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatWorkshopSearchResults(query, items),
+            },
+          ],
+          structuredContent: { query, count: items.length, items },
+        };
+      }
+
+      case "workshop_get_details": {
+        const { id } = WorkshopGetDetailsSchema.parse(args);
+        const details = await workshopClient.getDetails(id);
+        const isPz = details.appId === "108600";
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatWorkshopDetails(details, isPz),
+            },
+          ],
+          structuredContent: {
+            id: details.id,
+            isProjectZomboid: isPz,
+            details: JSON.parse(JSON.stringify(details)),
+          },
+        };
+      }
+
       default:
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
@@ -1206,6 +1280,87 @@ function formatKbTopics(
   });
 
   return output;
+}
+
+function formatWorkshopSearchResults(
+  query: string,
+  items: Array<{
+    id: string;
+    title: string;
+    author: string;
+    url: string;
+    shortDescription: string;
+    tags: string[];
+    subscribers: number;
+  }>,
+): string {
+  if (items.length === 0) {
+    return `Found 0 workshop items for "${query}".\n`;
+  }
+  let output = `Found ${items.length} workshop items for "${query}":\n\n`;
+  items.forEach((it, i) => {
+    output += `${i + 1}. **${it.title}** — by ${it.author} · id \`${it.id}\`\n`;
+    output += `   🔗 ${it.url}\n`;
+    if (it.subscribers > 0) output += `   👥 ${it.subscribers.toLocaleString()} subscribers\n`;
+    if (it.tags.length > 0) output += `   🏷️ ${it.tags.join(", ")}\n`;
+    if (it.shortDescription) {
+      output += `   ${it.shortDescription.slice(0, 160)}\n`;
+    }
+    output += `\n`;
+  });
+  output += `Run workshop_get_details with an id to fetch full metadata, then workshop_download (M2) to fetch and analyze the mod.`;
+  return output;
+}
+
+function formatWorkshopDetails(
+  details: {
+    id: string;
+    title: string;
+    url: string;
+    appId: string;
+    fileSize: number;
+    subscribers: number;
+    views: number;
+    votesUp: number;
+    votesDown: number;
+    tags: string[];
+    description: string;
+    timeUpdated: number;
+  },
+  isPz: boolean,
+): string {
+  let output = `## Workshop Item: ${details.title}\n\n`;
+  if (!isPz) {
+    output += `⚠️ **Warning**: this item's consumer app is \`${details.appId || "unknown"}\`, not Project Zomboid (108600).\n\n`;
+  }
+  output += `- **Id**: \`${details.id}\``;
+  if (isPz) output += ` ✅ Project Zomboid`;
+  output += `\n`;
+  output += `- **Link**: ${details.url}\n`;
+  output += `- **File size**: ${formatBytes(details.fileSize)}\n`;
+  output += `- **Subscribers**: ${details.subscribers.toLocaleString()}\n`;
+  output += `- **Views**: ${details.views.toLocaleString()}\n`;
+  output += `- **Rating**: 👍 ${details.votesUp.toLocaleString()} / 👎 ${details.votesDown.toLocaleString()}\n`;
+  if (details.tags.length > 0) {
+    output += `- **Tags**: ${details.tags.join(", ")}\n`;
+  }
+  output += `- **Last updated**: ${new Date(details.timeUpdated * 1000).toISOString().slice(0, 10)}\n`;
+  if (details.description) {
+    output += `\n### Description\n${details.description.slice(0, 600)}\n`;
+  }
+  return output;
+}
+
+function formatBytes(n: number): string {
+  if (n <= 0) return "unknown";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 // Start the server
