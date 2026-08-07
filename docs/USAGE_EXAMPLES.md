@@ -275,8 +275,7 @@ console.log('Evolved recipe:\n', evolvedRecipe);
 const analysis = await mcp.callTool('analyze_mod', {
   modPath: '/path/to/my-zombie-survival-mod',
   checkBalance: true,
-  checkCompatibility: true,
-  generateReport: true
+  checkCompatibility: true
 });
 
 console.log('=== MOD ANALYSIS REPORT ===');
@@ -543,8 +542,7 @@ async function validateModForCI(modPath: string) {
   const analysis = await mcp.callTool('analyze_mod', {
     modPath,
     checkBalance: true,
-    checkCompatibility: true,
-    generateReport: true
+    checkCompatibility: true
   });
 
   // Set quality gates

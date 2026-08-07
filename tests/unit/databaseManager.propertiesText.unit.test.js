@@ -49,7 +49,7 @@ describe('DatabaseManager: plain-text properties_text FTS mirror (A6)', () => {
 
   test('properties_text is plain text without JSON noise', () => {
     const row = raw.prepare('SELECT properties_text FROM items WHERE id = ?').get('Base.TestAxe');
-    expect(row.properties_text).not.toMatch(/[{}\"]/);
+    expect(row.properties_text).not.toMatch(/[{}"]/);
     expect(row.properties_text).toContain('DisplayName=Test Axe');
     expect(row.properties_text).toContain('Weight=2.5');
     expect(row.properties_text).toContain('Tags=Cutting,Woodwork');

@@ -25,10 +25,11 @@ import { dirname, resolve } from "path";
 import { DatabaseManager } from "./database/DatabaseManager.js";
 import { ProjectZomboidParser } from "./parsers/ProjectZomboidParser.js";
 import { ModAnalyzer } from "./analyzers/ModAnalyzer.js";
-import { ScriptGenerator } from "./generators/ScriptGenerator.js";
+import { ScriptGenerator, GenerationOptions } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
+import { knowledgeBasePath } from "./utils/config.js";
 import logger from "./utils/logger.js";
 
 // Read the server version from package.json (audit minor: was hardcoded '1.1.0')
@@ -104,6 +105,8 @@ const GenerateScriptSchema = z.object({
   name: z.string().describe("Name of the item/recipe/etc to generate"),
   properties: z.record(z.any()).describe("Properties and specifications for the generated content"),
   module: z.string().default("Base").describe("Module name to use"),
+  balance: z.enum(["vanilla", "powerful", "weak", "custom"]).optional().describe("Balance mode: vanilla (default), powerful, weak, or custom (no adjustments)"),
+  includeComments: z.boolean().optional().describe("Include explanatory comments in the generated script"),
 });
 
 const ValidateScriptSchema = z.object({
@@ -121,7 +124,6 @@ const AnalyzeModSchema = z.object({
   modPath: z.string().describe("Path to mod directory"),
   checkBalance: z.boolean().default(true).describe("Perform balance analysis"),
   checkCompatibility: z.boolean().default(true).describe("Check compatibility with vanilla"),
-  generateReport: z.boolean().default(true).describe("Generate detailed analysis report"),
 });
 
 const ParseGameFilesSchema = z.object({
@@ -396,8 +398,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "generate_script": {
-        const { type, name, properties, module } = GenerateScriptSchema.parse(args);
-        const script = await generator.generateScript(type, name, properties, module);
+        const { type, name, properties, module, balance, includeComments } = GenerateScriptSchema.parse(args);
+        // Build options conditionally (exactOptionalPropertyTypes: absent, not undefined)
+        const generationOptions: GenerationOptions = {};
+        if (balance !== undefined) generationOptions.balance = balance;
+        if (includeComments !== undefined) generationOptions.includeComments = includeComments;
+        const script = await generator.generateScript(type, name, properties, module, generationOptions);
         
         return {
           content: [
@@ -438,7 +444,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "analyze_mod": {
-        const { modPath, checkBalance, checkCompatibility, generateReport } = AnalyzeModSchema.parse(args);
+        const { modPath, checkBalance, checkCompatibility } = AnalyzeModSchema.parse(args);
         let safePath: string;
         try {
           safePath = pathManager.validateInputPath(modPath, 'dir');
@@ -448,7 +454,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const analysis = await analyzer.analyzeMod(safePath, {
           checkBalance,
           checkCompatibility,
-          generateReport,
         });
         
         return {
@@ -495,7 +500,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "index_knowledge_base": {
         const { path: kbPath, overwrite } = IndexKnowledgeBaseSchema.parse(args);
-        const resolvedPath = kbPath || process.env.PZ_MCP_KB_PATH || 'D:\\PZ-Modding\\Documentation';
+        const resolvedPath = kbPath || knowledgeBasePath();
         if (!existsSync(resolvedPath)) {
           throw new McpError(ErrorCode.InvalidParams, `Knowledge base directory not found: ${resolvedPath}`);
         }

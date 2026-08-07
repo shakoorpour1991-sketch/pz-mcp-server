@@ -52,7 +52,7 @@ npm run build
 | `npm run dev` | Run with `tsx` (dev mode, requires successful build) |
 | `npm start` | Run compiled server (`node dist/index.js`) |
 | `npm run lint` | ESLint |
-| `npm test` | Build + Jest (76 tests, 6 suites) |
+| `npm test` | Build + Jest (114 tests, 10 suites) |
 
 ---
 
@@ -78,6 +78,19 @@ Restart Claude Desktop after editing the config. Requires a successful `npm run 
 ```bash
 node dist/index.js
 ```
+
+### Environment variables
+
+All configuration is read from environment variables at startup (freebuff M4):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PZ_MCP_DATA_DIR` | `./data` (relative to cwd) | Directory for the SQLite databases. Set this when launching from an MCP client so the DB lands in a predictable location instead of the client's cwd. |
+| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Markdown knowledge-base docs directory |
+| `PZ_MCP_LOG_LEVEL` | `info` | pino log level (`debug`/`info`/`warn`/`error`) |
+| `PZ_GAME_VERSION` | `42.20` | Game build used for mod compatibility checks |
+| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Explicit Project Zomboid install path (overrides registry/hardcoded detection) |
+| `PZ_DECK_PORT` | `8787` | Dashboard/Control Deck port (`admin/bridge.mjs`) |
 
 ---
 
@@ -110,6 +123,8 @@ Generate Project Zomboid scripts from templates.
 | `name` | string | Yes | Name of the item/recipe/etc |
 | `properties` | object | Yes | Script properties (e.g., `DisplayName`, `Type`, `MaxDamage`) |
 | `module` | string | No | Module name (default: `"Base"`) |
+| `balance` | enum | No | Balance mode: `vanilla` (default), `powerful`, `weak`, `custom` (no adjustments) |
+| `includeComments` | boolean | No | Include explanatory comments in the generated script (default: `false`) |
 
 **Output:** Formatted script block with generated Lua/INI content.
 
@@ -153,7 +168,6 @@ Analyze a mod directory for structure, syntax, compatibility, and balance.
 | `modPath` | string | Yes | Path to mod directory |
 | `checkBalance` | boolean | No | Perform balance analysis (default: `true`) |
 | `checkCompatibility` | boolean | No | Check vanilla compatibility (default: `true`) |
-| `generateReport` | boolean | No | Generate detailed report (default: `true`) |
 
 **Output:** Mod name, path, structure validation results (mod. info, scripts, Lua, assets), issues grouped by severity, balance score and recommendations.
 

@@ -1,5 +1,6 @@
 import { DatabaseManager } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
+import { scanScriptBlocks } from "../utils/scriptScanner.js";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -216,85 +217,25 @@ export class ValidationEngine {
     endLine: number;
     rawContent: string;
   }> {
-    const blocks: Array<any> = [];
-    const lines = content.split("\n");
-
-    let currentBlock: any = null;
-    let braceLevel = 0;
-    let inModule = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const lineNumber = i + 1;
-
-      // Skip empty lines and comments
-      if (
-        !line ||
-        line.startsWith("//") ||
-        line.startsWith("/*") ||
-        line.startsWith("*")
-      ) {
-        continue;
+    // Shared scanner (freebuff M1): identical block boundaries to the
+    // game-file parser, so the two consumers can never drift apart again.
+    // Blocks are normalized (craftRecipe → recipe) and ingredient lines are
+    // never mistaken for block headers. Property lines are parsed here — the
+    // header line (index 0) is skipped.
+    return scanScriptBlocks(content).map((block) => {
+      const properties: Record<string, any> = {};
+      for (let i = 1; i < block.content.length; i++) {
+        this.parseProperty(block.content[i], properties, block.type);
       }
-
-      // Handle module declarations
-      if (line.startsWith("module ") && !inModule) {
-        inModule = true;
-        continue;
-      }
-
-      // Count braces
-      const openBraces = (line.match(/\{/g) || []).length;
-      const closeBraces = (line.match(/\}/g) || []).length;
-      braceLevel += openBraces - closeBraces;
-
-      // Check for block start
-      // "craftRecipe" (capital R) is the real B42 recipe keyword; normalize
-      // it (and "craftrecipe") to type 'recipe' so B42 scripts validate like
-      // legacy ones (F5). Names may contain spaces (B42: "fixing Fix
-      // Pistol"), so capture the remainder up to the '{'.
-      const blockMatch = line.match(
-        /^(item|recipe|craftRecipe|craftrecipe|evolvedrecipe|fixing|sound|vehicle)\s+([^{]+)/,
-      );
-      if (blockMatch && !currentBlock) {
-        currentBlock = {
-          type:
-            blockMatch[1].toLowerCase() === "craftrecipe"
-              ? "recipe"
-              : blockMatch[1],
-          name: blockMatch[2].trim(),
-          properties: {},
-          startLine: lineNumber,
-          endLine: 0,
-          rawContent: "",
-        };
-        continue;
-      }
-
-      // Parse properties within block
-      if (currentBlock && braceLevel > 0) {
-        currentBlock.rawContent += line + "\n";
-        this.parseProperty(line, currentBlock.properties, currentBlock.type);
-      }
-
-      // Check if block is complete
-      if (
-        currentBlock &&
-        braceLevel === (inModule ? 1 : 0) &&
-        line.includes("}")
-      ) {
-        currentBlock.endLine = lineNumber;
-        blocks.push(currentBlock);
-        currentBlock = null;
-      }
-
-      // Check if exiting module
-      if (inModule && braceLevel === 0 && line.includes("}")) {
-        inModule = false;
-      }
-    }
-
-    return blocks;
+      return {
+        type: block.type,
+        name: block.name,
+        properties,
+        startLine: block.startLine,
+        endLine: block.endLine,
+        rawContent: block.rawContent,
+      };
+    });
   }
 
   private parseProperty(

@@ -1,0 +1,16 @@
+# Keep npm dependencies fresh (freebuff review L5).
+# Supply-chain hygiene: weekly PRs for direct dependencies, security updates
+# are raised automatically by Dependabot regardless of schedule.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: "auto"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3

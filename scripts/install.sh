@@ -8,16 +8,18 @@ set -e
 echo "🎮 Project Zomboid MCP Server Installation"
 echo "=========================================="
 
-# Check Node.js version
+# Check Node.js version (node:sqlite requires >= 22.5)
 echo "📋 Checking Node.js version..."
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 18+ and try again."
+    echo "❌ Node.js is not installed. Please install Node.js 22.5+ and try again."
     exit 1
 fi
 
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "❌ Node.js 18+ is required. Current version: $(node -v)"
+NODE_VERSION=$(node -v | cut -d'v' -f2)
+NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d'.' -f1)
+NODE_MINOR=$(echo "$NODE_VERSION" | cut -d'.' -f2)
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 5 ]; }; then
+    echo "❌ Node.js 22.5+ is required. Current version: $(node -v)"
     exit 1
 fi
 
@@ -61,21 +63,6 @@ else
     echo "🎮 Project Zomboid found at: $PZ_FOUND"
     echo "   The server will auto-detect this installation."
 fi
-
-# Create example configuration
-echo "⚙️ Creating example configuration..."
-cat > config.example.json << 'EOF'
-{
-  "projectZomboidPath": "/path/to/ProjectZomboid",
-  "databasePath": "./data/pz_database.db",
-  "logLevel": "info",
-  "enableAutoDetection": true,
-  "mcpServer": {
-    "name": "pz-mcp-server",
-    "version": "1.0.0"
-  }
-}
-EOF
 
 # Create Claude Desktop configuration example
 echo "🤖 Creating Claude Desktop configuration example..."

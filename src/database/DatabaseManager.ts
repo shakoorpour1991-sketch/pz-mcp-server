@@ -2,6 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import logger from '../utils/logger.js';
+import { databasePath } from '../utils/config.js';
+import { sanitizeFtsTerms } from '../utils/fts.js';
+
+/** Shared item column list (freebuff L3) — keeps the SQL in sync. */
+const ITEM_SELECT_COLUMNS =
+  'id, name, display_name, type, module, category, properties, raw_content, file_path, tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier, hunger_change, thirst_change';
 
 /**
  * Flatten item properties into plain, searchable text for the FTS mirror
@@ -85,7 +91,7 @@ export class DatabaseManager {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || join(process.cwd(), 'data', 'pz_database.db');
+    this.dbPath = dbPath || databasePath();
     
     // Ensure directory exists
     const dbDir = join(this.dbPath, '..');
@@ -97,20 +103,39 @@ export class DatabaseManager {
     
     // Enable WAL mode for better concurrency
     this.db.exec('PRAGMA journal_mode = WAL');
+    // Enforce the FOREIGN KEY declared on "references".item_id (freebuff M6)
+    this.db.exec('PRAGMA foreign_keys = ON');
     
     await this.createTables();
     await this.createIndexes();
     await this.migrateSchema();
 
-    // Heal any stale FTS index: older DBs (INSERT OR REPLACE era) drifted
-    // rowids, leaving items_fts entries pointing at rows that no longer exist
-    // ("missing row N from content table" on MATCH). Rebuild resyncs it.
-    // Safe on a fresh DB (no rows = no-op).
+    // Heal a stale FTS index only when it has actually drifted: older DBs
+    // (INSERT OR REPLACE era) left items_fts entries pointing at rows that no
+    // longer exist ("missing row N from content table" on MATCH). Two cheap
+    // signals — row-count mismatch AND max(rowid) mismatch. The rowid check
+    // catches churn that preserves the row count (INSERT OR REPLACE deletes +
+    // re-inserts shift rowids without changing COUNT) — the full rebuild is
+    // skipped on every healthy boot (freebuff L1).
     try {
-      this.db.exec(`INSERT INTO items_fts(items_fts) VALUES('rebuild')`);
+      const itemCount = (
+        this.db.prepare('SELECT COUNT(*) as c FROM items').get() as { c: number }
+      ).c;
+      const ftsCount = (
+        this.db.prepare('SELECT COUNT(*) as c FROM items_fts').get() as { c: number }
+      ).c;
+      const itemMaxRowid = (
+        this.db.prepare('SELECT IFNULL(MAX(rowid), 0) as m FROM items').get() as { m: number }
+      ).m;
+      const ftsMaxRowid = (
+        this.db.prepare('SELECT IFNULL(MAX(rowid), 0) as m FROM items_fts').get() as { m: number }
+      ).m;
+      if (itemCount !== ftsCount || itemMaxRowid !== ftsMaxRowid) {
+        this.db.exec(`INSERT INTO items_fts(items_fts) VALUES('rebuild')`);
+        logger.info(`FTS index rebuilt (items=${itemCount}/${itemMaxRowid}, fts=${ftsCount}/${ftsMaxRowid})`);
+      }
     } catch (err) {
-      // If the FTS table is missing, tables were just created — nothing to heal.
-      logger.warn(`FTS rebuild skipped: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`FTS health check skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -350,13 +375,7 @@ export class DatabaseManager {
 
     if (query.trim() === '') {
       // Return all items with optional filtering
-      sql = `
-        SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
-               tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
-               hunger_change, thirst_change
-        FROM items
-        WHERE 1=1
-      `;
+      sql = `SELECT ${ITEM_SELECT_COLUMNS} FROM items WHERE 1=1`;
     } else {
       // Use FTS5 for search
       sql = `
@@ -456,9 +475,7 @@ export class DatabaseManager {
 
   async getItemById(id: string): Promise<GameItem | null> {
     const row = this.db.prepare(`
-      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
-             tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
-             hunger_change, thirst_change
+      SELECT ${ITEM_SELECT_COLUMNS}
       FROM items
       WHERE id = ?
     `).get(id) as unknown as ItemRow | undefined;
@@ -470,26 +487,13 @@ export class DatabaseManager {
 
   async getItemsByType(type: string): Promise<GameItem[]> {
     const rows = this.db.prepare(`
-      SELECT id, name, display_name, type, module, category, properties, raw_content, file_path,
-             tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
-             hunger_change, thirst_change
+      SELECT ${ITEM_SELECT_COLUMNS}
       FROM items
       WHERE type = ?
       ORDER BY name ASC
     `).all(type) as unknown as ItemRow[];
 
     return rows.map((row) => this.rowToItem(row));
-  }
-
-  async getCategories(): Promise<string[]> {
-    const rows = this.db.prepare(`
-      SELECT DISTINCT category
-      FROM items
-      WHERE category IS NOT NULL
-      ORDER BY category ASC
-    `).all() as Array<{ category: string | null }>;
-
-    return rows.map(row => row.category).filter((c): c is string => c !== null);
   }
 
   async getStats(): Promise<Record<string, number>> {
@@ -520,28 +524,37 @@ export class DatabaseManager {
     `).run(itemId, referenceId, referenceType, context ?? null);
   }
 
-  async getReferences(itemId: string): Promise<Array<{referenceId: string; type: string; context?: string}>> {
-    const rows = this.db.prepare(`
-      SELECT reference_id, reference_type, context
-      FROM "references"
-      WHERE item_id = ?
-    `).all(itemId) as Array<{
-      reference_id: string;
-      reference_type: string;
-      context: string | null;
-    }>;
-
-    return rows.map(row => {
-      const ref: { referenceId: string; type: string; context?: string } = {
-        referenceId: row.reference_id,
-        type: row.reference_type,
-      };
-      if (row.context !== null) ref.context = row.context;
-      return ref;
-    });
+  /**
+   * Run `fn` inside a single SQLite transaction (freebuff M2). Used to batch
+   * per-file reference extraction into one commit instead of thousands of
+   * single-row autocommit inserts.
+   */
+  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    this.db.exec('BEGIN');
+    try {
+      const result = await fn();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   async checkReference(referenceId: string, referenceType?: string): Promise<boolean> {
+    // Sprites are never rows in `items` — items.type only holds the six block
+    // types (item/recipe/sound/vehicle/evolvedrecipe/fixing). Sprite
+    // references (Icon, WeaponSprite, ...) live exclusively in the
+    // "references" table with reference_type='sprite', populated by
+    // extractReferences. Filtering items by type='sprite' therefore always
+    // missed (freebuff review C1).
+    if (referenceType === 'sprite') {
+      const refRow = this.db.prepare(
+        `SELECT COUNT(*) as count FROM "references" WHERE reference_id = ? AND reference_type = 'sprite'`
+      ).get(referenceId) as unknown as { count: number };
+      return refRow.count > 0;
+    }
+
     let sql = 'SELECT COUNT(*) as count FROM items WHERE id = ?';
     const params = [referenceId];
 
@@ -551,7 +564,20 @@ export class DatabaseManager {
     }
 
     const row = this.db.prepare(sql).get(...params) as unknown as { count: number };
-    return row.count > 0;
+    if (row.count > 0) {
+      return true;
+    }
+
+    // 'all' (no type filter): fall back to the references table so sprite/
+    // model references that are not item rows still resolve.
+    if (!referenceType || referenceType === 'all') {
+      const refRow = this.db.prepare(
+        `SELECT COUNT(*) as count FROM "references" WHERE reference_id = ?`
+      ).get(referenceId) as unknown as { count: number };
+      return refRow.count > 0;
+    }
+
+    return false;
   }
 
   async getSimilarItems(query: string, limit: number = 5): Promise<string[]> {
@@ -581,21 +607,20 @@ export class DatabaseManager {
   }
 
   async clearDatabase(): Promise<void> {
-    this.db.exec('DELETE FROM items');
+    // FK is enforced (freebuff M6): children must be deleted before parents,
+    // otherwise DELETE FROM items throws FOREIGN KEY constraint failed.
     this.db.exec('DELETE FROM "references"');
     this.db.exec('DELETE FROM mods');
+    this.db.exec('DELETE FROM items');
   }
 
   private prepareFTSQuery(query: string): string {
     // FTS5 query sanitization: never pass user input through unmodified.
     // FTS5 MATCH strings are their own query language — raw input containing
     // operators, quotes, or special characters can cause syntax errors,
-    // operator injection, or expensive scans. Strip FTS5 special characters
-    // and operator keywords, then wrap every term in quotes.
-    const terms = query
-      .replace(/["*:^+\-(){}[\]!~;]/g, ' ')
-      .split(/\s+/)
-      .filter(term => term.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(term));
+    // operator injection, or expensive scans. Term extraction is shared with
+    // the KB manager (freebuff L3); the query shape is built here.
+    const terms = sanitizeFtsTerms(query);
 
     if (terms.length === 0) {
       // Nothing searchable — return a match-nothing query

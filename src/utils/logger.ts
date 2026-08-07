@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { logLevel } from './config.js';
 
 /**
  * Structured logger (P4 #21).
@@ -9,7 +10,7 @@ import pino from 'pino';
  */
 const logger = pino(
   {
-    level: process.env.PZ_MCP_LOG_LEVEL || 'info',
+    level: logLevel(),
   },
   pino.destination({ fd: 2 })
 );

@@ -223,6 +223,31 @@ describe('DatabaseManager', () => {
     });
   });
 
+  describe('checkReference: sprite references resolve via the references table (C1)', () => {
+    beforeAll(async () => {
+      // extractReferences stores Icon/WeaponSprite values as
+      // reference_type='sprite' rows; they are NOT rows in items.
+      // (item_id must reference the existing 'Base.TestSword' row — FK is
+      // enforced now, freebuff M6.)
+      await db.addReference('Base.TestSword', 'TestSwordIcon', 'sprite', 'Icon');
+    });
+
+    test('type=sprite resolves against the references table', async () => {
+      expect(await db.checkReference('TestSwordIcon', 'sprite')).toBe(true);
+      expect(await db.checkReference('NoSuchSpriteEver', 'sprite')).toBe(false);
+    });
+
+    test('type=all falls back to the references table when not an item', async () => {
+      expect(await db.checkReference('TestSwordIcon')).toBe(true);
+      expect(await db.checkReference('NoSuchRefEver')).toBe(false);
+    });
+
+    test('type=item/sound still resolve against items only', async () => {
+      expect(await db.checkReference('Base.TestSword', 'item')).toBe(true);
+      expect(await db.checkReference('TestSwordIcon', 'item')).toBe(false);
+    });
+  });
+
   describe('FTS rowid stability (upsert vs INSERT OR REPLACE)', () => {
     test('re-inserting the same id keeps it FTS-searchable (no rowid drift)', async () => {
       const item = {
@@ -292,6 +317,27 @@ describe('DatabaseManager', () => {
       expect(Array.isArray(results)).toBe(true);
       healedDb.close();
       fs.rmSync(staleDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('clearDatabase with FK enforcement (M6 regression)', () => {
+    test('deletes references before items without FOREIGN KEY constraint failed', async () => {
+      await db.insertItem({
+        id: 'Base.FkItem',
+        name: 'FkItem',
+        displayName: 'FK Item',
+        type: 'item',
+        module: 'Base',
+        properties: {},
+        rawContent: 'item FkItem {}',
+        filePath: 'fk.txt',
+      });
+      await db.addReference('Base.FkItem', 'FkSprite', 'sprite', 'Icon');
+
+      // Must not throw: references are deleted before items (forceReparse path)
+      await db.clearDatabase();
+      const stats = await db.getStats();
+      expect(stats.total).toBe(0);
     });
   });
 });

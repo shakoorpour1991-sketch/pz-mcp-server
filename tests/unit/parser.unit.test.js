@@ -320,6 +320,9 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
       addReference: async (id, ref, type, context) => {
         refs.push({ id, ref, type, context });
       },
+      transaction: async (fn) => {
+        await fn();
+      },
       getStats: async () => ({ total: 0 }),
       clearDatabase: async () => {},
     };
@@ -411,5 +414,27 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
     expect(recipe.properties.Time).toBe(150);
     expect(recipe.properties.ingredients).toEqual([{ item: 'Base.Log', count: 4 }]);
     expect(recipe.properties.outputs).toBeUndefined();
+  });
+
+  test('scanner: a "module = Foo," property line is not swallowed as a module declaration', async () => {
+    // Regression: the scanner's module branch previously matched any line
+    // starting with "module " (freebuff M1 review follow-up) — a property
+    // named `module` outside any module would be skipped entirely.
+    writeScript(
+      'media/scripts/module_prop.txt',
+      [
+        'item Standalone',
+        '{',
+        '    module = Base.Something,',
+        '    Weight = 2.0,',
+        '}',
+      ].join('\n')
+    );
+    const results = await parser.parseModDirectory(tmpDir);
+    expect(results.errors).toEqual([]);
+    const item = inserted.find((i) => i.type === 'item');
+    expect(item).toBeDefined();
+    expect(item.properties.module).toBe('Base.Something');
+    expect(item.properties.Weight).toBe(2);
   });
 });

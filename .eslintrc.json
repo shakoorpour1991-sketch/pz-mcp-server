@@ -12,6 +12,16 @@
     "sourceType": "module"
   },
   "ignorePatterns": ["dist/", "node_modules/", "coverage/"],
+  "overrides": [
+    {
+      "files": ["tests/**/*.js"],
+      "env": { "jest": true }
+    },
+    {
+      "files": ["admin/*.mjs", "scripts/*.mjs"],
+      "globals": { "fetch": "readonly", "TextDecoder": "readonly", "URL": "readonly" }
+    }
+  ],
   "rules": {
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "@typescript-eslint/no-explicit-any": "off"

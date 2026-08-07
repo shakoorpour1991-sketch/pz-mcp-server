@@ -81,6 +81,38 @@ describe('ValidationEngine', () => {
     expect(byName.GhostItem.isValid).toBe(false);
     expect(byName.GhostItem.error).toBeDefined();
   });
+
+  // C1: sprite references (Icon/WeaponSprite) are stored in the references
+  // table, not in items — a recorded sprite must validate without warnings.
+  test('C1: recorded sprite reference validates without INVALID_REFERENCE warnings', async () => {
+    await db.addReference('TestSword', 'TestSwordIcon', 'sprite', 'Icon');
+
+    const content = [
+      'item SampleIcon',
+      '{',
+      '\tType = Weapon,',
+      '\tDisplayName = Sample Icon,',
+      '\tIcon = TestSwordIcon,',
+      '}',
+    ].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    const invalidRefs = result.warnings.filter((w) => w.code === 'INVALID_REFERENCE');
+    expect(invalidRefs).toHaveLength(0);
+  });
+
+  test('C1: unknown sprite reference still warns', async () => {
+    const content = [
+      'item SampleIcon2',
+      '{',
+      '\tType = Weapon,',
+      '\tDisplayName = Sample Icon 2,',
+      '\tIcon = DefinitelyNotASprite,',
+      '}',
+    ].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    const invalidRefs = result.warnings.filter((w) => w.code === 'INVALID_REFERENCE');
+    expect(invalidRefs.length).toBeGreaterThan(0);
+  });
 });
 
 // ===========================================================================

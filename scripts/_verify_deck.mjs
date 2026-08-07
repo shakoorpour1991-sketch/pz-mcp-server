@@ -16,8 +16,9 @@ check('GET / serves dashboard HTML', page.status === 200 && pageHtml.includes('i
 
 // ---- 2. SSE /events — collect ALL frames until search res seen ----
 const frames = [];
-let hello = null;
-const sseReader = (async () => {
+// Runs concurrently to collect SSE frames while the RPC calls below happen.
+let _hello = null;
+const _sseReader = (async () => {
   try {
     const res = await fetch(BASE + '/events');
     const reader = res.body.getReader();
@@ -38,12 +39,12 @@ const sseReader = (async () => {
         }
         if (!data) continue;
         let parsed; try { parsed = JSON.parse(data); } catch { continue; }
-        if (event === 'hello') hello = parsed;
+        if (event === 'hello') _hello = parsed;
         else if (event === 'frame') frames.push(parsed);
       }
     }
-    try { await reader.cancel(); } catch {}
-  } catch (e) { /* stream ended */ }
+    try { await reader.cancel(); } catch { /* cancelled */ }
+  } catch { /* stream ended */ }
 })();
 
 // ---- 3. dashboard handshake ----

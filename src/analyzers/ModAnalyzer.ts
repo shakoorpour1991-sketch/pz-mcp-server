@@ -1,10 +1,8 @@
 import {
   existsSync,
-  readdirSync,
-  statSync,
-  readFileSync,
   unlinkSync,
 } from "fs";
+import { readdir, stat, readFile } from "fs/promises";
 import { join, extname, basename } from "path";
 import { tmpdir } from "os";
 import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
@@ -13,6 +11,7 @@ import {
   ModInfo,
 } from "../parsers/ProjectZomboidParser.js";
 import { ValidationEngine } from "../validation/ValidationEngine.js";
+import { gameVersion } from "../utils/config.js";
 
 export interface ModAnalysisResult {
   modName?: string;
@@ -90,7 +89,6 @@ export interface AnalysisOptions {
   checkBalance?: boolean;
   checkCompatibility?: boolean;
   checkPerformance?: boolean;
-  generateReport?: boolean;
   strictValidation?: boolean;
 }
 
@@ -209,15 +207,20 @@ export class ModAnalyzer {
     const commonPath = join(modPath, "common");
     structure.hasCommonFolder = existsSync(commonPath);
 
-    // Find build version folders
-    const entries = readdirSync(modPath);
-    for (const entry of entries) {
-      const entryPath = join(modPath, entry);
-      if (statSync(entryPath).isDirectory()) {
-        if (/^\d+(\.\d+)*$/.test(entry)) {
-          structure.buildVersions.push(entry);
+    // Find build version folders (async fs — freebuff M5)
+    try {
+      const entries = await readdir(modPath);
+      for (const entry of entries) {
+        const entryPath = join(modPath, entry);
+        if ((await stat(entryPath)).isDirectory()) {
+          if (/^\d+(\.\d+)*$/.test(entry)) {
+            structure.buildVersions.push(entry);
+          }
         }
       }
+    } catch {
+      // Unreadable mod root — buildVersions stays empty, countFiles will
+      // report the read error itself.
     }
 
     // Check for correct structure (Build 42 style)
@@ -245,13 +248,14 @@ export class ModAnalyzer {
     structure: StructureAnalysis,
   ): Promise<void> {
     try {
-      const entries = readdirSync(dirPath);
+      // Async fs (freebuff M5): analysis must not block the event loop.
+      const entries = await readdir(dirPath);
 
       for (const entry of entries) {
         const fullPath = join(dirPath, entry);
-        const stat = statSync(fullPath);
+        const entryStat = await stat(fullPath);
 
-        if (stat.isDirectory()) {
+        if (entryStat.isDirectory()) {
           await this.countFiles(fullPath, structure);
         } else {
           const ext = extname(entry).toLowerCase();
@@ -315,13 +319,13 @@ export class ModAnalyzer {
     strict: boolean,
   ): Promise<void> {
     try {
-      const entries = readdirSync(dirPath);
+      const entries = await readdir(dirPath);
 
       for (const entry of entries) {
         const fullPath = join(dirPath, entry);
-        const stat = statSync(fullPath);
+        const entryStat = await stat(fullPath);
 
-        if (stat.isDirectory()) {
+        if (entryStat.isDirectory()) {
           await this.analyzeScriptDirectory(fullPath, result, strict);
         } else if (extname(entry).toLowerCase() === ".txt") {
           await this.analyzeScriptFile(fullPath, result, strict);
@@ -343,7 +347,7 @@ export class ModAnalyzer {
     strict: boolean,
   ): Promise<void> {
     try {
-      const content = readFileSync(filePath, "utf-8");
+      const content = await readFile(filePath, "utf-8");
       const validation = await this.validator.validateScript(
         content,
         undefined,
@@ -410,13 +414,13 @@ export class ModAnalyzer {
     result: ModAnalysisResult,
   ): Promise<void> {
     try {
-      const entries = readdirSync(dirPath);
+      const entries = await readdir(dirPath);
 
       for (const entry of entries) {
         const fullPath = join(dirPath, entry);
-        const stat = statSync(fullPath);
+        const entryStat = await stat(fullPath);
 
-        if (stat.isDirectory()) {
+        if (entryStat.isDirectory()) {
           await this.analyzeLuaDirectory(fullPath, result);
         } else if (extname(entry).toLowerCase() === ".lua") {
           await this.analyzeLuaFile(fullPath, result);
@@ -437,7 +441,7 @@ export class ModAnalyzer {
     result: ModAnalysisResult,
   ): Promise<void> {
     try {
-      const content = readFileSync(filePath, "utf-8");
+      const content = await readFile(filePath, "utf-8");
 
       // Basic Lua syntax checks
       if (!content.trim()) {
@@ -468,23 +472,38 @@ export class ModAnalyzer {
     }
   }
 
+  /**
+   * Strip Lua comments so balance/semantic analysis is not skewed by text
+   * inside comments (freebuff L2): removes `--[[ ]]` block comments (which can
+   * span lines) and `--` line comments. A heuristic — strings containing `--`
+   * are still misread, but block comments no longer cause false positives.
+   */
+  private stripLuaComments(content: string): string {
+    return content
+      // Long-bracket comments (--[[ ]] and --[==[ ... ]==]) can span lines and
+      // contain code-like text; strip them whole before per-line handling
+      // (freebuff L2). `=*` permits any `=` count, matching Lua's spec.
+      .replace(/--\[=*\[[\s\S]*?\]=*\]/g, ' ')
+      .split("\n")
+      .map((line) => {
+        const idx = line.indexOf("--");
+        return idx === -1 ? line : line.substring(0, idx);
+      })
+      .join("\n");
+  }
+
   private checkLuaSyntax(
     content: string,
     filePath: string,
     result: ModAnalysisResult,
   ): void {
-    const lines = content.split("\n");
+    const lines = this.stripLuaComments(content).split("\n");
     let openParens = 0, closeParens = 0;
     let openBrackets = 0, closeBrackets = 0;
     let firstIssueLine = -1;
 
     for (let i = 0; i < lines.length; i++) {
-      let line = lines[i];
-      // Strip comments: remove from -- to end of line (heuristic)
-      const commentIndex = line.indexOf("--");
-      if (commentIndex !== -1) {
-        line = line.substring(0, commentIndex);
-      }
+      const line = lines[i];
 
       const openP = (line.match(/\(/g) || []).length;
       const closeP = (line.match(/\)/g) || []).length;
@@ -603,9 +622,12 @@ export class ModAnalyzer {
     filePath: string,
     result: ModAnalysisResult,
   ): void {
-    const lines = content.split("\n");
-    const ifKeywordCount = (content.match(/\bif\b/g) || []).length;
-    const endKeywordCount = (content.match(/\bend\b/g) || []).length;
+    // Analyze comment-free code so comments never trigger GLOBAL_VAR or skew
+    // if/end counting (freebuff L2).
+    const clean = this.stripLuaComments(content);
+    const lines = clean.split("\n");
+    const ifKeywordCount = (clean.match(/\bif\b/g) || []).length;
+    const endKeywordCount = (clean.match(/\bend\b/g) || []).length;
 
     if (ifKeywordCount !== endKeywordCount) {
       result.issues.push({
@@ -894,10 +916,8 @@ export class ModAnalyzer {
 
       // Numeric version comparison (audit minor #6 — was string-lexical).
       // Default game version = actual B42.20 install; PZ_GAME_VERSION env
-      // overrides for testing against other builds.
-      const [curMajor, curMinor] = (process.env.PZ_GAME_VERSION || "42.20")
-        .split(".")
-        .map(Number);
+      // overrides for testing against other builds (freebuff M4: config.ts).
+      const [curMajor, curMinor] = gameVersion().split(".").map(Number);
       if (maxVersion !== undefined) {
         const [maxMajor, maxMinor] = maxVersion.split(".").map(Number);
         if (
@@ -932,22 +952,22 @@ export class ModAnalyzer {
     performance: PerformanceAnalysis,
   ): Promise<void> {
     try {
-      const entries = readdirSync(dirPath);
+      const entries = await readdir(dirPath);
 
       for (const entry of entries) {
         const fullPath = join(dirPath, entry);
-        const stat = statSync(fullPath);
+        const entryStat = await stat(fullPath);
 
-        if (stat.isDirectory()) {
+        if (entryStat.isDirectory()) {
           await this.findLargeFiles(fullPath, performance);
         } else {
-          const sizeInMB = stat.size / (1024 * 1024);
+          const sizeInMB = entryStat.size / (1024 * 1024);
 
           if (sizeInMB > 5) {
             // Files larger than 5MB
             performance.largeFiles.push({
               file: fullPath,
-              size: stat.size,
+              size: entryStat.size,
             });
           }
         }

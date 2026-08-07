@@ -269,7 +269,10 @@ const server = http.createServer(async (req, res) => {
 process.on('SIGINT', () => { shuttingDown = true; try { child?.kill(); } catch { /* */ } process.exit(0); });
 process.on('exit', () => { try { child?.kill(); } catch { /* */ } });
 
-server.listen(PORT, () => {
+// Bind to loopback only: the /rpc + /api/restart endpoints can drive the
+// whole MCP server, so they must never be reachable from other machines
+// (freebuff review H3).
+server.listen(PORT, '127.0.0.1', () => {
   console.log('');
   console.log('  pz-mcp-server · Control Deck bridge');
   console.log(`  ▸ dashboard   http://localhost:${PORT}`);

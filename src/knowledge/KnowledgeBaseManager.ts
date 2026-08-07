@@ -1,16 +1,23 @@
 import { DatabaseSync } from 'node:sqlite';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { readdirSync, readFileSync, mkdirSync } from 'fs';
 import logger from '../utils/logger.js';
+import { knowledgeDbPath } from '../utils/config.js';
+import { sanitizeFtsTerms } from '../utils/fts.js';
 
 export class KnowledgeBaseManager {
   private db!: DatabaseSync;
   private dbPath: string;
 
   constructor(dataDir?: string) {
-    const dir = dataDir || join(process.cwd(), 'data');
-    this.dbPath = join(dir, 'pz_knowledge.db');
-    mkdirSync(dir, { recursive: true });
+    if (dataDir) {
+      this.dbPath = join(dataDir, 'pz_knowledge.db');
+      mkdirSync(dataDir, { recursive: true });
+    } else {
+      // Default: PZ_MCP_DATA_DIR/data/pz_knowledge.db (freebuff M4)
+      this.dbPath = knowledgeDbPath();
+      mkdirSync(dirname(this.dbPath), { recursive: true });
+    }
   }
 
   async initialize(): Promise<void> {
@@ -267,13 +274,8 @@ export class KnowledgeBaseManager {
   }
 
   private sanitizeFtsQuery(query: string): string[] {
-    const terms = query
-      .replace(/["*:^+\-(){}[\]!~;]/g, ' ')
-      .split(/\s+/)
-      .filter(
-        (term) => term.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(term)
-      );
-    return terms;
+    // Shared with DatabaseManager (freebuff L3)
+    return sanitizeFtsTerms(query);
   }
 
   private buildSnippet(content: string, firstTerm: string): string {

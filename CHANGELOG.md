@@ -9,9 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Steam registry detection on Windows** (audit P4 #22): `detectSteamWindows` now queries the actual Steam install path from the registry (HKCU `SteamPath`, HKLM fallback) before falling back to hardcoded paths and `libraryfolders.vdf` — catches non-default installs (e.g. `D:\Games\ProjectZomboid`)
+- **`generate_script` balance + comments options**: `balance` (vanilla/powerful/weak/custom) and `includeComments` exposed in the tool schema (freebuff review M8)
+- **`fixing` and `sound` script generation fixed**: both types previously threw "No template found" because no template was registered; templates + unit tests added
+- **Sprite reference validation fixed** (freebuff review C1): `check_references` with `type="sprite"` and `Icon`/`WeaponSprite` validation now resolve against the `references` table instead of always reporting invalid
+- **Unit tests for ScriptGenerator** (new suite, all 6 types) + `checkReference`/sprite/clearDatabase tests; total suite now 114 tests / 10 suites
+- **`clearDatabase()` order fixed under FK enforcement**: `references`/`mods` are deleted before `items` — `parse_game_files` with `forceReparse=true` would otherwise hit `FOREIGN KEY constraint failed`
+- **Template-selection hints no longer leak into generated scripts**: `category`/`weaponType`/`similar` are stripped from item/vehicle output (sound keeps `category` — it is a real property)
 
 ### Changed
 - **DB layer migrated to built-in `node:sqlite`** (no native deps); Node >= 22.5 now required — engines, CI matrix, and docs updated to match.
+- **Dead code removed** (freebuff review H2): unused `commander` and deprecated `@types/pino` deps dropped; unused `PathManager` methods (`detectAllInstallations`, `getUserZomboidPath`, `getModsPath`, `getWorkshopPath`, `resolvePathWithPriority`), `DatabaseManager.getCategories`/`getReferences`, `ScriptGenerator.generateModTemplate`, and the unused `analyze_mod` `generateReport` option removed
+- **Item template selection fixed**: uncategorized items no longer default to the food template (the `templateKey.includes(type)` match hijacked every `item` into `food_item`)
+- **`PRAGMA foreign_keys = ON`** enforced (freebuff review M6) — `references.item_id` FK is now real
+- **Dashboard binds to 127.0.0.1 only** (freebuff review H3): `/rpc` and `/api/restart` are no longer reachable from other machines
+- **Generated-script header URL corrected** to `shakoorpour1991-sketch/pz-mcp-server`
+- **`install.sh`**: Node 22.5+ requirement enforced; dead `config.example.json` generation removed
+- **CI**: removed the redundant standalone `npm run build` (npm test builds already)
+- **Shared block scanner** (`src/utils/scriptScanner.ts`, freebuff M1): parser and validator now consume one module/brace/block state machine — the F5–F9 class of parser/validator drift is structurally impossible
+- **Config module** (`src/utils/config.ts`, freebuff M4): all env reads centralized (`PZ_MCP_LOG_LEVEL`, `PZ_MCP_KB_PATH`, `PROJECTZOMBOID_PATH`/`PZ_PATH`, `PZ_GAME_VERSION`, `PZ_DECK_PORT`) + new `PZ_MCP_DATA_DIR` to decouple the DB location from the client's cwd
+- **Async parse/analyze path** (freebuff M5): parser + ModAnalyzer now use `fs.promises` — `parse_game_files`/`analyze_mod` no longer block the event loop
+- **Conditional FTS rebuild** (freebuff L1): `items_fts` is rebuilt only when item/FTS row counts drift (rowid-drift heal retained)
+- **Block-comment-aware Lua analysis** (freebuff L2): `ModAnalyzer.stripLuaComments` strips `--[[ ]]` multi-line comments before balance/syntax/semantic counting
+- **Shared FTS util + `SELECT_ITEMS` constant** (freebuff L3): `src/utils/fts.ts` used by both DatabaseManager and KnowledgeBaseManager
+- **ModAnalyzer balance + compatibility unit tests** (freebuff H5): seeded temp-DB coverage for outlier detection and version checks
+- **Lint scope expanded** (freebuff M3): ESLint now covers `tests/`, `admin/`, `scripts/`; `format:check` added and wired into CI
+- **Dependabot config** (freebuff L5): `.github/dependabot.yml` (npm + github-actions, weekly)
+- **`verify:deck` npm script** (freebuff N4): `npm run verify:deck` runs the dashboard smoke check
+- **Scanner module-line guard** (code-review follow-up): `module = Foo,` property lines outside any module are no longer swallowed by the module-detection branch
+- **FTS drift heal strengthened** (code-review follow-up): boot now also compares `max(rowid)` of `items` vs `items_fts` — catches INSERT-OR-REPLACE churn that shifts rowids without changing row count
+- **Lua long-bracket comments handled** (code-review follow-up): `--[==[ ... ]==]` stripped before balance/syntax/semantic counting
+- **README env-var reference table** (code-review follow-up): `PZ_MCP_DATA_DIR`, `PZ_MCP_KB_PATH`, `PZ_MCP_LOG_LEVEL`, `PZ_GAME_VERSION`, `PROJECTZOMBOID_PATH`/`PZ_PATH`, `PZ_DECK_PORT` documented
 
 ## [1.1.0] - 2026-08-05
 

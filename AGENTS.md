@@ -22,7 +22,7 @@ Hermes references this file in every task prompt sent to OpenCode for this repo.
 | Purpose | Command |
 |---|---|
 | Compile | `npm run build` |
-| Tests (build + Jest) | `npm test` — 76 tests, 6 suites, must stay green |
+| Tests (build + Jest) | `npm test` — 114 tests, 10 suites, must stay green |
 | Lint | `npm run lint` |
 | Format | `npm run format` |
 | Run server | `npm start` (compiled) / `npm run dev` (tsx) |
@@ -37,7 +37,7 @@ Always run build + tests + lint before declaring a task done. Jest runs via `nod
 - `database/` — SQLite layer (built-in `node:sqlite`)
 - `knowledge/` — knowledge-base indexing/search (FTS5 + bm25): `index_knowledge_base`, `search_knowledge_base`, `list_knowledge_topics`
 - `analyzers/` — mod analysis (`analyze_mod`: structure, Lua syntax, balance, deprecated APIs)
-- `utils/` — shared helpers (incl. `scriptSyntax.ts` — shared script-property parsing used by parser/validator/generator)
+- `utils/` — shared helpers (incl. `scriptSyntax.ts` — script-property parsing; `scriptScanner.ts` — shared block scanner used by parser/validator; `fts.ts` — shared FTS sanitizer; `config.ts` — env centralization)
 - `index.ts` — MCP server bootstrap + tool registration (zod schemas)
 
 ## Key facts
@@ -45,7 +45,7 @@ Always run build + tests + lint before declaring a task done. Jest runs via `nod
 - **MCP stdio protocol**: stdout is the wire. The pino logger writes **stderr-only (fd 2)** — never print anything to stdout.
 - Game data for `parse_game_files`: Project Zomboid **Build 42.20** install at `D:\Games\ProjectZomboid\`. Path detection: hardcoded Windows paths, WSL paths, or explicit `gamePath` param.
 - Modding knowledge base docs live at `D:\PZ-Modding\Documentation\` (markdown with YAML frontmatter, ~13 research files) — indexed with `index_knowledge_base`.
-- Workspace status (Aug 2026): 76/76 tests green, lint+build clean. Open items tracked in `AUDIT_2026-08-06.md` (repo root).
+- Workspace status (Aug 2026): 114/114 tests green, lint+build clean, `npm audit` 0 vulnerabilities. Open items tracked in `AUDIT_2026-08-06.md` (repo root) and `freebuff_review.md` (repo root, with Fix Log).
 
 ## Conventions
 

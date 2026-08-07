@@ -1,7 +1,9 @@
-import { readFileSync, readdirSync, statSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { readFile, readdir, stat } from "fs/promises";
 import { join, extname, basename } from "path";
 import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
+import { scanScriptBlocks, ScanBlock } from "../utils/scriptScanner.js";
 import logger from "../utils/logger.js";
 
 export interface ParseResults {
@@ -162,17 +164,18 @@ export class ProjectZomboidParser {
     modulePrefix: string,
   ): Promise<void> {
     try {
-      const entries = readdirSync(dirPath);
+      // Async fs (freebuff M5): parsing must not block the event loop.
+      const entries = await readdir(dirPath);
 
       for (const entry of entries) {
         const fullPath = join(dirPath, entry);
-        const stat = statSync(fullPath);
+        const entryStat = await stat(fullPath);
 
-        if (stat.isDirectory()) {
+        if (entryStat.isDirectory()) {
           // Recursively parse subdirectories
           await this.parseDirectory(fullPath, results, modulePrefix);
         } else if (
-          stat.isFile() &&
+          entryStat.isFile() &&
           this.scriptExtensions.includes(extname(entry).toLowerCase())
         ) {
           try {
@@ -199,139 +202,16 @@ export class ProjectZomboidParser {
     results: ParseResults,
     defaultModule: string,
   ): Promise<void> {
-    const content = readFileSync(filePath, "utf-8");
-    const lines = content.split("\n");
+    const content = await readFile(filePath, "utf-8");
     const accumulatedItems: any[] = [];
 
-    let currentModule = defaultModule;
-    let currentBlock: any = null;
-    let currentBlockStartLevel = 0;
-    let blockContent: string[] = [];
-    let blockStartLine = 0;
-    let braceLevel = 0;
-    let inModule = false;
-    let pastModuleHeader = false;
+    // Split the file into blocks with the shared scanner (freebuff M1) — the
+    // same algorithm the validation engine uses, so the two consumers can
+    // never drift apart again.
+    const blocks = scanScriptBlocks(content, defaultModule);
 
-    // Block types recognized as script containers. The six "primary" types
-    // (item/recipe/evolvedrecipe/fixing/sound/vehicle) are stored in the DB;
-    // the rest (craftRecipe, entity, model, event, ...) are consumed as
-    // containers so their inner lines never leak as fake items. "craftRecipe"
-    // (capital R) is the actual B42 keyword; "recipe" is the legacy B41 one.
-    // Names may contain spaces (B42: "fixing Fix Pistol"), so capture the
-    // full remainder up to any '{' and trim.
-    const BLOCK_RE =
-      /^(item|recipe|craftRecipe|craftrecipe|evolvedrecipe|fixing|sound|vehicle|entity|mod|model|event|timedAction|fluid|physics|mannequin|clock|energy|animation|bodylocation|creature)\s+([^{]+)/;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const lineNumber = i + 1;
-
-      // Skip empty lines and comments
-      if (
-        !line ||
-        line.startsWith("//") ||
-        line.startsWith("/*") ||
-        line.startsWith("*")
-      ) {
-        continue;
-      }
-
-      // Handle module declarations (B42: "module Base" + "{" on next line;
-      // B41: "module Base {" on one line)
-      if (line.startsWith("module ") && !inModule) {
-        const moduleMatch = line.match(/module\s+(\w+)/);
-        if (moduleMatch) {
-          currentModule = moduleMatch[1];
-          inModule = true;
-          braceLevel = 0;
-          pastModuleHeader = !line.includes("{");
-        }
-        // If the opening brace is on its own line, skip to it next iteration.
-        if (!line.includes("{")) {
-          continue;
-        }
-      }
-
-      // Count braces to track module/block scope
-      const openBraces = (line.match(/\{/g) || []).length;
-      const closeBraces = (line.match(/\}/g) || []).length;
-      braceLevel += openBraces - closeBraces;
-
-      // Inside a module whose opening brace has been counted, block headers
-      // are recognized. Latched so subsequent blocks keep working.
-      if (inModule && braceLevel >= 1) {
-        pastModuleHeader = true;
-      }
-
-      // Block detection. Gated: headers are recognized either outside any
-      // module (B41 files without a module wrapper) or after the current
-      // module's opening brace has been seen. Lines that look like inner
-      // ingredient/property lines (contain [, = or ,) are never headers —
-      // this is what stops "item variable[1:20] [Base.Corn] ..." lines
-      // inside craftRecipe inputs from becoming fake items.
-      const blockMatch = line.match(BLOCK_RE);
-      const isInnerLine = /[[=,]/.test(line);
-      if (
-        blockMatch &&
-        !currentBlock &&
-        !isInnerLine &&
-        (!inModule || pastModuleHeader)
-      ) {
-        currentBlock = {
-          type: blockMatch[1],
-          name: blockMatch[2].trim(),
-          module: currentModule,
-        };
-        currentBlockStartLevel = braceLevel;
-        blockContent = [line];
-        blockStartLine = lineNumber;
-
-        // Same-line empty blocks ("item Foo {}") close immediately — without
-        // this they would swallow every subsequent block.
-        if (closeBraces > 0) {
-          await this.finalizeBlock(
-            currentBlock,
-            blockContent,
-            blockStartLine,
-            filePath,
-            accumulatedItems,
-            results,
-          );
-          currentBlock = null;
-          currentBlockStartLevel = 0;
-          blockContent = [];
-        }
-        continue;
-      }
-
-      // Collect block content
-      if (currentBlock) {
-        blockContent.push(line);
-
-        // A block closes when brace depth returns to the level it started at
-        // (after the header line's own braces were counted above).
-        if (braceLevel <= currentBlockStartLevel && line.includes("}")) {
-          await this.finalizeBlock(
-            currentBlock,
-            blockContent,
-            blockStartLine,
-            filePath,
-            accumulatedItems,
-            results,
-          );
-          currentBlock = null;
-          currentBlockStartLevel = 0;
-          blockContent = [];
-        }
-      }
-
-      // Module exit: the module's own '}' drops depth to 0. (The module's
-      // opening brace was counted, so its close lands exactly at 0.)
-      if (inModule && braceLevel === 0 && line.includes("}") && !currentBlock) {
-        inModule = false;
-        pastModuleHeader = false;
-        currentModule = defaultModule;
-      }
+    for (const block of blocks) {
+      await this.finalizeBlock(block, filePath, accumulatedItems, results);
     }
 
     // Flush accumulated items to database
@@ -342,45 +222,45 @@ export class ProjectZomboidParser {
       // requirements). Must run AFTER the flush: "references".item_id has a
       // FOREIGN KEY to items(id), so the item row must exist first. Non-fatal:
       // a reference failure must not abort parsing of the rest of the file.
-      for (const item of accumulatedItems) {
-        try {
-          await this.extractReferences(item);
-        } catch (refError) {
-          logger.warn(
-            `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`,
-          );
+      // The whole per-file batch runs in one transaction (freebuff M2) instead
+      // of one autocommit INSERT per reference.
+      await this.db.transaction(async () => {
+        for (const item of accumulatedItems) {
+          try {
+            await this.extractReferences(item);
+          } catch (refError) {
+            logger.warn(
+              `Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`,
+            );
+          }
         }
-      }
+      });
     }
   }
 
   private async finalizeBlock(
-    block: any,
-    content: string[],
-    startLine: number,
+    block: ScanBlock,
     filePath: string,
     accumulatedItems: any[],
     results: ParseResults,
   ): Promise<void> {
     try {
-      // B42 recipes are "craftRecipe" blocks; store them as type 'recipe'.
-      const storedType =
-        block.type === "craftRecipe" || block.type === "craftrecipe"
-          ? "recipe"
-          : block.type;
+      // The scanner normalized B42 "craftRecipe" blocks to type 'recipe';
+      // block.rawType keeps the original keyword so parseBlock can
+      // distinguish B42 craftRecipe ("key = value" properties, F6) from
+      // legacy B41 recipe blocks ("key:value" properties, "Key=Count"
+      // ingredients).
+      const storedType = block.type;
       const item = this.parseBlock(
         {
           ...block,
           type: storedType,
-          // Keep the original keyword so parseBlock can distinguish B42
-          // craftRecipe ("key = value" properties, F6) from legacy B41
-          // recipe blocks ("key:value" properties, "Key=Count" ingredients).
           b42Recipe:
-            block.type === "craftRecipe" || block.type === "craftrecipe",
+            block.rawType === "craftRecipe" || block.rawType === "craftrecipe",
         },
-        content,
+        block.content,
         filePath,
-        startLine,
+        block.startLine,
       );
       if (item) {
         // Only the six primary block types are stored. Container types
@@ -424,7 +304,7 @@ export class ProjectZomboidParser {
     } catch (error) {
       results.errors.push({
         file: filePath,
-        line: startLine,
+        line: block.startLine,
         message: `Failed to parse ${block.type} block: ${error instanceof Error ? error.message : String(error)}`,
       });
     }

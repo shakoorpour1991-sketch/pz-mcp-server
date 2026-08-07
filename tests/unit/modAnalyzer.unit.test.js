@@ -114,4 +114,170 @@ describe('ModAnalyzer', () => {
     // The same Lua snippet also has an unmatched 'end' (no 'if'), which is a
     // separate SEMANTIC_ERROR — that is expected and out of scope for A5.
   });
+
+  // L2: comments must not skew balance/global-variable checks
+  test('L2: unbalanced parens inside a block comment do not warn; local in comment does not leak', async () => {
+    const luaPath = path.join(tempDir, 'media', 'lua', 'test_l2.lua');
+    fs.writeFileSync(
+      luaPath,
+      '--[[ this comment has ( unbalanced\nand another ( bracket ]]\nlocal ok = 1\n'
+    );
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    const unbalanced = r.issues.filter(
+      (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced')
+    );
+    expect(unbalanced).toHaveLength(0);
+    const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
+    expect(leaks).toHaveLength(0);
+  });
+
+  test('L2: assignments inside line comments do not trigger GLOBAL_VAR', async () => {
+    const luaPath = path.join(tempDir, 'media', 'lua', 'test_l2b.lua');
+    fs.writeFileSync(luaPath, '-- hidden = 5\nlocal visible = 1\n');
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
+    expect(leaks).toHaveLength(0);
+  });
+
+  test('L2: long-bracket comments --[==[ ]==] are stripped before counting', async () => {
+    const luaPath = path.join(tempDir, 'media', 'lua', 'test_l2c.lua');
+    fs.writeFileSync(
+      luaPath,
+      '--[==[ code-like text ( with parens and if end\nif fake then end\n]==]\nlocal ok = 1\n'
+    );
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    const unbalanced = r.issues.filter(
+      (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced')
+    );
+    expect(unbalanced).toHaveLength(0);
+    const semantic = r.issues.filter((i) => i.code === 'SEMANTIC_ERROR');
+    expect(semantic).toHaveLength(0);
+    const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
+    expect(leaks).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// H5: balance + compatibility analysis against a seeded vanilla baseline
+// ===========================================================================
+
+describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  beforeAll(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-bal-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=BalanceMod\nid=BalanceMod\n');
+    fs.writeFileSync(
+      path.join(tempDir, 'media', 'scripts', 'balance.txt'),
+      'item SuperBlade\n{\n\tType = Weapon,\n\tDisplayName = Super Blade,\n\tMaxDamage = 100,\n}\n'
+    );
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'bal.db'));
+    await dbManager.initialize();
+    // Vanilla baseline: weapons with MaxDamage 5 and 10 (avg 7.5). SuperBlade's
+    // 100 is > 2x the average, so it must be flagged as an outlier.
+    await dbManager.insertItems([
+      {
+        id: 'VanillaKnife', name: 'VanillaKnife', displayName: 'Vanilla Knife',
+        type: 'item', module: 'Base', category: 'Weapon',
+        properties: { Type: 'Weapon', MaxDamage: 5 },
+        rawContent: 'item VanillaKnife {}', filePath: 'vanilla.txt',
+      },
+      {
+        id: 'VanillaAxe', name: 'VanillaAxe', displayName: 'Vanilla Axe',
+        type: 'item', module: 'Base', category: 'Weapon',
+        properties: { Type: 'Weapon', MaxDamage: 10 },
+        rawContent: 'item VanillaAxe {}', filePath: 'vanilla.txt',
+      },
+    ]);
+
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  afterAll(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('flags mod items far above the vanilla average as outliers and drops the score', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: true,
+      checkCompatibility: false,
+    });
+    expect(r.balance.itemCount).toBe(1);
+    const outlier = r.balance.outliers.find((o) => o.item === 'SuperBlade');
+    expect(outlier).toBeDefined();
+    expect(outlier.property).toBe('MaxDamage');
+    expect(outlier.value).toBe(100);
+    expect(r.balance.score).toBeLessThan(100);
+  });
+
+  test('in-balance mod items produce no outliers', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'media', 'scripts', 'balanced.txt'),
+      'item MildDagger\n{\n\tType = Weapon,\n\tDisplayName = Mild Dagger,\n\tMaxDamage = 6,\n}\n'
+    );
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: true,
+      checkCompatibility: false,
+    });
+    expect(r.balance.itemCount).toBe(2);
+    const mild = r.balance.outliers.find((o) => o.item === 'MildDagger');
+    expect(mild).toBeUndefined();
+  });
+});
+
+describe('ModAnalyzer compatibility analysis (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  beforeAll(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-compat-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), [
+      'name=CompatMod',
+      'id=CompatMod',
+      'require=SomeMissingDependency',
+      'versionMax=41.0',
+    ].join('\n'));
+    fs.writeFileSync(
+      path.join(tempDir, 'media', 'scripts', 'items.txt'),
+      'item CompatAxe\n{\n\tType = Weapon,\n\tDisplayName = Compat Axe,\n}\n'
+    );
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'compat.db'));
+    await dbManager.initialize();
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  afterAll(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('flags missing required dependencies and version-max incompatibility', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: true,
+    });
+    expect(r.compatibility.missingDependencies).toContain('SomeMissingDependency');
+    // versionMax=41.0 vs default PZ_GAME_VERSION 42.20 → incompatible
+    expect(r.compatibility.gameVersionCompatibility.compatible).toBe(false);
+    expect(r.compatibility.gameVersionCompatibility.maxVersion).toBe('41.0');
+  });
 });
