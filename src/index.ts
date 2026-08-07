@@ -307,6 +307,16 @@ const WorkshopDownloadSchema = z.object({
     ),
 });
 
+const WorkshopAnalyzeSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      "Workshop item id or URL — downloads it (SteamCMD), parses its scripts into the DB, and runs the full analysis suite, returning a Mod Report",
+    ),
+});
+
 // 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
 const ListKnowledgeTopicsSchema = z.object({});
 
@@ -402,6 +412,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           "Download a Project Zomboid workshop item via SteamCMD into the workshop workspace dir (PZ_WORKSHOP_DIR or <Steam>/steamapps/workshop/content/108600). Verifies the item belongs to Project Zomboid first. Requires steamcmd (STEAMCMD_PATH or common locations)",
         inputSchema: WorkshopDownloadSchema,
+      },
+      {
+        name: "workshop_analyze",
+        description:
+          "Fetch & Analyze a Project Zomboid workshop item: download via SteamCMD, parse its scripts into the DB, run analyze_mod + reference checks, and return a full Mod Report (what it adds, quality score, issues, recommendations)",
+        inputSchema: WorkshopAnalyzeSchema,
       },
     ],
   };
@@ -1005,6 +1021,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "workshop_analyze": {
+        const { id } = WorkshopAnalyzeSchema.parse(args);
+        const resolvedId = parseWorkshopInput(id);
+        // Confirm the item is a Project Zomboid workshop item before touching disk.
+        const details = await workshopClient.getDetails(resolvedId);
+        const isPz = details.appId === "108600";
+        if (!isPz) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Item ${resolvedId} belongs to app ${details.appId || "unknown"}, not Project Zomboid (108600). Refusing to analyze.`,
+          );
+        }
+        const onPhase = (phase: string) =>
+          logger.info({ workshopId: resolvedId }, "workshop_analyze: %s", phase);
+
+        const dl = await steamCmdDownloader.download(resolvedId, onPhase);
+        onPhase("parsing mod scripts");
+        const parseResults = await parser.parseModDirectory(dl.downloadedPath);
+        onPhase("running analysis suite");
+        const analysis = await analyzer.analyzeMod(dl.downloadedPath, {
+          checkBalance: true,
+          checkCompatibility: true,
+        });
+
+        const report = {
+          modId: resolvedId,
+          title: details.title,
+          url: details.url,
+          fileSize: details.fileSize,
+          subscribers: details.subscribers,
+          downloadedPath: dl.downloadedPath,
+          downloadBytes: dl.bytes,
+          parse: parseResults,
+          analysis,
+        };
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatWorkshopModReport(report),
+            },
+          ],
+          structuredContent: JSON.parse(JSON.stringify(report)),
+        };
+      }
+
       default:
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
@@ -1415,6 +1477,95 @@ function formatWorkshopDownload(result: {
   if (result.note) output += `- **Note**: ${result.note}\n`;
   output += `\nNext: run parse_game_files / analyze_mod / check_references on ${result.downloadedPath} to dissect the mod.`;
   return output;
+}
+
+function formatWorkshopModReport(report: {
+  modId: string;
+  title: string;
+  url: string;
+  fileSize: number;
+  subscribers: number;
+  downloadedPath: string;
+  downloadBytes: number;
+  parse: {
+    itemCount: number;
+    recipeCount: number;
+    soundCount: number;
+    vehicleCount: number;
+    evolvedRecipeCount: number;
+    fixingCount: number;
+    filesProcessed: number;
+    parseTime: number;
+    errors: Array<{ file: string; message: string }>;
+  };
+  analysis: any;
+}): string {
+  const p = report.parse;
+  const a = report.analysis ?? {};
+  const q = a.quality ?? {};
+  const issues = a.issues ?? [];
+  const errs = issues.filter((i: any) => i.severity === "error");
+  const warns = issues.filter((i: any) => i.severity === "warning");
+
+  let out = `# Mod Report: ${report.title}\n\n`;
+  out += `- **Workshop id**: \`${report.modId}\` · [Steam page](${report.url})\n`;
+  out += `- **Size**: ${formatBytes(report.fileSize)} · 👥 ${report.subscribers.toLocaleString()} subscribers\n`;
+  out += `- **Downloaded**: \`${report.downloadedPath}\` (${formatBytes(report.downloadBytes)})\n\n`;
+
+  out += `## What the mod adds\n`;
+  out += `- **Items**: ${p.itemCount} · **Recipes**: ${p.recipeCount} · **Evolved recipes**: ${p.evolvedRecipeCount} · **Fixing**: ${p.fixingCount}\n`;
+  out += `- **Sounds**: ${p.soundCount} · **Vehicles**: ${p.vehicleCount}\n`;
+  out += `- **Files processed**: ${p.filesProcessed} in ${p.parseTime}ms\n`;
+  if (p.errors.length > 0) {
+    out += `- ⚠️ Parse errors (${p.errors.length}): ${p.errors
+      .map((e) => `${e.file}: ${e.message}`)
+      .slice(0, 3)
+      .join(" | ")}\n`;
+  }
+  out += `\n`;
+
+  out += `## Quality score\n`;
+  out += `- **Overall**: ${q.overall ?? "—"}/100 (structure ${q.structure ?? "—"} · syntax ${q.syntax ?? "—"} · balance ${q.balance ?? "—"} · documentation ${q.documentation ?? "—"})\n`;
+  out += `- **Issues**: ${errs.length} error(s) · ${warns.length} warning(s)\n\n`;
+
+  if (issues.length > 0) {
+    out += `## Issues\n`;
+    issues.slice(0, 10).forEach((issue: any) => {
+      const icon =
+        issue.severity === "error"
+          ? "❌"
+          : issue.severity === "warning"
+            ? "⚠️"
+            : "ℹ️";
+      out += `${icon} **${issue.file}**: ${issue.message}${issue.code ? ` (\`${issue.code}\`)` : ""}\n`;
+    });
+    out += `\n`;
+  }
+
+  if (a.compatibility) {
+    out += `## Compatibility\n`;
+    out += `- ${JSON.stringify(a.compatibility).slice(0, 300)}\n\n`;
+  }
+
+  if (a.balance) {
+    out += `## Balance\n`;
+    out += `- Score ${a.balance.score}/100 · ${a.balance.itemCount} items analyzed\n`;
+    if (a.balance.recommendations?.length > 0) {
+      out += `- ${a.balance.recommendations.slice(0, 5).join("\n- ")}\n`;
+    }
+    out += `\n`;
+  }
+
+  if ((a.recommendations ?? []).length > 0) {
+    out += `## Recommendations\n`;
+    a.recommendations.slice(0, 8).forEach((r: string) => {
+      out += `- ${r}\n`;
+    });
+    out += `\n`;
+  }
+
+  out += `---\nMod fetched, parsed, and analyzed locally. Run check_references / detect_recipe_conflicts for deeper checks.`;
+  return out;
 }
 
 function formatBytes(n: number): string {

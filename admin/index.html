@@ -497,7 +497,7 @@ const S = {
   serverInfo:null, protocol:null,
   tools:[], openTool:null,
   telemetry:null,
-  ws: { results: [], detail: null, busy: false, error: null, downloading: false, download: null },
+  ws: { results: [], detail: null, busy: false, error: null, downloading: false, download: null, analyzing: false, report: null },
   logs:[], fid:0, methodById:new Map(), resLatency:new Map(),
   serverLog:[], seq:0,
   lat:{ ema:null, calls:0, spark:[] },
@@ -1153,6 +1153,24 @@ function wsDownloadResultHTML(r){
     '<div class="md-p">'+ICONS.db+' '+esc(fmtBytes(r.bytes))+' in '+(r.elapsedMs/1000).toFixed(1)+'s · steamcmd attempts: '+esc(String(r.attempts))+'</div>' +
     '<div class="md-p" style="color:var(--faint)">Next: run the analyze pipeline on this folder (M3).</div></div>';
 }
+async function wsAnalyze(id){
+  if (S.ws.analyzing) return;
+  S.ws.analyzing = true; S.ws.report = null; S.ws.download = null; S.ws.error = null;
+  renderView();
+  try {
+    const reply = await rpc('tools/call', { name:'workshop_analyze', arguments:{ id } });
+    const text = reply.result?.content?.map(c => c.text || '').join('\n') || '';
+    S.ws.report = { text };
+    if (!text) throw new Error('Empty report from workshop_analyze');
+    addEvent('workshop analyze · ' + id);
+    toast('Analysis complete — Mod Report ready');
+  } catch (e){
+    S.ws.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+  } finally {
+    S.ws.analyzing = false;
+    renderView();
+  }
+}
 async function wsDownload(id){
   if (S.ws.downloading) return;
   S.ws.downloading = true; S.ws.download = null; S.ws.error = null;
@@ -1199,10 +1217,13 @@ function wsDetailHTML(d){
         '<div class="krow"><span class="k">Created</span><span class="v">'+esc(d.timeCreated ? new Date(d.timeCreated*1000).toISOString().slice(0,10) : '—')+'</span></div>' +
         (tags ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">'+tags+'</div>' : '') +
         '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">' +
-          '<button class="btn primary" data-act="ws-download" data-id="'+esc(d.id)+'"'+(S.ws.downloading?' disabled':'')+'>'+ICONS.download+(S.ws.downloading?' Downloading…':' Download mod')+'</button>' +
-          '<span id="wsDlStatus" style="font-size:12.5px;color:var(--muted)"></span>' +
+          (S.ws.analyzing
+            ? '<span style="display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> Fetching &amp; analyzing — download, parse, analyze…</span>'
+            : '<button class="btn primary" data-act="ws-analyze" data-id="'+esc(d.id)+'">'+ICONS.scan+' Fetch &amp; Analyze</button>') +
+          '<button class="btn" data-act="ws-download" data-id="'+esc(d.id)+'"'+(S.ws.analyzing?' disabled':'')+'>'+ICONS.download+(S.ws.downloading?' Downloading…':' Download mod')+'</button>' +
         '</div>' +
         (S.ws.download ? wsDownloadResultHTML(S.ws.download) : '') +
+        (S.ws.report ? '<section class="glass card" style="margin-top:16px;overflow:hidden"><div id="wsReportHead" style="padding:12px 16px;border-bottom:1px solid var(--stroke-soft);font-weight:700;display:flex;align-items:center;gap:8px">'+ICONS.scan+' Mod Report</div><div class="md-out" style="border-radius:0;border:0;max-height:560px">'+renderMD(S.ws.report.text)+'</div></section>' : '') +
         (d.description ? '<div class="ws-desc">'+esc(d.description)+'</div>' : '') +
       '</div>' +
     '</div></section>';
@@ -1360,6 +1381,7 @@ document.addEventListener('click', e => {
     else if (a === 'ws-select') wsFetchDetails(act.dataset.id);
     else if (a === 'ws-back'){ S.ws.detail = null; S.ws.error = null; renderView(); }
     else if (a === 'ws-download') wsDownload(act.dataset.id);
+    else if (a === 'ws-analyze') wsAnalyze(act.dataset.id);
     else if (a === 'open-term') openTerminal();
     else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); renderAllLogs(); toast('Local wire log cleared'); }
     else if (a === 'restart') restartServer();

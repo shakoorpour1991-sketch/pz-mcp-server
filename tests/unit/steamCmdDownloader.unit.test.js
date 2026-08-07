@@ -224,5 +224,15 @@ describe('SteamCmdDownloader', () => {
       });
       await assert.rejects(() => d.download('3777544219'), /exited with code 11/);
     });
+
+    test('skips download when the item is already present', async () => {
+      const d = makeDownloader();
+      fs.mkdirSync(path.join(workshopDir, '3777544219', 'media', 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(workshopDir, '3777544219', 'mod.info'), 'name=Test\n');
+      const res = await d.download('3777544219');
+      assert.equal(res.attempts, 0);
+      assert.ok(res.note.includes('skipped'));
+      assert.ok(fs.existsSync(path.join(workshopDir, '3777544219', 'mod.info')));
+    });
   });
 });

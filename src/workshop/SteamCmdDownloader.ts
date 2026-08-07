@@ -148,9 +148,28 @@ export class SteamCmdDownloader {
     onPhase?: (phase: string) => void,
   ): Promise<DownloadResult> {
     const t0 = this.now();
-    const steamCmd = await this.resolveSteamCmdPath();
     const workshopDir = await this.resolveWorkshopDir();
     mkdirSync(workshopDir, { recursive: true });
+
+    // Already present (e.g. subscribed via Steam, or a previous download)?
+    // Skip the download entirely — idempotent re-analysis without network.
+    // (Checked BEFORE steamcmd resolution so no binary is required for this path.)
+    const existing = join(workshopDir, id);
+    if (existsSync(existing)) {
+      logger.info({ id }, "workshop item already present — skipping download");
+      onPhase?.("already present — skipping download");
+      return {
+        id,
+        downloadedPath: existing,
+        bytes: this.dirSize(existing),
+        elapsedMs: this.now() - t0,
+        attempts: 0,
+        tempDir: "",
+        note: "already present locally — download skipped",
+      };
+    }
+
+    const steamCmd = await this.resolveSteamCmdPath();
 
     // Temp dir beside the output: same filesystem for the final rename.
     const tempDir = join(
