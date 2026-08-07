@@ -690,3 +690,15 @@ Every fix below was implemented on this machine and verified with `npm run build
 | **R7 (code-review follow-up)** | README gained an **environment-variable reference table** (`PZ_MCP_DATA_DIR`, `PZ_MCP_KB_PATH`, `PZ_MCP_LOG_LEVEL`, `PZ_GAME_VERSION`, `PROJECTZOMBOID_PATH`/`PZ_PATH`, `PZ_DECK_PORT`) — M4's doc claim is now real | `README.md` | — |
 
 **Resulting state:** 114 tests / 10 suites (was 90/9), lint+build clean, 0 audit vulnerabilities, dead code gone, two latent generator bugs fixed, one FK-related forceReparse regression caught by code review and fixed, dashboard loopback-bound, FK enforced, shared block scanner (parity-proven on real game data) + config module + async parse path + conditional FTS rebuild (count + rowid signals) + block-comment/long-bracket-aware Lua analysis all in place. Remaining open: C2 (CI proof — needs push + GitHub log access from this machine) and the optional N-series feature work (node:test migration, structured tool results, recipe-chain analysis, incremental KB indexing, release workflow).
+
+---
+
+## 22. Commit record — 2026-08-06
+
+All §21 fixes are committed to `master`:
+
+| Commit | Contents | Verification at commit time |
+|---|---|---|
+| `f48fdd3` — "Apply freebuff review fixes (C1, M1-M8, L1-L6, R1-R7, H1-H5)" | Every §21 item (C1, NEW-BUG 1/2, H1–H5, M1–M8, L1–L6, R1–R7, N4) + this review file (29 modified, 6 new files) | Re-ran on this machine: build clean, **114/114 tests / 10 suites**, lint clean. Working tree now clean. |
+
+C2 remains **STILL OPEN** — it requires pushing the branch and pulling GitHub Actions logs (needs GITHUB_TOKEN); the commit above is un-pushed, so CI has not run on it.
