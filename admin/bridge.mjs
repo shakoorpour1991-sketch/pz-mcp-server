@@ -22,7 +22,7 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ADMIN_DIR = join(ROOT, 'admin');
 const PORT = Number(process.env.PZ_DECK_PORT || 8787);
 const DB_PATH = join(ROOT, 'data', 'pz_database.db');
-const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download']);
+const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download', 'workshop_analyze']);
 
 /* ================= MCP child process ================= */
 let child = null;

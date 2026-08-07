@@ -17,6 +17,10 @@ A local-only Model Context Protocol (MCP) stdio server for Project Zomboid mod d
 - **analyze_recipe_chain** — Walk the recipe dependency graph from an item or recipe: what it's made from, what it makes, and what consumes it
 - **detect_recipe_conflicts** — Find items produced by more than one recipe (duplicate crafting paths)
 - **export_mod_script** — Generate a script and write it into a mod's `media/scripts` folder (dry-run by default — no disk changes unless `dryRun: false`)
+- **workshop_search** — Browse the Project Zomboid Steam Workshop (AppID 108600) by text (best-effort keyless HTML scrape; paste a URL/id for guaranteed resolution)
+- **workshop_get_details** — Resolve full metadata for a workshop item from its id or steamcommunity URL (keyless Steam Web API, 24h cache; `forceRefresh` bypasses it)
+- **workshop_download** — Download a workshop item via SteamCMD into the workshop workspace dir (`PZ_WORKSHOP_DIR` or `<Steam>/steamapps/workshop/content/108600`); refuses non-PZ items; disk-space guarded
+- **workshop_analyze** — Fetch & Analyze: download (skips if already present), parse the mod's scripts into the DB, run the analysis suite, and return a full Mod Report
 
 > Every tool returns both human-readable text **and** machine-readable structured data via the MCP `structuredContent` field.
 

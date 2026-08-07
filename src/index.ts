@@ -295,6 +295,10 @@ const WorkshopGetDetailsSchema = z.object({
     .describe(
       "Workshop item id or URL, e.g. 2696145877 or https://steamcommunity.com/sharedfiles/filedetails/?id=2696145877",
     ),
+  forceRefresh: z
+    .boolean()
+    .default(false)
+    .describe("Bypass the 24h metadata cache and re-fetch from Steam"),
 });
 
 const WorkshopDownloadSchema = z.object({
@@ -977,8 +981,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "workshop_get_details": {
-        const { id } = WorkshopGetDetailsSchema.parse(args);
-        const details = await workshopClient.getDetails(id);
+        const { id, forceRefresh } = WorkshopGetDetailsSchema.parse(args);
+        const details = await workshopClient.getDetails(id, {
+          forceRefresh,
+        });
         const isPz = details.appId === "108600";
         return {
           content: [
@@ -1007,8 +1013,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `Item ${resolvedId} belongs to app ${details.appId || "unknown"}, not Project Zomboid (108600). Refusing to download.`,
           );
         }
-        const result = await steamCmdDownloader.download(resolvedId, (phase) =>
-          logger.info({ workshopId: resolvedId }, "workshop_download: %s", phase),
+        const result = await steamCmdDownloader.download(
+          resolvedId,
+          (phase) =>
+            logger.info(
+              { workshopId: resolvedId },
+              "workshop_download: %s",
+              phase,
+            ),
+          { expectedBytes: details.fileSize },
         );
         return {
           content: [
@@ -1036,7 +1049,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const onPhase = (phase: string) =>
           logger.info({ workshopId: resolvedId }, "workshop_analyze: %s", phase);
 
-        const dl = await steamCmdDownloader.download(resolvedId, onPhase);
+        const dl = await steamCmdDownloader.download(
+          resolvedId,
+          onPhase,
+          { expectedBytes: details.fileSize },
+        );
         onPhase("parsing mod scripts");
         const parseResults = await parser.parseModDirectory(dl.downloadedPath);
         onPhase("running analysis suite");

@@ -2,7 +2,9 @@
 
 **Feature:** Browse the Project Zomboid Steam Workshop from the Control Deck dashboard, pick a mod, and have the MCP server fetch it, parse it, and run a full analysis — all without leaving the dashboard.
 
-**Status:** ✅ **APPROVED 2026-08-06** — full scope M1→M4, search strategy = **paste URL/ID + HTML browse** (option 2, no API-key gating in MVP).
+**Status:** ✅ **APPROVED 2026-08-06** — full scope M1→M4, search strategy = **paste URL/ID + HTML browse** (option 2, no API-key gating in MVP). **SHIPPED** — M1 (browse/details), M2 (download), M3 (analyze pipeline), M4 (polish) all implemented, live-verified, and committed.
+
+**Notes from implementation:** Steam's browse page is now a React SSR app — item cards are parsed via their stable `filedetails/?id=` link patterns (hashed class names change between releases); the metadata API field names are `consumer_app_id`/`creator_app_id`. SteamCMD is not installed on the dev machine, so the live download path was verified via a fake-SteamCMD test runner + a skip-if-already-present pipeline run; a real download needs SteamCMD installed (`STEAMCMD_PATH`).
 
 ---
 

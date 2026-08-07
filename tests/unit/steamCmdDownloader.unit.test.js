@@ -234,5 +234,50 @@ describe('SteamCmdDownloader', () => {
       assert.ok(res.note.includes('skipped'));
       assert.ok(fs.existsSync(path.join(workshopDir, '3777544219', 'mod.info')));
     });
+
+    test('already-present check wins over the disk-space guard', async () => {
+      // Regression: re-analysis of a present mod must not be blocked by a
+      // (simulated) full disk — the skip path precedes the guard.
+      const d = makeDownloader({ diskFree: () => 0 });
+      fs.mkdirSync(path.join(workshopDir, '3777544219'), { recursive: true });
+      fs.writeFileSync(path.join(workshopDir, '3777544219', 'mod.info'), 'name=Test\n');
+      const res = await d.download('3777544219', undefined, { expectedBytes: 1024 * 1024 * 1024 });
+      assert.equal(res.attempts, 0);
+      assert.ok(res.note.includes('skipped'));
+    });
+
+    test('STEAMCMD_USER without STEAMCMD_PASS fails fast with a clear error', async () => {
+      process.env.STEAMCMD_USER = 'someone';
+      delete process.env.STEAMCMD_PASS;
+      try {
+        const d = makeDownloader();
+        await assert.rejects(
+          () => d.download('3777544219'),
+          /STEAMCMD_USER is set but STEAMCMD_PASS is empty/,
+        );
+      } finally {
+        delete process.env.STEAMCMD_USER;
+      }
+    });
+
+    test('refuses when free disk space is below the size + 1GiB margin', async () => {
+      const d = makeDownloader({ diskFree: () => 5 * 1024 * 1024 * 1024 }); // 5 GiB free
+      await assert.rejects(
+        () => d.download('3777544219', undefined, { expectedBytes: 6 * 1024 * 1024 * 1024 }),
+        /Not enough free disk space/,
+      );
+    });
+
+    test('allows download when free space is sufficient', async () => {
+      const d = makeDownloader({ diskFree: () => 100 * 1024 * 1024 * 1024 });
+      await d.download('3777544219', undefined, { expectedBytes: 1024 * 1024 });
+      assert.ok(fs.existsSync(path.join(workshopDir, '3777544219')));
+    });
+
+    test('disk probe failure degrades to a warning and proceeds', async () => {
+      const d = makeDownloader({ diskFree: () => { throw new Error('probe failed'); } });
+      await d.download('3777544219', undefined, { expectedBytes: 1024 });
+      assert.ok(fs.existsSync(path.join(workshopDir, '3777544219')));
+    });
   });
 });

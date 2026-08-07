@@ -26,7 +26,8 @@ It also indexes a local markdown "modding knowledge base" into FTS5.
 
 | File | Responsibility | Key exports |
 |---|---|---|
-| `src/index.ts` | MCP server bootstrap: stdio transport, tool/prompt/resource registration (zod schemas); server version read from package.json at runtime | 12 tools, 4 prompts, `knowledge://` resources |
+| `src/index.ts` | MCP server bootstrap: stdio transport, tool/prompt/resource registration (zod schemas); server version read from package.json at runtime | 16 tools, 4 prompts, `knowledge://` resources |
+| `src/workshop/` | Steam Workshop layer: `SteamWorkshopClient` (keyless metadata: GetPublishedFileDetails API + best-effort React browse HTML parse, 24h JSON cache) + `SteamCmdDownloader` (SteamCMD wrapper: temp-dir hygiene, success-line parsing, exit-7 retry, anonymous-rejection hints, disk-space guard, skip-if-present) |
 | `src/parsers/ProjectZomboidParser.ts` | Parse PZ game files (items, recipes, evolvedrecipes, sounds, vehicles, fixing) + mod directories into the DB | `parseGameFiles`, `parseModDirectory`, `extractReferences` |
 | `src/generators/ScriptGenerator.ts` | Template-based script generation | `generateItem`, `generateRecipe`, `generateEvolvedRecipe`, `generateFixing`, `generateSound`, `generateVehicle`, `formatPropertyValue` |
 | `src/validation/ValidationEngine.ts` | Script syntax + reference validation | `validateScript`, `checkReferences`, `parseValue` |
@@ -54,8 +55,14 @@ Tools (snake_case names):
 - `analyze_recipe_chain` — seed, direction (upstream/downstream/both, default both), maxDepth (1-10, default 3)
 - `detect_recipe_conflicts` — limit (1-200, default 50)
 - `export_mod_script` — modPath, type, name, properties, module, balance, includeComments, dryRun (default true)
+- `workshop_search` — query, limit (1-100, default 20); best-effort browse of the PZ workshop (AppID 108600)
+- `workshop_get_details` — id (numeric or URL), forceRefresh (false); keyless Steam Web API + 24h cache
+- `workshop_download` — id (numeric or URL); SteamCMD into `PZ_WORKSHOP_DIR` or `<Steam>/steamapps/workshop/content/108600`; verifies PZ, disk-space guarded
+- `workshop_analyze` — id; download (skip-if-present) → parse_mod_directory → analyze_mod → Mod Report
 
 Every tool result carries **`structuredContent`** (raw JSON) alongside the human text.
+
+Workshop env: `STEAMCMD_PATH` (steamcmd binary), `PZ_WORKSHOP_DIR` (download target), `STEAMCMD_USER`/`STEAMCMD_PASS` (login items). Metadata cache: `data/workshop_metadata.json`. Security stance: mods are read/analyzed only — never executed, never auto-installed into the live game.
 
 Prompts (kebab-case): `create-item`, `analyze-mod`, `search-game`, `validate-script`.
 Resources: `knowledge://<topic>` URIs exposing indexed KB docs.

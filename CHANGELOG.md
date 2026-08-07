@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Workshop browser (M1–M4)** — browse/search the Project Zomboid Steam Workshop (AppID 108600) from the Control Deck dashboard and dissect mods without leaving the UI:
+  - `workshop_search` — best-effort keyless browse of the community page (parses the React SSR item cards)
+  - `workshop_get_details` — keyless Steam Web API metadata resolution (id or URL) with a 24h cache (`data/workshop_metadata.json`); `forceRefresh` bypasses the cache
+  - `workshop_download` — SteamCMD wrapper: per-download temp dir (always deleted), Windows success-line parsing, exit-code-7 retry (3×), anonymous-rejection → login hint, disk-space guard (size + 1 GiB margin), skip-if-already-present
+  - `workshop_analyze` — Fetch & Analyze: download → parse_mod_directory → analyze_mod → full Mod Report (what the mod adds, quality score, issues, recommendations)
+  - Control Deck **Workshop tab**: search grid, paste-URL/id guaranteed path, detail panel (stats, tags, Steam page, refresh), Download + Fetch & Analyze actions, rendered Mod Report; bridge `LONG_TOOLS` timeout extended for downloads
+  - Security stance: mods are read/analyzed only — never executed, never auto-installed into the live game
 - **`analyze_recipe_chain` tool** (freebuff N3): walks the recipe dependency graph from any item/recipe id — what it is made from, what it makes, and what consumes it (direction + maxDepth controls)
 - **`detect_recipe_conflicts` tool** (freebuff N3): finds items produced by more than one recipe (duplicate crafting paths)
 - **`export_mod_script` tool** (freebuff §14): generates a script and optionally writes it into a mod's `media/scripts` folder — dry-run by default, path-validated, filename sanitized
