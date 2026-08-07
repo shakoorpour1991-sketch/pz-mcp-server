@@ -140,6 +140,7 @@ const TOOLS = [
   'export_mod_script',
   'workshop_search',
   'workshop_get_details',
+  'workshop_download',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -179,7 +180,7 @@ describe('pz-mcp-server integration', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('tools/list exposes all 14 MCP tools', async () => {
+  test('tools/list exposes all 15 MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());

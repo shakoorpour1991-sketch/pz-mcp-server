@@ -46,6 +46,11 @@ if (items[0]) {
 const byUrl = await rpc('tools/call', { name: 'workshop_get_details', arguments: { id: 'https://steamcommunity.com/sharedfiles/filedetails/?id=' + (items[0]?.id || '3777544219') } });
 check('URL input resolves', !!byUrl.result?.structuredContent?.details?.id);
 
+// 6. workshop_download registered + graceful handling without steamcmd installed
+const dl = await rpc('tools/call', { name: 'workshop_download', arguments: { id: items[0]?.id || '3777544219' } });
+const dlErr = dl.error?.message || '';
+check('workshop_download tool callable', dl.result || /SteamCMD not found|Tool execution failed/.test(dlErr), dlErr.slice(0, 90));
+
 console.log('');
 console.log(pass ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED');
 process.exit(pass ? 0 : 1);

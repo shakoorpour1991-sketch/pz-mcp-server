@@ -34,7 +34,11 @@ import {
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
-import { SteamWorkshopClient } from "./workshop/SteamWorkshopClient.js";
+import {
+  SteamWorkshopClient,
+  parseWorkshopInput,
+} from "./workshop/SteamWorkshopClient.js";
+import { SteamCmdDownloader } from "./workshop/SteamCmdDownloader.js";
 import { knowledgeBasePath } from "./utils/config.js";
 import { BLOCK_TYPES, SEARCH_TYPES } from "./utils/blockTypes.js";
 import logger from "./utils/logger.js";
@@ -69,6 +73,7 @@ let pathManager: PathManager;
 let knowledgeBaseManager: KnowledgeBaseManager;
 let recipeAnalyzer: RecipeAnalyzer;
 let workshopClient: SteamWorkshopClient;
+let steamCmdDownloader: SteamCmdDownloader;
 
 async function initializeServer() {
   try {
@@ -92,8 +97,9 @@ async function initializeServer() {
     knowledgeBaseManager = new KnowledgeBaseManager();
     await knowledgeBaseManager.initialize();
 
-    // Initialize Steam Workshop metadata client (keyless)
+    // Initialize Steam Workshop metadata client (keyless) + SteamCMD downloader
     workshopClient = new SteamWorkshopClient();
+    steamCmdDownloader = new SteamCmdDownloader();
 
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");
   } catch (error) {
@@ -291,6 +297,16 @@ const WorkshopGetDetailsSchema = z.object({
     ),
 });
 
+const WorkshopDownloadSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      "Workshop item id or URL to download via SteamCMD (verified to be a Project Zomboid item first)",
+    ),
+});
+
 // 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
 const ListKnowledgeTopicsSchema = z.object({});
 
@@ -380,6 +396,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           "Resolve full metadata for a Project Zomboid workshop item from its id or steamcommunity URL (Steam Web API, keyless, 24h cache)",
         inputSchema: WorkshopGetDetailsSchema,
+      },
+      {
+        name: "workshop_download",
+        description:
+          "Download a Project Zomboid workshop item via SteamCMD into the workshop workspace dir (PZ_WORKSHOP_DIR or <Steam>/steamapps/workshop/content/108600). Verifies the item belongs to Project Zomboid first. Requires steamcmd (STEAMCMD_PATH or common locations)",
+        inputSchema: WorkshopDownloadSchema,
       },
     ],
   };
@@ -957,6 +979,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "workshop_download": {
+        const { id } = WorkshopDownloadSchema.parse(args);
+        const resolvedId = parseWorkshopInput(id);
+        // Confirm the item is a Project Zomboid workshop item before touching disk.
+        const details = await workshopClient.getDetails(resolvedId);
+        const isPz = details.appId === "108600";
+        if (!isPz) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Item ${resolvedId} belongs to app ${details.appId || "unknown"}, not Project Zomboid (108600). Refusing to download.`,
+          );
+        }
+        const result = await steamCmdDownloader.download(resolvedId, (phase) =>
+          logger.info({ workshopId: resolvedId }, "workshop_download: %s", phase),
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatWorkshopDownload(result),
+            },
+          ],
+          structuredContent: JSON.parse(JSON.stringify(result)),
+        };
+      }
+
       default:
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }
@@ -1348,6 +1396,24 @@ function formatWorkshopDetails(
   if (details.description) {
     output += `\n### Description\n${details.description.slice(0, 600)}\n`;
   }
+  return output;
+}
+
+function formatWorkshopDownload(result: {
+  id: string;
+  downloadedPath: string;
+  bytes: number;
+  elapsedMs: number;
+  attempts: number;
+  note?: string;
+}): string {
+  let output = `## Workshop Download: ${result.id}\n\n`;
+  output += `✅ Downloaded to: \`${result.downloadedPath}\`\n`;
+  output += `- **Size**: ${formatBytes(result.bytes)}\n`;
+  output += `- **Elapsed**: ${(result.elapsedMs / 1000).toFixed(1)}s\n`;
+  output += `- **SteamCMD attempts**: ${result.attempts}\n`;
+  if (result.note) output += `- **Note**: ${result.note}\n`;
+  output += `\nNext: run parse_game_files / analyze_mod / check_references on ${result.downloadedPath} to dissect the mod.`;
   return output;
 }
 

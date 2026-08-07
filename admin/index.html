@@ -497,7 +497,7 @@ const S = {
   serverInfo:null, protocol:null,
   tools:[], openTool:null,
   telemetry:null,
-  ws: { results: [], detail: null, busy: false, error: null },
+  ws: { results: [], detail: null, busy: false, error: null, downloading: false, download: null },
   logs:[], fid:0, methodById:new Map(), resLatency:new Map(),
   serverLog:[], seq:0,
   lat:{ ema:null, calls:0, spark:[] },
@@ -1147,6 +1147,30 @@ async function wsFetchDetails(input){
     renderWorkshopResults();
   }
 }
+function wsDownloadResultHTML(r){
+  return '<div class="md-out" style="margin-top:12px">' +
+    '<div class="md-h">✅ Downloaded — '+esc(r.downloadedPath)+'</div>' +
+    '<div class="md-p">'+ICONS.db+' '+esc(fmtBytes(r.bytes))+' in '+(r.elapsedMs/1000).toFixed(1)+'s · steamcmd attempts: '+esc(String(r.attempts))+'</div>' +
+    '<div class="md-p" style="color:var(--faint)">Next: run the analyze pipeline on this folder (M3).</div></div>';
+}
+async function wsDownload(id){
+  if (S.ws.downloading) return;
+  S.ws.downloading = true; S.ws.download = null; S.ws.error = null;
+  renderView();
+  try {
+    const reply = await rpc('tools/call', { name:'workshop_download', arguments:{ id } });
+    const sc = reply.result?.structuredContent;
+    S.ws.download = sc || null;
+    if (!S.ws.download) throw new Error('No structured result from workshop_download');
+    toast('Downloaded — ' + fmtBytes(S.ws.download.bytes));
+    addEvent('workshop download · ' + id + ' · ' + fmtBytes(S.ws.download.bytes));
+  } catch (e){
+    S.ws.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+  } finally {
+    S.ws.downloading = false;
+    renderView();
+  }
+}
 function wsDetailHTML(d){
   const isPz = d.appId === '108600';
   const tags = (d.tags && d.tags.length) ? d.tags.map(t => '<span class="chip">'+esc(t)+'</span>').join('') : '';
@@ -1174,7 +1198,11 @@ function wsDetailHTML(d){
         '<div class="krow"><span class="k">Last updated</span><span class="v">'+esc(d.timeUpdated ? new Date(d.timeUpdated*1000).toISOString().slice(0,10) : '—')+'</span></div>' +
         '<div class="krow"><span class="k">Created</span><span class="v">'+esc(d.timeCreated ? new Date(d.timeCreated*1000).toISOString().slice(0,10) : '—')+'</span></div>' +
         (tags ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">'+tags+'</div>' : '') +
-        '<button class="btn primary" style="margin-top:14px" disabled title="Arrives with the download milestone (M2)">'+ICONS.download+' Fetch &amp; Analyze — coming in M2</button>' +
+        '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">' +
+          '<button class="btn primary" data-act="ws-download" data-id="'+esc(d.id)+'"'+(S.ws.downloading?' disabled':'')+'>'+ICONS.download+(S.ws.downloading?' Downloading…':' Download mod')+'</button>' +
+          '<span id="wsDlStatus" style="font-size:12.5px;color:var(--muted)"></span>' +
+        '</div>' +
+        (S.ws.download ? wsDownloadResultHTML(S.ws.download) : '') +
         (d.description ? '<div class="ws-desc">'+esc(d.description)+'</div>' : '') +
       '</div>' +
     '</div></section>';
@@ -1331,6 +1359,7 @@ document.addEventListener('click', e => {
     }
     else if (a === 'ws-select') wsFetchDetails(act.dataset.id);
     else if (a === 'ws-back'){ S.ws.detail = null; S.ws.error = null; renderView(); }
+    else if (a === 'ws-download') wsDownload(act.dataset.id);
     else if (a === 'open-term') openTerminal();
     else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); renderAllLogs(); toast('Local wire log cleared'); }
     else if (a === 'restart') restartServer();
