@@ -1,6 +1,7 @@
 import { DatabaseManager } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
 import { scanScriptBlocks } from "../utils/scriptScanner.js";
+import { BlockType } from "../utils/blockTypes.js";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -29,6 +30,17 @@ export interface ReferenceValidationResult {
   isValid: boolean;
   error?: string;
   suggestions: string[];
+  /**
+   * Completeness detail (freebuff N-series): where the reference actually
+   * lives. 'defined' = an items row exists; 'referenced' = only appears in
+   * the references table (sprite/model refs, or a dangling reference);
+   * 'missing' = nowhere.
+   */
+  detail?: "defined" | "referenced" | "missing";
+  /** Block type of the items row when the reference is defined as an item. */
+  itemType?: string;
+  /** How many items/recipes reference this id. */
+  referenceCount?: number;
 }
 
 interface PropertyValidator {
@@ -42,8 +54,10 @@ interface PropertyValidator {
 export class ValidationEngine {
   private db: DatabaseManager;
 
-  // Define required properties for different block types
-  private readonly requiredProperties = {
+  // Define required properties for different block types. Keyed by the shared
+  // BLOCK_TYPES union (freebuff review refactor #5) so a new block type can
+  // never silently pass through the validator without a required-property set.
+  private readonly requiredProperties: Record<BlockType, string[]> = {
     item: ["Type", "DisplayName"],
     recipe: ["Result"],
     fixing: ["Require", "Fixer"],
@@ -199,6 +213,20 @@ export class ValidationEngine {
           const suggestions = await this.db.getSimilarItems(reference, 5);
           result.suggestions = suggestions;
         }
+
+        // Completeness detail: is this reference defined as an item, only
+        // referenced elsewhere, or missing entirely (freebuff N-series)?
+        const detail = await this.db.describeReference(reference);
+        result.detail = detail.defined
+          ? "defined"
+          : detail.referenceCount > 0
+            ? "referenced"
+            : "missing";
+        // exactOptionalPropertyTypes: only assign when present.
+        if (detail.itemType !== undefined) {
+          result.itemType = detail.itemType;
+        }
+        result.referenceCount = detail.referenceCount;
       } catch (error) {
         result.error = `Validation error: ${error instanceof Error ? error.message : String(error)}`;
       }

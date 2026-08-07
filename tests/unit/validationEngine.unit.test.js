@@ -1,7 +1,10 @@
 /**
- * Unit tests for ValidationEngine: script validation and reference checks.
+ * Unit tests for ValidationEngine: script validation, reference checks, and
+ * the reference completeness detail (freebuff N-series).
  * Runs against the compiled dist/ build.
  */
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -14,7 +17,7 @@ describe('ValidationEngine', () => {
   let db;
   let validator;
 
-  beforeAll(async () => {
+  before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-val-'));
     db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
     await db.initialize();
@@ -32,7 +35,7 @@ describe('ValidationEngine', () => {
     validator = new ValidationEngine(db);
   });
 
-  afterAll(() => {
+  after(() => {
     db.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -46,8 +49,8 @@ describe('ValidationEngine', () => {
       '}',
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
-    expect(result.isValid).toBe(true);
-    expect(result.score).toBeGreaterThanOrEqual(0);
+    assert.equal(result.isValid, true);
+    assert.ok(result.score >= 0);
   });
 
   test('flags missing required properties and bad enum values', async () => {
@@ -58,8 +61,8 @@ describe('ValidationEngine', () => {
       '}',
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
-    expect(result.isValid).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
+    assert.equal(result.isValid, false);
+    assert.ok(result.errors.length > 0);
   });
 
   test('strict mode still accepts a valid item script', async () => {
@@ -71,15 +74,35 @@ describe('ValidationEngine', () => {
       '}',
     ].join('\n');
     const result = await validator.validateScript(content, 'item', true);
-    expect(result.isValid).toBe(true);
+    assert.equal(result.isValid, true);
   });
 
   test('checkReferences distinguishes known and unknown items', async () => {
     const results = await validator.checkReferences(['TestSword', 'GhostItem'], 'item');
     const byName = Object.fromEntries(results.map((r) => [r.reference, r]));
-    expect(byName.TestSword.isValid).toBe(true);
-    expect(byName.GhostItem.isValid).toBe(false);
-    expect(byName.GhostItem.error).toBeDefined();
+    assert.equal(byName.TestSword.isValid, true);
+    assert.equal(byName.GhostItem.isValid, false);
+    assert.notEqual(byName.GhostItem.error, undefined);
+  });
+
+  // N-series (F3): completeness detail — defined / referenced-only / missing.
+  test('checkReferences reports where each reference lives (defined/referenced/missing)', async () => {
+    // The sprite reference lives only in the references table (not an items
+    // row) — exactly the mod-vs-vanilla gap the completeness detail surfaces.
+    await db.addReference('TestSword', 'TestSwordIcon', 'sprite', 'Icon');
+
+    const results = await validator.checkReferences(
+      ['TestSword', 'TestSwordIcon', 'GhostItem'],
+      'all'
+    );
+    const byName = Object.fromEntries(results.map((r) => [r.reference, r]));
+    assert.equal(byName.TestSword.detail, 'defined');
+    assert.equal(byName.TestSword.itemType, 'item');
+    // Sprite lives only in the references table → referenced, not defined.
+    assert.equal(byName.TestSwordIcon.detail, 'referenced');
+    assert.ok(byName.TestSwordIcon.referenceCount > 0);
+    assert.equal(byName.GhostItem.detail, 'missing');
+    assert.equal(byName.GhostItem.referenceCount, 0);
   });
 
   // C1: sprite references (Icon/WeaponSprite) are stored in the references
@@ -97,7 +120,7 @@ describe('ValidationEngine', () => {
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
     const invalidRefs = result.warnings.filter((w) => w.code === 'INVALID_REFERENCE');
-    expect(invalidRefs).toHaveLength(0);
+    assert.equal(invalidRefs.length, 0);
   });
 
   test('C1: unknown sprite reference still warns', async () => {
@@ -111,7 +134,7 @@ describe('ValidationEngine', () => {
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
     const invalidRefs = result.warnings.filter((w) => w.code === 'INVALID_REFERENCE');
-    expect(invalidRefs.length).toBeGreaterThan(0);
+    assert.ok(invalidRefs.length > 0);
   });
 });
 
@@ -125,6 +148,7 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
   const dbStub = {
     checkReference: async () => true,
     getSimilarItems: async () => [],
+    describeReference: async () => ({ defined: true, itemType: 'item', referenceTypes: [], referenceCount: 1 }),
   };
 
   test('recognizes craftRecipe blocks with B42 "key = value" properties and outputs section', async () => {
@@ -149,8 +173,8 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'recipe');
-    expect(result.errors).toEqual([]);
-    expect(result.isValid).toBe(true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.isValid, true);
   });
 
   test('craftRecipe without Result property and without outputs section errors', async () => {
@@ -165,10 +189,11 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'recipe');
-    expect(
-      result.errors.some((e) => e.code === 'MISSING_PROPERTY' && /Result/.test(e.message))
-    ).toBe(true);
-    expect(result.isValid).toBe(false);
+    assert.equal(
+      result.errors.some((e) => e.code === 'MISSING_PROPERTY' && /Result/.test(e.message)),
+      true
+    );
+    assert.equal(result.isValid, false);
   });
 
   test('legacy B41 recipe with colon properties still validates', async () => {
@@ -185,8 +210,8 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'recipe');
-    expect(result.errors).toEqual([]);
-    expect(result.isValid).toBe(true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.isValid, true);
   });
 });
 
@@ -194,6 +219,7 @@ describe('M1 F7: vehicle validation', () => {
   const dbStub = {
     checkReference: async () => true,
     getSimilarItems: async () => [],
+    describeReference: async () => ({ defined: true, itemType: 'item', referenceTypes: [], referenceCount: 1 }),
   };
 
   test('vehicle scripts validate without a "template" property (generator parity)', async () => {
@@ -210,8 +236,8 @@ describe('M1 F7: vehicle validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'vehicle');
-    expect(result.errors).toEqual([]);
-    expect(result.isValid).toBe(true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.isValid, true);
   });
 });
 
@@ -219,6 +245,7 @@ describe('M1 F8: evolved recipe validation', () => {
   const dbStub = {
     checkReference: async () => true,
     getSimilarItems: async () => [],
+    describeReference: async () => ({ defined: true, itemType: 'item', referenceTypes: [], referenceCount: 1 }),
   };
 
   test('BaseItem alone satisfies the evolved recipe requirement', async () => {
@@ -234,8 +261,8 @@ describe('M1 F8: evolved recipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'evolvedrecipe');
-    expect(result.errors).toEqual([]);
-    expect(result.isValid).toBe(true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.isValid, true);
   });
 
   test('legacy ResultItem alone also satisfies the requirement', async () => {
@@ -250,8 +277,8 @@ describe('M1 F8: evolved recipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'evolvedrecipe');
-    expect(result.errors).toEqual([]);
-    expect(result.isValid).toBe(true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.isValid, true);
   });
 
   test('missing both BaseItem and ResultItem is an error', async () => {
@@ -266,7 +293,7 @@ describe('M1 F8: evolved recipe validation', () => {
       '}',
     ].join('\n');
     const result = await engine.validateScript(script, 'evolvedrecipe');
-    expect(result.errors.some((e) => e.code === 'MISSING_BASE_ITEM')).toBe(true);
-    expect(result.isValid).toBe(false);
+    assert.equal(result.errors.some((e) => e.code === 'MISSING_BASE_ITEM'), true);
+    assert.equal(result.isValid, false);
   });
 });

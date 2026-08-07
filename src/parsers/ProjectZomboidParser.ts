@@ -4,6 +4,7 @@ import { join, extname, basename } from "path";
 import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
 import { scanScriptBlocks, ScanBlock } from "../utils/scriptScanner.js";
+import { isBlockType } from "../utils/blockTypes.js";
 import logger from "../utils/logger.js";
 
 export interface ParseResults {
@@ -244,6 +245,11 @@ export class ProjectZomboidParser {
     accumulatedItems: any[],
     results: ParseResults,
   ): Promise<void> {
+    // Per-line property parse problems are collected here and surfaced once
+    // per file instead of a logger.warn per malformed line (freebuff review
+    // §3 code smell #4).
+    const parseErrors: Array<{ file: string; message: string; line?: number }> =
+      [];
     try {
       // The scanner normalized B42 "craftRecipe" blocks to type 'recipe';
       // block.rawType keeps the original keyword so parseBlock can
@@ -261,21 +267,13 @@ export class ProjectZomboidParser {
         block.content,
         filePath,
         block.startLine,
+        parseErrors,
       );
       if (item) {
-        // Only the six primary block types are stored. Container types
-        // (entity, model, event, ...) are consumed as blocks so their inner
-        // lines never leak as fake items.
-        if (
-          [
-            "item",
-            "recipe",
-            "evolvedrecipe",
-            "fixing",
-            "sound",
-            "vehicle",
-          ].includes(storedType)
-        ) {
+        // Only the six primary block types are stored (shared BLOCK_TYPES).
+        // Container types (entity, model, event, ...) are consumed as blocks
+        // so their inner lines never leak as fake items.
+        if (isBlockType(storedType)) {
           accumulatedItems.push(item);
 
           // Update counters
@@ -301,6 +299,15 @@ export class ProjectZomboidParser {
           }
         }
       }
+
+      // Aggregate per-line property issues into a single warn + one error
+      // entry each (with real line numbers), instead of warn-per-line.
+      if (parseErrors.length > 0) {
+        logger.warn(
+          `Property parse issues in ${filePath}: ${parseErrors.length} issue(s)`,
+        );
+        results.errors.push(...parseErrors);
+      }
     } catch (error) {
       results.errors.push({
         file: filePath,
@@ -315,6 +322,7 @@ export class ProjectZomboidParser {
     content: string[],
     filePath: string,
     startLine: number,
+    parseErrors: Array<{ file: string; message: string; line?: number }>,
   ): GameItem | null {
     const properties: Record<string, any> = {};
     const rawContent = content.join("\n");
@@ -375,10 +383,12 @@ export class ProjectZomboidParser {
           this.parseVehicleProperty(trimmed, properties);
         }
       } catch (error) {
-        // Log property parse errors but continue
-        logger.warn(
-          `Property parse error in ${filePath}:${startLine}: ${error}`,
-        );
+        // Collect property parse errors (aggregated per file in finalizeBlock)
+        parseErrors.push({
+          file: filePath,
+          line: startLine + i,
+          message: `Failed to parse property: ${error instanceof Error ? error.message : String(error)}`,
+        });
       }
     }
 

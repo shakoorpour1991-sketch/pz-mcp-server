@@ -2,6 +2,8 @@
  * Unit tests for DatabaseManager: FTS5 query sanitization (audit P1 #8)
  * and search behavior. Runs against the compiled dist/ build.
  */
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -12,13 +14,13 @@ describe('DatabaseManager', () => {
   let tmpDir;
   let db;
 
-  beforeAll(async () => {
+  before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-db-'));
     db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
     await db.initialize();
   });
 
-  afterAll(() => {
+  after(() => {
     db.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -26,35 +28,35 @@ describe('DatabaseManager', () => {
   describe('prepareFTSQuery (FTS5 sanitization)', () => {
     test('a simple term is quoted', () => {
       const q = db.prepareFTSQuery('sword');
-      expect(q).toContain('"sword"');
+      assert.ok(q.includes('"sword"'));
     });
 
     test('special characters and operator keywords are stripped', () => {
       const q = db.prepareFTSQuery('"sword" OR "axe" -note *wild*');
-      expect(q).toContain('"sword"');
-      expect(q).toContain('"axe"');
-      expect(q).toContain('"wild"'); // '*' stripped, term kept
-      expect(q).not.toContain('"OR"'); // operator keyword removed as a term
-      expect(q).not.toContain('"-note"');
+      assert.ok(q.includes('"sword"'));
+      assert.ok(q.includes('"axe"'));
+      assert.ok(q.includes('"wild"')); // '*' stripped, term kept
+      assert.ok(!q.includes('"OR"')); // operator keyword removed as a term
+      assert.ok(!q.includes('"-note"'));
     });
 
     test('operator-only or empty input yields match-nothing query', () => {
-      expect(db.prepareFTSQuery('AND OR NOT NEAR')).toBe('""');
-      expect(db.prepareFTSQuery('')).toBe('""');
-      expect(db.prepareFTSQuery('   ')).toBe('""');
+      assert.equal(db.prepareFTSQuery('AND OR NOT NEAR'), '""');
+      assert.equal(db.prepareFTSQuery(''), '""');
+      assert.equal(db.prepareFTSQuery('   '), '""');
     });
 
     test('malformed input never throws and never leaks raw operators', () => {
       const evil = '"; DROP TABLE items; --';
       const q = db.prepareFTSQuery(evil);
-      expect(q).toContain('"DROP');
-      expect(q).not.toContain(';');
-      expect(q).not.toContain('--');
+      assert.ok(q.includes('"DROP'));
+      assert.ok(!q.includes(';'));
+      assert.ok(!q.includes('--'));
     });
   });
 
   describe('searchContent', () => {
-    beforeAll(async () => {
+    before(async () => {
       await db.insertItem({
         id: 'Base.TestSword',
         name: 'TestSword',
@@ -70,22 +72,22 @@ describe('DatabaseManager', () => {
 
     test('finds items by name via FTS', async () => {
       const results = await db.searchContent('TestSword');
-      expect(results.length).toBeGreaterThan(0);
-      expect(results[0].name).toBe('TestSword');
+      assert.ok(results.length > 0);
+      assert.equal(results[0].name, 'TestSword');
     });
 
     test('type filter is qualified (no ambiguous-column error)', async () => {
       // type filters against the block-type column ('item'/'recipe'/...)
       const items = await db.searchContent('TestSword', { type: 'item' });
-      expect(items.length).toBeGreaterThan(0);
+      assert.ok(items.length > 0);
       const recipes = await db.searchContent('TestSword', { type: 'recipe' });
-      expect(recipes.length).toBe(0);
+      assert.equal(recipes.length, 0);
     });
 
     test('empty query lists items without crashing', async () => {
       const results = await db.searchContent('');
-      expect(Array.isArray(results)).toBe(true);
-      expect(results.length).toBeGreaterThan(0);
+      assert.equal(Array.isArray(results), true);
+      assert.ok(results.length > 0);
     });
 
     test('FTS5 bm25 ordering: best match ranks first (ASC, not DESC)', async () => {
@@ -131,12 +133,12 @@ describe('DatabaseManager', () => {
       // TestSword (inserted earlier in this describe) also matches via its
       // display name "Test Sword", so 3 rows total — but the ordering
       // assertion is the point: the strongest match must rank first.
-      expect(results.length).toBe(3);
+      assert.equal(results.length, 3);
       // bm25 rank is more negative for better matches; ASC must surface
       // the stronger match first (DESC would invert it — audit finding).
-      expect(results[0].id).toBe('Base.Sword');
+      assert.equal(results[0].id, 'Base.Sword');
       const spoonIdx = results.findIndex((r) => r.id === 'Base.Spoon');
-      expect(spoonIdx).toBeGreaterThan(0);
+      assert.ok(spoonIdx > 0);
     });
 
     test('tags filter matches items with any of the specified tags', async () => {
@@ -155,8 +157,8 @@ describe('DatabaseManager', () => {
       });
 
       const results = await db.searchContent('', { tags: 'Hammer,Metal' });
-      expect(results.length).toBeGreaterThan(0);
-      expect(results.some((r) => r.id === 'Base.Hammer')).toBe(true);
+      assert.ok(results.length > 0);
+      assert.equal(results.some((r) => r.id === 'Base.Hammer'), true);
     });
 
     test('metalValueMin filters items with metal_value >= threshold', async () => {
@@ -174,10 +176,10 @@ describe('DatabaseManager', () => {
       });
 
       const results = await db.searchContent('', { metalValueMin: 20 });
-      expect(results.some((r) => r.id === 'Base.IronBar')).toBe(true);
+      assert.equal(results.some((r) => r.id === 'Base.IronBar'), true);
 
       const lowResults = await db.searchContent('', { metalValueMin: 30 });
-      expect(lowResults.some((r) => r.id === 'Base.IronBar')).toBe(false);
+      assert.equal(lowResults.some((r) => r.id === 'Base.IronBar'), false);
     });
 
     test('metalValueMax filters items with metal_value <= threshold', async () => {
@@ -195,10 +197,10 @@ describe('DatabaseManager', () => {
       });
 
       const results = await db.searchContent('', { metalValueMax: 10 });
-      expect(results.some((r) => r.id === 'Base.CopperBar')).toBe(true);
+      assert.equal(results.some((r) => r.id === 'Base.CopperBar'), true);
 
       const highResults = await db.searchContent('', { metalValueMax: 3 });
-      expect(highResults.some((r) => r.id === 'Base.CopperBar')).toBe(false);
+      assert.equal(highResults.some((r) => r.id === 'Base.CopperBar'), false);
     });
 
     test('attachmentType filter matches items with the specified attachment type', async () => {
@@ -216,15 +218,15 @@ describe('DatabaseManager', () => {
       });
 
       const results = await db.searchContent('', { attachmentType: 'Sling' });
-      expect(results.some((r) => r.id === 'Base.Sling')).toBe(true);
+      assert.equal(results.some((r) => r.id === 'Base.Sling'), true);
 
       const noResults = await db.searchContent('', { attachmentType: 'Bow' });
-      expect(noResults.some((r) => r.id === 'Base.Sling')).toBe(false);
+      assert.equal(noResults.some((r) => r.id === 'Base.Sling'), false);
     });
   });
 
   describe('checkReference: sprite references resolve via the references table (C1)', () => {
-    beforeAll(async () => {
+    before(async () => {
       // extractReferences stores Icon/WeaponSprite values as
       // reference_type='sprite' rows; they are NOT rows in items.
       // (item_id must reference the existing 'Base.TestSword' row — FK is
@@ -233,18 +235,18 @@ describe('DatabaseManager', () => {
     });
 
     test('type=sprite resolves against the references table', async () => {
-      expect(await db.checkReference('TestSwordIcon', 'sprite')).toBe(true);
-      expect(await db.checkReference('NoSuchSpriteEver', 'sprite')).toBe(false);
+      assert.equal(await db.checkReference('TestSwordIcon', 'sprite'), true);
+      assert.equal(await db.checkReference('NoSuchSpriteEver', 'sprite'), false);
     });
 
     test('type=all falls back to the references table when not an item', async () => {
-      expect(await db.checkReference('TestSwordIcon')).toBe(true);
-      expect(await db.checkReference('NoSuchRefEver')).toBe(false);
+      assert.equal(await db.checkReference('TestSwordIcon'), true);
+      assert.equal(await db.checkReference('NoSuchRefEver'), false);
     });
 
     test('type=item/sound still resolve against items only', async () => {
-      expect(await db.checkReference('Base.TestSword', 'item')).toBe(true);
-      expect(await db.checkReference('TestSwordIcon', 'item')).toBe(false);
+      assert.equal(await db.checkReference('Base.TestSword', 'item'), true);
+      assert.equal(await db.checkReference('TestSwordIcon', 'item'), false);
     });
   });
 
@@ -265,20 +267,20 @@ describe('DatabaseManager', () => {
       // First insert + search
       await db.insertItem(item);
       let results = await db.searchContent('DriftTest');
-      expect(results.some((r) => r.id === 'Base.DriftTest')).toBe(true);
+      assert.equal(results.some((r) => r.id === 'Base.DriftTest'), true);
 
       // Re-insert (simulates re-parse of the same file) — upsert must keep the
       // rowid stable so the FTS external-content index stays aligned. With
       // INSERT OR REPLACE this used to drift and throw "missing row N".
       await db.insertItem({ ...item, displayName: 'Drift Test v2' });
       results = await db.searchContent('DriftTest');
-      expect(results.some((r) => r.id === 'Base.DriftTest')).toBe(true);
-      expect(results.find((r) => r.id === 'Base.DriftTest')?.displayName).toBe('Drift Test v2');
+      assert.equal(results.some((r) => r.id === 'Base.DriftTest'), true);
+      assert.equal(results.find((r) => r.id === 'Base.DriftTest')?.displayName, 'Drift Test v2');
 
       // Bulk path too
       await db.insertItems([{ ...item, id: 'Base.DriftBulk', name: 'DriftBulk' }]);
       results = await db.searchContent('DriftBulk');
-      expect(results.some((r) => r.id === 'Base.DriftBulk')).toBe(true);
+      assert.equal(results.some((r) => r.id === 'Base.DriftBulk'), true);
     });
 
     test('initialize() heals a stale FTS index (rebuild)', async () => {
@@ -314,7 +316,7 @@ describe('DatabaseManager', () => {
       await healedDb.initialize();
       // Any MATCH must not throw; the index is empty so no results.
       const results = await healedDb.searchContent('StaleItem');
-      expect(Array.isArray(results)).toBe(true);
+      assert.equal(Array.isArray(results), true);
       healedDb.close();
       fs.rmSync(staleDir, { recursive: true, force: true });
     });
@@ -337,7 +339,7 @@ describe('DatabaseManager', () => {
       // Must not throw: references are deleted before items (forceReparse path)
       await db.clearDatabase();
       const stats = await db.getStats();
-      expect(stats.total).toBe(0);
+      assert.equal(stats.total, 0);
     });
   });
 });

@@ -856,5 +856,4 @@ export class ScriptGenerator {
 
     return lines.join("\n");
   }
-
 }

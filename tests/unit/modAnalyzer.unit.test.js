@@ -2,6 +2,8 @@
  * Unit tests for ModAnalyzer audit fixes (A1-A5).
  * Tests the Lua-analysis paths that do not require a real PZ game DB.
  */
+import { describe, test, before, beforeEach, after } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -15,7 +17,7 @@ describe('ModAnalyzer', () => {
   let dbManager;
   let analyzer;
 
-  beforeAll(async () => {
+  before(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-test-'));
     fs.mkdirSync(path.join(tempDir, 'media', 'lua'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=TestMod\n');
@@ -35,7 +37,7 @@ describe('ModAnalyzer', () => {
     }
   });
 
-  afterAll(() => {
+  after(() => {
     dbManager.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -50,7 +52,7 @@ describe('ModAnalyzer', () => {
       checkCompatibility: false,
     });
     const leaks1 = r1.issues.filter((i) => i.code === 'GLOBAL_VAR');
-    expect(leaks1).toHaveLength(0);
+    assert.equal(leaks1.length, 0);
 
     fs.writeFileSync(luaPath, 'y = 2\n');
     const r2 = await analyzer.analyzeMod(tempDir, {
@@ -58,8 +60,8 @@ describe('ModAnalyzer', () => {
       checkCompatibility: false,
     });
     const leaks2 = r2.issues.filter((i) => i.code === 'GLOBAL_VAR');
-    expect(leaks2).toHaveLength(1);
-    expect(leaks2[0].message).toContain('y');
+    assert.equal(leaks2.length, 1);
+    assert.ok(leaks2[0].message.includes('y'));
   });
 
   // A2: UNUSED_REQUIRE branch removed — no such warnings can fire
@@ -71,7 +73,7 @@ describe('ModAnalyzer', () => {
       checkCompatibility: false,
     });
     const unused = r.issues.filter((i) => i.code === 'UNUSED_REQUIRE');
-    expect(unused).toHaveLength(0);
+    assert.equal(unused.length, 0);
   });
 
   // A3: multi-line balanced expression should not warn; genuinely unbalanced should
@@ -86,7 +88,7 @@ describe('ModAnalyzer', () => {
     const imb1 = r1.issues.filter(
       (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced'),
     );
-    expect(imb1).toHaveLength(0);
+    assert.equal(imb1.length, 0);
 
     fs.writeFileSync(luaPath, 'foo(\n  arg1\n');
     const r2 = await analyzer.analyzeMod(tempDir, {
@@ -96,7 +98,7 @@ describe('ModAnalyzer', () => {
     const imb2 = r2.issues.filter(
       (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced'),
     );
-    expect(imb2).toHaveLength(1);
+    assert.equal(imb2.length, 1);
   });
 
   // A5: OnPreMapLoad.Add still triggers the best-practice info issue
@@ -110,7 +112,7 @@ describe('ModAnalyzer', () => {
     const info = r.issues.filter(
       (i) => i.code === 'LUA_BEST_PRACTICE',
     );
-    expect(info).toHaveLength(1);
+    assert.equal(info.length, 1);
     // The same Lua snippet also has an unmatched 'end' (no 'if'), which is a
     // separate SEMANTIC_ERROR — that is expected and out of scope for A5.
   });
@@ -129,9 +131,9 @@ describe('ModAnalyzer', () => {
     const unbalanced = r.issues.filter(
       (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced')
     );
-    expect(unbalanced).toHaveLength(0);
+    assert.equal(unbalanced.length, 0);
     const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
-    expect(leaks).toHaveLength(0);
+    assert.equal(leaks.length, 0);
   });
 
   test('L2: assignments inside line comments do not trigger GLOBAL_VAR', async () => {
@@ -142,7 +144,7 @@ describe('ModAnalyzer', () => {
       checkCompatibility: false,
     });
     const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
-    expect(leaks).toHaveLength(0);
+    assert.equal(leaks.length, 0);
   });
 
   test('L2: long-bracket comments --[==[ ]==] are stripped before counting', async () => {
@@ -158,11 +160,11 @@ describe('ModAnalyzer', () => {
     const unbalanced = r.issues.filter(
       (i) => i.code === 'LUA_SYNTAX_WARNING' && i.message.includes('Unbalanced')
     );
-    expect(unbalanced).toHaveLength(0);
+    assert.equal(unbalanced.length, 0);
     const semantic = r.issues.filter((i) => i.code === 'SEMANTIC_ERROR');
-    expect(semantic).toHaveLength(0);
+    assert.equal(semantic.length, 0);
     const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
-    expect(leaks).toHaveLength(0);
+    assert.equal(leaks.length, 0);
   });
 });
 
@@ -175,7 +177,7 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
   let dbManager;
   let analyzer;
 
-  beforeAll(async () => {
+  before(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-bal-'));
     fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=BalanceMod\nid=BalanceMod\n');
@@ -207,7 +209,7 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
     analyzer = new ModAnalyzer(dbManager, parser);
   });
 
-  afterAll(() => {
+  after(() => {
     dbManager.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -217,12 +219,12 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
       checkBalance: true,
       checkCompatibility: false,
     });
-    expect(r.balance.itemCount).toBe(1);
+    assert.equal(r.balance.itemCount, 1);
     const outlier = r.balance.outliers.find((o) => o.item === 'SuperBlade');
-    expect(outlier).toBeDefined();
-    expect(outlier.property).toBe('MaxDamage');
-    expect(outlier.value).toBe(100);
-    expect(r.balance.score).toBeLessThan(100);
+    assert.notEqual(outlier, undefined);
+    assert.equal(outlier.property, 'MaxDamage');
+    assert.equal(outlier.value, 100);
+    assert.ok(r.balance.score < 100);
   });
 
   test('in-balance mod items produce no outliers', async () => {
@@ -234,9 +236,9 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
       checkBalance: true,
       checkCompatibility: false,
     });
-    expect(r.balance.itemCount).toBe(2);
+    assert.equal(r.balance.itemCount, 2);
     const mild = r.balance.outliers.find((o) => o.item === 'MildDagger');
-    expect(mild).toBeUndefined();
+    assert.equal(mild, undefined);
   });
 });
 
@@ -245,7 +247,7 @@ describe('ModAnalyzer compatibility analysis (seeded)', () => {
   let dbManager;
   let analyzer;
 
-  beforeAll(async () => {
+  before(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-compat-'));
     fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'mod.info'), [
@@ -265,7 +267,7 @@ describe('ModAnalyzer compatibility analysis (seeded)', () => {
     analyzer = new ModAnalyzer(dbManager, parser);
   });
 
-  afterAll(() => {
+  after(() => {
     dbManager.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -275,9 +277,9 @@ describe('ModAnalyzer compatibility analysis (seeded)', () => {
       checkBalance: false,
       checkCompatibility: true,
     });
-    expect(r.compatibility.missingDependencies).toContain('SomeMissingDependency');
+    assert.ok(r.compatibility.missingDependencies.includes('SomeMissingDependency'));
     // versionMax=41.0 vs default PZ_GAME_VERSION 42.20 → incompatible
-    expect(r.compatibility.gameVersionCompatibility.compatible).toBe(false);
-    expect(r.compatibility.gameVersionCompatibility.maxVersion).toBe('41.0');
+    assert.equal(r.compatibility.gameVersionCompatibility.compatible, false);
+    assert.equal(r.compatibility.gameVersionCompatibility.maxVersion, '41.0');
   });
 });

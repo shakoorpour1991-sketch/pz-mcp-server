@@ -1,5 +1,5 @@
-import pino from 'pino';
-import { logLevel } from './config.js';
+import pino from "pino";
+import { logLevel } from "./config.js";
 
 /**
  * Structured logger (P4 #21).
@@ -12,7 +12,7 @@ const logger = pino(
   {
     level: logLevel(),
   },
-  pino.destination({ fd: 2 })
+  pino.destination({ fd: 2 }),
 );
 
 export default logger;

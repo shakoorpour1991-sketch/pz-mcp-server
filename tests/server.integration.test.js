@@ -7,6 +7,8 @@
  * Zomboid install + mod are created as fixtures. Requires `npm run build`
  * to have produced dist/ (the `test` script builds first).
  */
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -21,27 +23,27 @@ const GAME_SCRIPT = [
   'module Base {',
   'item TestSword',
   '{',
-  '	Type = Weapon,',
-  '	DisplayName = Test Sword,',
-  '	MaxDamage = 10,',
-  '	Weight = 2,',
+  '\tType = Weapon,',
+  '\tDisplayName = Test Sword,',
+  '\tMaxDamage = 10,',
+  '\tWeight = 2,',
   '}',
   'item TestHelmet',
   '{',
-  '	Type = Clothing,',
-  '	DisplayName = Test Helmet,',
+  '\tType = Clothing,',
+  '\tDisplayName = Test Helmet,',
   '}',
   'recipe TestSwordRecipe',
   '{',
-  '	Result: TestSword=1,',
-  '	Water=2,',
+  '\tResult: TestSword=1,',
+  '\tWater=2,',
   '}',
   'vehicle TestCar',
   '{',
-  '	Name = TestCar,',
-  '	DisplayName = Test Car,',
-  '	Type = NormalCar,',
-  '	Weight = 1200,',
+  '\tName = TestCar,',
+  '\tDisplayName = Test Car,',
+  '\tType = NormalCar,',
+  '\tWeight = 1200,',
   '}',
   '}',
 ].join('\n');
@@ -55,9 +57,9 @@ const MOD_INFO = [
 const MOD_SCRIPT = [
   'item ModDagger',
   '{',
-  '	Type = Weapon,',
-  '	DisplayName = Mod Dagger,',
-  '	MaxDamage = 5,',
+  '\tType = Weapon,',
+  '\tDisplayName = Mod Dagger,',
+  '\tMaxDamage = 5,',
   '}',
 ].join('\n');
 
@@ -133,6 +135,9 @@ const TOOLS = [
   'index_knowledge_base',
   'search_knowledge_base',
   'list_knowledge_topics',
+  'analyze_recipe_chain',
+  'detect_recipe_conflicts',
+  'export_mod_script',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -141,7 +146,7 @@ describe('pz-mcp-server integration', () => {
   let modDir;
   let client;
 
-  beforeAll(async () => {
+  before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-mcp-test-'));
     gameDir = path.join(tmpDir, 'game');
     modDir = path.join(tmpDir, 'mod');
@@ -159,24 +164,24 @@ describe('pz-mcp-server integration', () => {
     await client.call('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'jest-integration', version: '1.0.0' },
+      clientInfo: { name: 'node-test-integration', version: '1.0.0' },
     });
     client.notify('notifications/initialized');
-  }, 30000);
+  });
 
-  afterAll(async () => {
+  after(async () => {
     if (client) {
       client.stop();
       await client.waitExit(); // release the SQLite file lock before rm
     }
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-  }, 10000);
+  });
 
-  test('tools/list exposes all 9 MCP tools', async () => {
+  test('tools/list exposes all 12 MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
-    expect(names).toEqual([...TOOLS].sort());
-  }, 30000);
+    assert.deepEqual(names, [...TOOLS].sort());
+  });
 
   test('parse_game_files parses fixture game scripts', async () => {
     const result = await client.call('tools/call', {
@@ -184,10 +189,10 @@ describe('pz-mcp-server integration', () => {
       arguments: { gamePath: gameDir },
     });
     const text = result.content[0].text;
-    expect(text).toContain('**Items**: 2 parsed');
-    expect(text).toContain('**Recipes**: 1 parsed');
-    expect(text).not.toContain('Parse Errors:');
-  }, 30000);
+    assert.ok(text.includes('**Items**: 2 parsed'));
+    assert.ok(text.includes('**Recipes**: 1 parsed'));
+    assert.ok(!text.includes('Parse Errors:'));
+  });
 
   test('index_knowledge_base indexes markdown docs and search finds them', async () => {
     const kbDir = path.join(tmpDir, 'kb');
@@ -199,29 +204,29 @@ describe('pz-mcp-server integration', () => {
       name: 'index_knowledge_base',
       arguments: { path: kbDir },
     });
-    expect(idx.content[0].text).toContain('**Topics**: 2 indexed');
+    assert.ok(idx.content[0].text.includes('**Topics**: 2 indexed'));
 
     const search = await client.call('tools/call', {
       name: 'search_knowledge_base',
       arguments: { query: 'water', limit: 5 },
     });
-    expect(search.content[0].text).toContain('Found 2 results for "water"');
+    assert.ok(search.content[0].text.includes('Found 2 results for "water"'));
 
     const topicFilter = await client.call('tools/call', {
       name: 'search_knowledge_base',
       arguments: { query: 'water', topic: 'Cooking' },
     });
-    expect(topicFilter.content[0].text).toContain('Found 1 results');
-    expect(topicFilter.content[0].text).toContain('Cooking');
+    assert.ok(topicFilter.content[0].text.includes('Found 1 results'));
+    assert.ok(topicFilter.content[0].text.includes('Cooking'));
 
     const list = await client.call('tools/call', {
       name: 'list_knowledge_topics',
       arguments: {},
     });
-    expect(list.content[0].text).toContain('Knowledge Base Topics (2)');
-    expect(list.content[0].text).toContain('Farming');
-    expect(list.content[0].text).toContain('Cooking');
-  }, 30000);
+    assert.ok(list.content[0].text.includes('Knowledge Base Topics (2)'));
+    assert.ok(list.content[0].text.includes('Farming'));
+    assert.ok(list.content[0].text.includes('Cooking'));
+  });
 
   test('search_vanilla finds parsed items', async () => {
     const result = await client.call('tools/call', {
@@ -229,9 +234,14 @@ describe('pz-mcp-server integration', () => {
       arguments: { query: 'TestSword', limit: 10 },
     });
     const text = result.content[0].text;
-    expect(text).toContain('TestSword');
-    expect(text).toContain('Weapon');
-  }, 30000);
+    assert.ok(text.includes('TestSword'));
+    assert.ok(text.includes('Weapon'));
+    // N2: structured results accompany the human text. The fixture recipe
+    // also matches ('Result: TestSword=1,' is FTS-indexed), so count >= 1 —
+    // but the item row must rank first (name-column match beats a property).
+    assert.ok(result.structuredContent.count >= 1);
+    assert.equal(result.structuredContent.results[0].id, 'TestSword');
+  });
 
   test('search_vanilla empty query lists items without crashing', async () => {
     const result = await client.call('tools/call', {
@@ -239,9 +249,9 @@ describe('pz-mcp-server integration', () => {
       arguments: { query: '', limit: 5 },
     });
     const text = result.content[0].text;
-    expect(text).toContain('Found');
-    expect(text).toContain('TestHelmet');
-  }, 30000);
+    assert.ok(text.includes('Found'));
+    assert.ok(text.includes('TestHelmet'));
+  });
 
   test('validate_script accepts a valid item script', async () => {
     const result = await client.call('tools/call', {
@@ -252,8 +262,8 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const text = result.content[0].text;
-    expect(text).toContain('✅ **Valid**');
-  }, 30000);
+    assert.ok(text.includes('✅ **Valid**'));
+  });
 
   test('generate_script produces an item script block', async () => {
     const result = await client.call('tools/call', {
@@ -266,9 +276,9 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const text = result.content[0].text;
-    expect(text).toContain('GeneratedPickaxe');
-    expect(text).toContain('MaxDamage');
-  }, 30000);
+    assert.ok(text.includes('GeneratedPickaxe'));
+    assert.ok(text.includes('MaxDamage'));
+  });
 
   test('generate_script accepts the balance option (melee weapon template, powerful)', async () => {
     const result = await client.call('tools/call', {
@@ -282,10 +292,10 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const text = result.content[0].text;
-    expect(text).toContain('BalancedBat');
-    expect(text).toContain('MaxDamage = 1.5'); // 1.0 (melee base) * 1.5 (powerful)
-    expect(text).toContain('Generated by Project Zomboid MCP Server');
-  }, 30000);
+    assert.ok(text.includes('BalancedBat'));
+    assert.ok(text.includes('MaxDamage = 1.5')); // 1.0 (melee base) * 1.5 (powerful)
+    assert.ok(text.includes('Generated by Project Zomboid MCP Server'));
+  });
 
   test('generate_script supports fixing and sound types', async () => {
     const fixing = await client.call('tools/call', {
@@ -297,9 +307,9 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const fixingText = fixing.content[0].text;
-    expect(fixingText).toContain('fixing Fix Bat');
-    expect(fixingText).toContain('Require : Base.Bat,');
-    expect(fixingText).toContain('Fixer : Base.Glue=1,');
+    assert.ok(fixingText.includes('fixing Fix Bat'));
+    assert.ok(fixingText.includes('Require : Base.Bat,'));
+    assert.ok(fixingText.includes('Fixer : Base.Glue=1,'));
 
     const sound = await client.call('tools/call', {
       name: 'generate_script',
@@ -310,10 +320,10 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const soundText = sound.content[0].text;
-    expect(soundText).toContain('sound TestSwing');
-    expect(soundText).toContain('category = Ambient,');
-    expect(soundText).toContain('file = swing.ogg,');
-  }, 30000);
+    assert.ok(soundText.includes('sound TestSwing'));
+    assert.ok(soundText.includes('category = Ambient,'));
+    assert.ok(soundText.includes('file = swing.ogg,'));
+  });
 
   test('check_references resolves known and unknown references', async () => {
     const result = await client.call('tools/call', {
@@ -321,10 +331,12 @@ describe('pz-mcp-server integration', () => {
       arguments: { references: ['TestSword', 'NoSuchItemEver'], type: 'item' },
     });
     const text = result.content[0].text;
-    expect(text).toContain('✅ Valid: 1');
-    expect(text).toContain('❌ Invalid: 1');
-    expect(text).toContain('NoSuchItemEver');
-  }, 30000);
+    assert.ok(text.includes('✅ Valid: 1'));
+    assert.ok(text.includes('❌ Invalid: 1'));
+    assert.ok(text.includes('NoSuchItemEver'));
+    // Completeness summary is part of the output now.
+    assert.ok(text.includes('📊 Defined:'));
+  });
 
   test('extractReferences populates the references table during parse', async () => {
     const dbPath = path.join(tmpDir, 'data', 'pz_database.db');
@@ -334,13 +346,93 @@ describe('pz-mcp-server integration', () => {
         'SELECT item_id, reference_id, reference_type, context FROM "references" ORDER BY context'
       ).all();
       const recipeRows = rows.filter((r) => r.item_id === 'TestSwordRecipe');
-      expect(recipeRows.length).toBeGreaterThanOrEqual(2);
-      expect(recipeRows.some((r) => r.context === 'result' && r.reference_id === 'TestSword')).toBe(true);
-      expect(recipeRows.some((r) => r.context === 'ingredient' && r.reference_id === 'Water')).toBe(true);
+      assert.ok(recipeRows.length >= 2);
+      assert.equal(recipeRows.some((r) => r.context === 'result' && r.reference_id === 'TestSword'), true);
+      assert.equal(recipeRows.some((r) => r.context === 'ingredient' && r.reference_id === 'Water'), true);
     } finally {
       db.close();
     }
-  }, 30000);
+  });
+
+  test('analyze_recipe_chain walks the fixture recipe graph (N3)', async () => {
+    const result = await client.call('tools/call', {
+      name: 'analyze_recipe_chain',
+      arguments: { seed: 'TestSwordRecipe', direction: 'both', maxDepth: 3 },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes('Recipe Chain: TestSwordRecipe'));
+    assert.ok(text.includes('consumes: Water'));
+    assert.ok(text.includes('produces: TestSword'));
+
+    const chain = result.structuredContent;
+    assert.equal(chain.seedKind, 'recipe');
+    const seedNode = chain.nodes.find((n) => n.id === 'TestSwordRecipe');
+    assert.notEqual(seedNode, undefined);
+    assert.equal(seedNode.results.some((r) => r.id === 'TestSword'), true);
+    assert.equal(seedNode.ingredients.some((r) => r.id === 'Water'), true);
+    // Water + TestSword item nodes were expanded from the recipe.
+    assert.ok(chain.nodes.some((n) => n.id === 'Water'));
+    assert.ok(chain.nodes.some((n) => n.id === 'TestSword'));
+  });
+
+  test('detect_recipe_conflicts reports none for the single-recipe fixture (N3)', async () => {
+    const result = await client.call('tools/call', {
+      name: 'detect_recipe_conflicts',
+      arguments: { limit: 50 },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes('✅ No items are produced by more than one recipe.'));
+    const sc = result.structuredContent;
+    assert.equal(sc.totalRecipes, 1);
+    assert.deepEqual(sc.conflicts, []);
+  });
+
+  test('export_mod_script dry-runs without writing, then writes on dryRun=false', async () => {
+    const dry = await client.call('tools/call', {
+      name: 'export_mod_script',
+      arguments: {
+        modPath: modDir,
+        type: 'item',
+        name: 'ExportedKnife',
+        properties: { Type: 'Weapon', DisplayName: 'Exported Knife' },
+        module: 'TestMod',
+        dryRun: true,
+      },
+    });
+    assert.ok(dry.content[0].text.includes('Dry run'));
+    const target = path.join(modDir, 'media', 'scripts', 'ExportedKnife.txt');
+    assert.equal(fs.existsSync(target), false);
+    assert.equal(dry.structuredContent.dryRun, true);
+    assert.equal(dry.structuredContent.filePath, target);
+
+    const written = await client.call('tools/call', {
+      name: 'export_mod_script',
+      arguments: {
+        modPath: modDir,
+        type: 'item',
+        name: 'ExportedKnife',
+        properties: { Type: 'Weapon', DisplayName: 'Exported Knife' },
+        module: 'TestMod',
+        dryRun: false,
+      },
+    });
+    assert.equal(fs.existsSync(target), true);
+    const content = fs.readFileSync(target, 'utf-8');
+    assert.ok(content.includes('item ExportedKnife'));
+    assert.ok(content.includes('module TestMod'));
+    assert.equal(written.structuredContent.dryRun, false);
+    assert.equal(written.structuredContent.filePath, target);
+  });
+
+  test('index_knowledge_base rejects path traversal with InvalidParams', async () => {
+    await assert.rejects(
+      client.call('tools/call', {
+        name: 'index_knowledge_base',
+        arguments: { path: `${gameDir}${path.sep}..${path.sep}..` },
+      }),
+      /Invalid knowledge base path/
+    );
+  });
 
   test('vehicle blocks parse and are searchable with type=vehicle', async () => {
     const result = await client.call('tools/call', {
@@ -348,11 +440,11 @@ describe('pz-mcp-server integration', () => {
       arguments: { query: 'TestCar', type: 'vehicle' },
     });
     const text = result.content[0].text;
-    expect(text).toContain('Found 1 results for "TestCar"');
-    expect(text).toContain('**TestCar** (vehicle)');
-    expect(text).toContain('Test Car');
-    expect(text).toContain('Weight: 1200');
-  }, 30000);
+    assert.ok(text.includes('Found 1 results for "TestCar"'));
+    assert.ok(text.includes('**TestCar** (vehicle)'));
+    assert.ok(text.includes('Test Car'));
+    assert.ok(text.includes('Weight: 1200'));
+  });
 
   test('generate_script produces evolvedrecipe and vehicle scripts', async () => {
     const evo = await client.call('tools/call', {
@@ -368,9 +460,9 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const evoText = evo.content[0].text;
-    expect(evoText).toContain('evolvedrecipe TestCampfirePot');
-    expect(evoText).toContain('BaseItem: Base.TinPot');
-    expect(evoText).toContain('Ingredients: Base.Water, Base.Cabbage');
+    assert.ok(evoText.includes('evolvedrecipe TestCampfirePot'));
+    assert.ok(evoText.includes('BaseItem: Base.TinPot'));
+    assert.ok(evoText.includes('Ingredients: Base.Water, Base.Cabbage'));
 
     const veh = await client.call('tools/call', {
       name: 'generate_script',
@@ -381,9 +473,9 @@ describe('pz-mcp-server integration', () => {
       },
     });
     const vehText = veh.content[0].text;
-    expect(vehText).toContain('vehicle TestCar');
-    expect(vehText).toContain('Mass = 1200');
-  }, 30000);
+    assert.ok(vehText.includes('vehicle TestCar'));
+    assert.ok(vehText.includes('Mass = 1200'));
+  });
 
   test('analyze_mod analyzes the fixture mod', async () => {
     const result = await client.call('tools/call', {
@@ -391,23 +483,25 @@ describe('pz-mcp-server integration', () => {
       arguments: { modPath: modDir },
     });
     const text = result.content[0].text;
-    expect(text).toContain('**Mod Name**: Test Mod');
-    expect(text).toContain('**Scripts**: 1 file(s) found');
-  }, 30000);
+    assert.ok(text.includes('**Mod Name**: Test Mod'));
+    // The fixture mod ships one script; export_mod_script may have added more.
+    assert.match(text, /\*\*Scripts\*\*: \d+ file\(s\) found/);
+  });
 
   test('analyze_mod rejects path traversal with InvalidParams', async () => {
-    await expect(
+    await assert.rejects(
       client.call('tools/call', {
         name: 'analyze_mod',
         arguments: { modPath: `${gameDir}${path.sep}..${path.sep}..` },
-      })
-    ).rejects.toThrow(/Invalid modPath/);
-  }, 30000);
+      }),
+      /Invalid modPath/
+    );
+  });
 
   test('server stays alive with no uncaught stderr errors after tool calls', () => {
     const stderr = client.stderr;
-    expect(stderr).not.toContain('Failed to initialize server');
-    expect(stderr).not.toContain('Unhandled');
+    assert.ok(!stderr.includes('Failed to initialize server'));
+    assert.ok(!stderr.includes('Unhandled'));
   });
 
   describe('MCP resources', () => {
@@ -425,26 +519,27 @@ describe('pz-mcp-server integration', () => {
 
       const result = await client.call('resources/list');
       const farmingRes = result.resources?.find((r) => r.name === 'Farming');
-      expect(farmingRes).toBeDefined();
-      expect(farmingRes.uri).toBe('knowledge://Farming');
-      expect(farmingRes.mimeType).toBe('text/markdown');
-      expect(farmingRes.description).toMatch(/\d+ lines/);
+      assert.notEqual(farmingRes, undefined);
+      assert.equal(farmingRes.uri, 'knowledge://Farming');
+      assert.equal(farmingRes.mimeType, 'text/markdown');
+      assert.match(farmingRes.description, /\d+ lines/);
     });
 
     test('resources/read returns full content for existing topic', async () => {
       const result = await client.call('resources/read', {
         uri: 'knowledge://Farming',
       });
-      expect(result.contents).toBeDefined();
-      expect(result.contents.length).toBeGreaterThan(0);
-      expect(result.contents[0].text).toContain('Farming Guide');
-      expect(result.contents[0].mimeType).toBe('text/markdown');
+      assert.notEqual(result.contents, undefined);
+      assert.ok(result.contents.length > 0);
+      assert.ok(result.contents[0].text.includes('Farming Guide'));
+      assert.equal(result.contents[0].mimeType, 'text/markdown');
     });
 
     test('resources/read returns error for missing topic', async () => {
-      await expect(
-        client.call('resources/read', { uri: 'knowledge://NoSuchTopic' })
-      ).rejects.toThrow(/Topic not found/);
+      await assert.rejects(
+        client.call('resources/read', { uri: 'knowledge://NoSuchTopic' }),
+        /Topic not found/
+      );
     });
   });
 
@@ -452,7 +547,7 @@ describe('pz-mcp-server integration', () => {
     test('prompts/list returns all 4 prompt templates', async () => {
       const result = await client.call('prompts/list');
       const names = result.prompts.map((p) => p.name).sort();
-      expect(names).toEqual(['analyze-mod', 'create-item', 'search-game', 'validate-script'].sort());
+      assert.deepEqual(names, ['analyze-mod', 'create-item', 'search-game', 'validate-script'].sort());
     });
 
     test('prompts/get create-item substitutes itemName arg', async () => {
@@ -460,12 +555,12 @@ describe('pz-mcp-server integration', () => {
         name: 'create-item',
         arguments: { itemName: 'TestSword', category: 'Weapon' },
       });
-      expect(result.description).toContain('TestSword');
-      expect(result.messages).toBeDefined();
-      expect(result.messages.length).toBe(1);
-      expect(result.messages[0].role).toBe('user');
-      expect(result.messages[0].content.text).toContain('TestSword');
-      expect(result.messages[0].content.text).toContain('Weapon');
+      assert.ok(result.description.includes('TestSword'));
+      assert.notEqual(result.messages, undefined);
+      assert.equal(result.messages.length, 1);
+      assert.equal(result.messages[0].role, 'user');
+      assert.ok(result.messages[0].content.text.includes('TestSword'));
+      assert.ok(result.messages[0].content.text.includes('Weapon'));
     });
 
     test('prompts/get search-game substitutes query and type args', async () => {
@@ -473,14 +568,15 @@ describe('pz-mcp-server integration', () => {
         name: 'search-game',
         arguments: { query: 'axe', type: 'item' },
       });
-      expect(result.messages[0].content.text).toContain('axe');
-      expect(result.messages[0].content.text).toContain('item');
+      assert.ok(result.messages[0].content.text.includes('axe'));
+      assert.ok(result.messages[0].content.text.includes('item'));
     });
 
     test('prompts/get returns error for unknown prompt', async () => {
-      await expect(
-        client.call('prompts/get', { name: 'nonexistent' })
-      ).rejects.toThrow(/Unknown prompt/);
+      await assert.rejects(
+        client.call('prompts/get', { name: 'nonexistent' }),
+        /Unknown prompt/
+      );
     });
   });
 });

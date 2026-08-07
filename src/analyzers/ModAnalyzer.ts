@@ -1,7 +1,4 @@
-import {
-  existsSync,
-  unlinkSync,
-} from "fs";
+import { existsSync, unlinkSync } from "fs";
 import { readdir, stat, readFile } from "fs/promises";
 import { join, extname, basename } from "path";
 import { tmpdir } from "os";
@@ -12,6 +9,7 @@ import {
 } from "../parsers/ProjectZomboidParser.js";
 import { ValidationEngine } from "../validation/ValidationEngine.js";
 import { gameVersion } from "../utils/config.js";
+import logger from "../utils/logger.js";
 
 export interface ModAnalysisResult {
   modName?: string;
@@ -271,8 +269,12 @@ export class ModAnalyzer {
           }
         }
       }
-    } catch {
-      // Directory read error, skip
+    } catch (error) {
+      // Directory read error — no longer swallowed silently (freebuff review
+      // §3 code smell #5): an unreadable subtree is diagnosable in the logs.
+      logger.warn(
+        `Failed to read directory ${dirPath} during file count: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -479,17 +481,19 @@ export class ModAnalyzer {
    * are still misread, but block comments no longer cause false positives.
    */
   private stripLuaComments(content: string): string {
-    return content
-      // Long-bracket comments (--[[ ]] and --[==[ ... ]==]) can span lines and
-      // contain code-like text; strip them whole before per-line handling
-      // (freebuff L2). `=*` permits any `=` count, matching Lua's spec.
-      .replace(/--\[=*\[[\s\S]*?\]=*\]/g, ' ')
-      .split("\n")
-      .map((line) => {
-        const idx = line.indexOf("--");
-        return idx === -1 ? line : line.substring(0, idx);
-      })
-      .join("\n");
+    return (
+      content
+        // Long-bracket comments (--[[ ]] and --[==[ ... ]==]) can span lines and
+        // contain code-like text; strip them whole before per-line handling
+        // (freebuff L2). `=*` permits any `=` count, matching Lua's spec.
+        .replace(/--\[=*\[[\s\S]*?\]=*\]/g, " ")
+        .split("\n")
+        .map((line) => {
+          const idx = line.indexOf("--");
+          return idx === -1 ? line : line.substring(0, idx);
+        })
+        .join("\n")
+    );
   }
 
   private checkLuaSyntax(
@@ -498,8 +502,10 @@ export class ModAnalyzer {
     result: ModAnalysisResult,
   ): void {
     const lines = this.stripLuaComments(content).split("\n");
-    let openParens = 0, closeParens = 0;
-    let openBrackets = 0, closeBrackets = 0;
+    let openParens = 0,
+      closeParens = 0;
+    let openBrackets = 0,
+      closeBrackets = 0;
     let firstIssueLine = -1;
 
     for (let i = 0; i < lines.length; i++) {
@@ -972,8 +978,12 @@ export class ModAnalyzer {
           }
         }
       }
-    } catch {
-      // Skip directories that can't be read
+    } catch (error) {
+      // Directory read error — no longer swallowed silently (freebuff review
+      // §3 code smell #5).
+      logger.warn(
+        `Failed to read directory ${dirPath} during large-file scan: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

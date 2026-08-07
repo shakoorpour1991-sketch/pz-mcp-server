@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`analyze_recipe_chain` tool** (freebuff N3): walks the recipe dependency graph from any item/recipe id — what it is made from, what it makes, and what consumes it (direction + maxDepth controls)
+- **`detect_recipe_conflicts` tool** (freebuff N3): finds items produced by more than one recipe (duplicate crafting paths)
+- **`export_mod_script` tool** (freebuff §14): generates a script and optionally writes it into a mod's `media/scripts` folder — dry-run by default, path-validated, filename sanitized
+- **Structured tool results** (freebuff N2): every tool now returns raw JSON via the MCP `structuredContent` field alongside the human-readable text
+- **`check_references` completeness detail** (freebuff §14 #7): each result now reports whether the reference is `defined` (items row), `referenced`-only (sprites/dangling refs), or `missing` — with item type and reference counts
+- **mtime-based incremental KB indexing** (freebuff N5): `index_knowledge_base` with `overwrite: false` now skips unchanged docs, re-indexes changed docs, and prunes deleted files instead of skipping all existing topics
+- **`prepublishOnly` guardrail + release workflow** (freebuff N6): `.github/workflows/release.yml` runs on `v*` tags — CI, version-vs-tag check, CHANGELOG check, dry-run publish, and real publish gated on `NPM_TOKEN`
 - **Steam registry detection on Windows** (audit P4 #22): `detectSteamWindows` now queries the actual Steam install path from the registry (HKCU `SteamPath`, HKLM fallback) before falling back to hardcoded paths and `libraryfolders.vdf` — catches non-default installs (e.g. `D:\Games\ProjectZomboid`)
 - **`generate_script` balance + comments options**: `balance` (vanilla/powerful/weak/custom) and `includeComments` exposed in the tool schema (freebuff review M8)
 - **`fixing` and `sound` script generation fixed**: both types previously threw "No template found" because no template was registered; templates + unit tests added
@@ -39,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FTS drift heal strengthened** (code-review follow-up): boot now also compares `max(rowid)` of `items` vs `items_fts` — catches INSERT-OR-REPLACE churn that shifts rowids without changing row count
 - **Lua long-bracket comments handled** (code-review follow-up): `--[==[ ... ]==]` stripped before balance/syntax/semantic counting
 - **README env-var reference table** (code-review follow-up): `PZ_MCP_DATA_DIR`, `PZ_MCP_KB_PATH`, `PZ_MCP_LOG_LEVEL`, `PZ_GAME_VERSION`, `PROJECTZOMBOID_PATH`/`PZ_PATH`, `PZ_DECK_PORT` documented
+- **Shared `BLOCK_TYPES` constant** (freebuff refactor #5): `src/utils/blockTypes.ts` is the single source of truth for the six block types — parser allowlist, validator required-property table, and all zod enums now derive from it
+- **`index_knowledge_base` path validated** (freebuff §5 security gap): the KB `path` argument now goes through `validateInputPath` (traversal/absolute/existence guard), matching `analyze_mod`/`parse_game_files`
+- **Parser property-error aggregation** (freebuff §3 #4): per-line `logger.warn` spam on malformed property lines is replaced by one aggregated warn per file, with per-line issues surfaced in `parse_game_files` results
+- **`ModAnalyzer` IO errors logged** (freebuff §3 #5): `countFiles`/`findLargeFiles` no longer swallow directory read errors silently
+- **Tests migrated from Jest to `node:test`** (freebuff N1): all 10 suites rewritten for the built-in runner — `npm test` = `npm run build && node --test "tests/**/*.test.js"`; `jest`/`@types/jest` removed; new `recipeAnalyzer.unit.test.js` suite. Total: 127 tests / 11 suites
 
 ## [1.1.0] - 2026-08-05
 

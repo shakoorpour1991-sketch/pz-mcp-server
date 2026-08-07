@@ -14,7 +14,7 @@ const FTS_OPERATOR_RE = /^(AND|OR|NOT|NEAR)$/i;
 
 export function sanitizeFtsTerms(query: string): string[] {
   return query
-    .replace(FTS_SPECIAL_RE, ' ')
+    .replace(FTS_SPECIAL_RE, " ")
     .split(/\s+/)
     .filter((term) => term.length > 0 && !FTS_OPERATOR_RE.test(term));
 }

@@ -1,8 +1,11 @@
 /**
  * Unit tests for KnowledgeBaseManager: indexing, FTS5 search with
- * relevance ranking (bm25), topic filtering, and topic listing.
+ * relevance ranking (bm25), topic filtering, topic listing, and the
+ * mtime-based incremental sync (freebuff N5).
  * Runs against the compiled dist/ build.
  */
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -14,7 +17,7 @@ describe('KnowledgeBaseManager', () => {
   let docsDir;
   let kb;
 
-  beforeAll(async () => {
+  before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-'));
     docsDir = path.join(tmpDir, 'docs');
     fs.mkdirSync(docsDir, { recursive: true });
@@ -31,7 +34,7 @@ describe('KnowledgeBaseManager', () => {
     await kb.initialize();
   });
 
-  afterAll(() => {
+  after(() => {
     kb.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -39,66 +42,95 @@ describe('KnowledgeBaseManager', () => {
   describe('indexDirectory', () => {
     test('indexes markdown docs and returns stats', async () => {
       const res = await kb.indexDirectory(docsDir);
-      expect(res.topics).toBe(2);
-      expect(res.files).toBe(2);
-      expect(res.chars).toBeGreaterThan(0);
-      expect(res.errors).toEqual([]);
+      assert.equal(res.topics, 2);
+      assert.equal(res.files, 2);
+      assert.ok(res.chars > 0);
+      assert.deepEqual(res.errors, []);
     });
 
     test('extracts title from first # heading and source from > Source: line', async () => {
       const topics = await kb.listTopics();
       const farming = topics.find((t) => t.topic === 'Farming');
-      expect(farming.title).toBe('Farming Guide');
+      assert.equal(farming.title, 'Farming Guide');
     });
   });
 
   describe('search', () => {
     test('finds matching docs with topic + snippet', async () => {
       const results = await kb.search('water');
-      expect(results.length).toBeGreaterThan(0);
-      expect(results[0]).toHaveProperty('topic');
-      expect(results[0]).toHaveProperty('title');
-      expect(results[0]).toHaveProperty('snippet');
-      expect(results[0]).toHaveProperty('score');
+      assert.ok(results.length > 0);
+      assert.ok('topic' in results[0]);
+      assert.ok('title' in results[0]);
+      assert.ok('snippet' in results[0]);
+      assert.ok('score' in results[0]);
     });
 
     test('topic filter restricts results', async () => {
       const results = await kb.search('water', { topic: 'Cooking' });
-      expect(results.length).toBe(1);
-      expect(results[0].topic).toBe('Cooking');
+      assert.equal(results.length, 1);
+      assert.equal(results[0].topic, 'Cooking');
     });
 
     test('empty sanitized query returns [] (no crash)', async () => {
       const results = await kb.search('AND OR NOT NEAR');
-      expect(results).toEqual([]);
+      assert.deepEqual(results, []);
     });
 
     test('bm25 ranking: better match ranks first', async () => {
-      // Cooking matches "water" in content once; Farming also once. Both
-      // should return; the one with the match in more columns (none here)
-      // — for equal matches, order may tie, but must not crash and must
-      // be an array.
       const results = await kb.search('soup');
-      expect(Array.isArray(results)).toBe(true);
-      expect(results.length).toBe(1);
-      expect(results[0].topic).toBe('Cooking');
+      assert.equal(Array.isArray(results), true);
+      assert.equal(results.length, 1);
+      assert.equal(results[0].topic, 'Cooking');
     });
   });
 
   describe('listTopics', () => {
     test('lists all topics with line/word/char stats', async () => {
       const topics = await kb.listTopics();
-      expect(topics.length).toBe(2);
+      assert.equal(topics.length, 2);
       const cooking = topics.find((t) => t.topic === 'Cooking');
-      expect(cooking.lines).toBeGreaterThan(0);
-      expect(cooking.words).toBeGreaterThan(0);
-      expect(cooking.chars).toBeGreaterThan(0);
+      assert.ok(cooking.lines > 0);
+      assert.ok(cooking.words > 0);
+      assert.ok(cooking.chars > 0);
     });
 
     test('sorted by topic ascending', async () => {
       const topics = await kb.listTopics();
-      expect(topics[0].topic).toBe('Cooking');
-      expect(topics[1].topic).toBe('Farming');
+      assert.equal(topics[0].topic, 'Cooking');
+      assert.equal(topics[1].topic, 'Farming');
+    });
+  });
+
+  // N5: mtime-based incremental sync. These mutate the docs dir, so they run
+  // last (node:test executes tests in declaration order).
+  describe('incremental indexing (N5)', () => {
+    test('overwrite:false skips unchanged docs', async () => {
+      const res = await kb.indexDirectory(docsDir, { overwrite: false });
+      assert.equal(res.skipped, 2);
+      assert.equal(res.topics, 0);
+      assert.equal(res.removed, 0);
+    });
+
+    test('overwrite:false re-indexes changed docs and prunes deleted files', async () => {
+      // Change Farming, delete Cooking, then sync.
+      fs.writeFileSync(
+        path.join(docsDir, 'Farming.md'),
+        '# Farming Guide v2\n\nCabbage grows in spring.\n'
+      );
+      fs.rmSync(path.join(docsDir, 'Cooking.md'));
+
+      const res = await kb.indexDirectory(docsDir, { overwrite: false });
+      assert.equal(res.topics, 1); // Farming updated
+      assert.equal(res.skipped, 0);
+      assert.equal(res.removed, 1); // Cooking pruned
+
+      const topics = await kb.listTopics();
+      assert.deepEqual(
+        topics.map((t) => t.topic).sort(),
+        ['Farming']
+      );
+      const farming = await kb.getTopic('Farming');
+      assert.equal(farming.title, 'Farming Guide v2');
     });
   });
 });

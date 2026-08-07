@@ -39,7 +39,10 @@ export interface ScanBlock {
   rawContent: string;
 }
 
-export function scanScriptBlocks(content: string, defaultModule = "Base"): ScanBlock[] {
+export function scanScriptBlocks(
+  content: string,
+  defaultModule = "Base",
+): ScanBlock[] {
   const lines = content.split("\n");
   const blocks: ScanBlock[] = [];
 

@@ -11,9 +11,14 @@ A local-only Model Context Protocol (MCP) stdio server for Project Zomboid mod d
 - **check_references** — Validate item, sound, and sprite references against the database (run `parse_game_files` first)
 - **analyze_mod** — Mod directory analysis: structure validation, Lua syntax checking, balance metrics, deprecated API detection
 - **parse_game_files** — Parse Project Zomboid game files and populate the local SQLite database
-- **index_knowledge_base** — Index markdown modding knowledge base docs (title, source, content) into a searchable FTS database
+- **index_knowledge_base** — Index markdown modding knowledge base docs (title, source, content) into a searchable FTS database (full re-index by default; `overwrite: false` = mtime-based incremental sync)
 - **search_knowledge_base** — Full-text search of knowledge base docs with relevance ranking and topic filter
 - **list_knowledge_topics** — List all indexed knowledge base topics with line/word/char stats
+- **analyze_recipe_chain** — Walk the recipe dependency graph from an item or recipe: what it's made from, what it makes, and what consumes it
+- **detect_recipe_conflicts** — Find items produced by more than one recipe (duplicate crafting paths)
+- **export_mod_script** — Generate a script and write it into a mod's `media/scripts` folder (dry-run by default — no disk changes unless `dryRun: false`)
+
+> Every tool returns both human-readable text **and** machine-readable structured data via the MCP `structuredContent` field.
 
 ### Path Detection
 - Hardcoded path checks for common Project Zomboid install locations on Windows
@@ -52,7 +57,7 @@ npm run build
 | `npm run dev` | Run with `tsx` (dev mode, requires successful build) |
 | `npm start` | Run compiled server (`node dist/index.js`) |
 | `npm run lint` | ESLint |
-| `npm test` | Build + Jest (114 tests, 10 suites) |
+| `npm test` | Build + node:test (127 tests, 11 suites) |
 
 ---
 
@@ -222,6 +227,51 @@ List all indexed knowledge base topics with stats.
 
 ---
 
+### analyze_recipe_chain
+Walk the recipe dependency graph built from the `references` table during parsing.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `seed` | string | Yes | Item or recipe id to start from |
+| `direction` | enum | No | `upstream` (what makes it), `downstream` (what it makes / consumes it), `both` (default) |
+| `maxDepth` | number | No | Chain depth, 1–10 (default: 3) |
+
+**Output:** Ordered chain of nodes (recipes with their ingredients/results, items with their producers/consumers).
+
+---
+
+### detect_recipe_conflicts
+Find items produced by more than one recipe — duplicate crafting paths the game may resolve unexpectedly.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `limit` | number | No | Max conflicts, 1–200 (default: 50) |
+
+**Output:** List of conflicting items and the recipes that produce each.
+
+---
+
+### export_mod_script
+Generate a script and (optionally) write it into a mod's `media/scripts` folder.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `modPath` | string | Yes | Path to the mod directory (path-validated; must be absolute and existing) |
+| `type` | enum | Yes | `item`, `recipe`, `evolvedrecipe`, `fixing`, `sound`, `vehicle` |
+| `name` | string | Yes | Script name (sanitized into the output filename) |
+| `properties` | object | No | Script properties (default: `{}`) |
+| `module` | string | No | Module name (default: `"Base"`) |
+| `balance` | enum | No | Balance mode (same as `generate_script`) |
+| `includeComments` | boolean | No | Include explanatory comments |
+| `dryRun` | boolean | No | Preview only — no disk changes (default: `true`) |
+
+**Output:** Target file path + generated content. With `dryRun: false` the file is written (path stays inside `<modPath>/media/scripts`).
+
+---
+
 ## Development Workflow
 
 1. **Build:** `npm run build`
@@ -250,7 +300,8 @@ MCP Server (StdioServerTransport)
   ├── ProjectZomboidParser — Game file parsing
   ├── ScriptGenerator      — Template-based script generation
   ├── ValidationEngine     — Syntax + reference validation
-  └── ModAnalyzer          — Mod analysis + quality metrics
+  ├── ModAnalyzer          — Mod analysis + quality metrics
+  └── RecipeAnalyzer       — Recipe-chain graph + conflict detection
 ```
 
 ---

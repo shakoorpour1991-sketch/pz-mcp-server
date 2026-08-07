@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,7 +11,7 @@ describe('DatabaseManager: plain-text properties_text FTS mirror (A6)', () => {
   let db;
   let raw;
 
-  beforeAll(async () => {
+  before(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'pz-dbm-a6-'));
     db = new DatabaseManager(join(tmpDir, 'test.db'));
     await db.initialize();
@@ -34,7 +35,7 @@ describe('DatabaseManager: plain-text properties_text FTS mirror (A6)', () => {
     raw = new DatabaseSync(join(tmpDir, 'test.db'), { readOnly: true });
   });
 
-  afterAll(() => {
+  after(() => {
     try { raw?.close(); } catch { /* ignore */ }
     try { db?.close(); } catch { /* ignore */ }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -43,21 +44,21 @@ describe('DatabaseManager: plain-text properties_text FTS mirror (A6)', () => {
   test('properties column still holds JSON', () => {
     const row = raw.prepare('SELECT properties FROM items WHERE id = ?').get('Base.TestAxe');
     const parsed = JSON.parse(row.properties);
-    expect(parsed.DisplayName).toBe('Test Axe');
-    expect(parsed.Tags).toEqual(['Cutting', 'Woodwork']);
+    assert.equal(parsed.DisplayName, 'Test Axe');
+    assert.deepEqual(parsed.Tags, ['Cutting', 'Woodwork']);
   });
 
   test('properties_text is plain text without JSON noise', () => {
     const row = raw.prepare('SELECT properties_text FROM items WHERE id = ?').get('Base.TestAxe');
-    expect(row.properties_text).not.toMatch(/[{}"]/);
-    expect(row.properties_text).toContain('DisplayName=Test Axe');
-    expect(row.properties_text).toContain('Weight=2.5');
-    expect(row.properties_text).toContain('Tags=Cutting,Woodwork');
-    expect(row.properties_text).toContain('DamageCategory.Blunt=true');
+    assert.doesNotMatch(row.properties_text, /[{}"]/);
+    assert.ok(row.properties_text.includes('DisplayName=Test Axe'));
+    assert.ok(row.properties_text.includes('Weight=2.5'));
+    assert.ok(row.properties_text.includes('Tags=Cutting,Woodwork'));
+    assert.ok(row.properties_text.includes('DamageCategory.Blunt=true'));
   });
 
   test('FTS matches on property values through the plain-text mirror', async () => {
     const hits = await db.searchContent('Woodwork', { type: 'item' });
-    expect(hits.map((h) => h.id)).toContain('Base.TestAxe');
+    assert.ok(hits.map((h) => h.id).includes('Base.TestAxe'));
   });
 });

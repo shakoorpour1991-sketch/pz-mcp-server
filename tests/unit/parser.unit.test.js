@@ -2,6 +2,8 @@
  * Unit tests for ProjectZomboidParser: indented blocks, semicolon-delimited
  * list splitting, and rich metadata extraction into top-level columns.
  */
+import { describe, test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -47,15 +49,15 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(1);
+      assert.equal(results.itemCount, 1);
 
       const item = await db.getItemById('Hat_SantaHatDebug');
-      expect(item).not.toBeNull();
-      expect(item.displayName).toBe('Hat_SantaHatDebug');
-      expect(item.properties.DisplayCategory).toBe('Accessory');
-      expect(item.properties.ItemType).toBe('base:normal');
-      expect(item.properties.Weight).toBe(0.5);
-      expect(item.tags).toEqual(['base:isfirefuel', 'base:isfiretinder']);
+      assert.notEqual(item, null);
+      assert.equal(item.displayName, 'Hat_SantaHatDebug');
+      assert.equal(item.properties.DisplayCategory, 'Accessory');
+      assert.equal(item.properties.ItemType, 'base:normal');
+      assert.equal(item.properties.Weight, 0.5);
+      assert.deepEqual(item.tags, ['base:isfirefuel', 'base:isfiretinder']);
     });
 
     test('multiple indented item blocks in same module all parsed', async () => {
@@ -86,10 +88,10 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(3);
-      expect(await db.getItemById('Apple')).not.toBeNull();
-      expect(await db.getItemById('Banana')).not.toBeNull();
-      expect(await db.getItemById('Cherry')).not.toBeNull();
+      assert.equal(results.itemCount, 3);
+      assert.notEqual(await db.getItemById('Apple'), null);
+      assert.notEqual(await db.getItemById('Banana'), null);
+      assert.notEqual(await db.getItemById('Cherry'), null);
     });
   });
 
@@ -111,12 +113,12 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(0);
+      assert.equal(results.itemCount, 0);
 
       const fake1 = await db.getItemById('variable');
       const fake2 = await db.getItemById('Base.Corn');
-      expect(fake1).toBeNull();
-      expect(fake2).toBeNull();
+      assert.equal(fake1, null);
+      assert.equal(fake2, null);
     });
 
     test('bare numeric lines do not become items', async () => {
@@ -137,10 +139,10 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(0);
+      assert.equal(results.itemCount, 0);
 
       const fake = await db.getItemById('400');
-      expect(fake).toBeNull();
+      assert.equal(fake, null);
     });
 
     test('entity container block lines are not inserted as items', async () => {
@@ -157,8 +159,8 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(0);
-      expect(results.vehicleCount).toBe(0);
+      assert.equal(results.itemCount, 0);
+      assert.equal(results.vehicleCount, 0);
     });
   });
 
@@ -182,12 +184,12 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(1);
+      assert.equal(results.itemCount, 1);
 
       const item = await db.getItemById('TestHammer');
-      expect(item).not.toBeNull();
-      expect(item.properties.Tags).toEqual(['Hammer', 'Metal']);
-      expect(item.tags).toEqual(['Hammer', 'Metal']);
+      assert.notEqual(item, null);
+      assert.deepEqual(item.properties.Tags, ['Hammer', 'Metal']);
+      assert.deepEqual(item.tags, ['Hammer', 'Metal']);
     });
 
     test('single string value without semicolon stays a string', async () => {
@@ -208,11 +210,11 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(1);
+      assert.equal(results.itemCount, 1);
 
       const item = await db.getItemById('TestSword');
-      expect(item.properties.Tags).toBe('Sharp');
-      expect(item.tags).toEqual(['Sharp']);
+      assert.equal(item.properties.Tags, 'Sharp');
+      assert.deepEqual(item.tags, ['Sharp']);
     });
   });
 
@@ -242,26 +244,26 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(1);
+      assert.equal(results.itemCount, 1);
 
       const item = await db.getItemById('TestSling');
-      expect(item).not.toBeNull();
-      expect(item.properties.Tags).toEqual(['Hammer', 'Metal']);
-      expect(item.tags).toEqual(['Hammer', 'Metal']);
-      expect(item.properties.MetalValue).toBe(20);
-      expect(item.metal_value).toBe(20);
-      expect(item.properties.Weight).toBe(1.8);
-      expect(item.weight).toBe(1.8);
-      expect(item.properties.ConditionMax).toBe(100);
-      expect(item.condition_max).toBe(100);
-      expect(item.properties.AttachmentType).toBe('Sling');
-      expect(item.attachment_type).toBe('Sling');
-      expect(item.properties.RunSpeedModifier).toBe(0.5);
-      expect(item.run_speed_modifier).toBe(0.5);
-      expect(item.properties.HungerChange).toBe(5);
-      expect(item.hunger_change).toBe(5);
-      expect(item.properties.ThirstChange).toBe(3);
-      expect(item.thirst_change).toBe(3);
+      assert.notEqual(item, null);
+      assert.deepEqual(item.properties.Tags, ['Hammer', 'Metal']);
+      assert.deepEqual(item.tags, ['Hammer', 'Metal']);
+      assert.equal(item.properties.MetalValue, 20);
+      assert.equal(item.metal_value, 20);
+      assert.equal(item.properties.Weight, 1.8);
+      assert.equal(item.weight, 1.8);
+      assert.equal(item.properties.ConditionMax, 100);
+      assert.equal(item.condition_max, 100);
+      assert.equal(item.properties.AttachmentType, 'Sling');
+      assert.equal(item.attachment_type, 'Sling');
+      assert.equal(item.properties.RunSpeedModifier, 0.5);
+      assert.equal(item.run_speed_modifier, 0.5);
+      assert.equal(item.properties.HungerChange, 5);
+      assert.equal(item.hunger_change, 5);
+      assert.equal(item.properties.ThirstChange, 3);
+      assert.equal(item.thirst_change, 3);
     });
 
     test('missing rich fields are undefined', async () => {
@@ -281,18 +283,18 @@ describe('ProjectZomboidParser', () => {
       );
 
       const results = await parser.parseGameFiles(tmpDir, true);
-      expect(results.itemCount).toBe(1);
+      assert.equal(results.itemCount, 1);
 
       const item = await db.getItemById('TestBasic');
-      expect(item).not.toBeNull();
-      expect(item.tags).toBeUndefined();
-      expect(item.metal_value).toBeUndefined();
-      expect(item.weight).toBeUndefined();
-      expect(item.condition_max).toBeUndefined();
-      expect(item.attachment_type).toBeUndefined();
-      expect(item.run_speed_modifier).toBeUndefined();
-      expect(item.hunger_change).toBeUndefined();
-      expect(item.thirst_change).toBeUndefined();
+      assert.notEqual(item, null);
+      assert.equal(item.tags, undefined);
+      assert.equal(item.metal_value, undefined);
+      assert.equal(item.weight, undefined);
+      assert.equal(item.condition_max, undefined);
+      assert.equal(item.attachment_type, undefined);
+      assert.equal(item.run_speed_modifier, undefined);
+      assert.equal(item.hunger_change, undefined);
+      assert.equal(item.thirst_change, undefined);
     });
   });
 });
@@ -362,29 +364,31 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
   test('craftRecipe: "=" properties parsed, inputs stay ingredients, outputs land in outputs', async () => {
     writeScript('media/scripts/crafting.txt', b42Script);
     const results = await parser.parseModDirectory(tmpDir);
-    expect(results.errors).toEqual([]);
-    expect(results.recipeCount).toBe(1);
+    assert.deepEqual(results.errors, []);
+    assert.equal(results.recipeCount, 1);
 
     const recipe = inserted.find((i) => i.type === 'recipe');
-    expect(recipe).toBeDefined();
+    assert.notEqual(recipe, undefined);
     // F6: B42 "key = value" properties
-    expect(recipe.properties.category).toBe('Carpenters');
-    expect(recipe.properties.timedAction).toBe('SawLog');
+    assert.equal(recipe.properties.category, 'Carpenters');
+    assert.equal(recipe.properties.timedAction, 'SawLog');
     // F9: bracket-alternative inputs remain excluded, plain inputs captured
-    expect(recipe.properties.ingredients).toEqual([{ item: 'Base.HandSaw', count: 1 }]);
+    assert.deepEqual(recipe.properties.ingredients, [{ item: 'Base.HandSaw', count: 1 }]);
     // F9: outputs must land in outputs, not leak into ingredients
-    expect(recipe.properties.outputs).toEqual([{ item: 'Base.TestPlank', count: 2 }]);
-    expect(recipe.properties.ingredients.some((i) => i.item === 'Base.TestPlank')).toBe(false);
+    assert.deepEqual(recipe.properties.outputs, [{ item: 'Base.TestPlank', count: 2 }]);
+    assert.equal(recipe.properties.ingredients.some((i) => i.item === 'Base.TestPlank'), false);
   });
 
   test('craftRecipe outputs are extracted as "output" references', async () => {
     writeScript('media/scripts/crafting.txt', b42Script);
     await parser.parseModDirectory(tmpDir);
-    expect(refs).toContainEqual(
-      expect.objectContaining({ ref: 'Base.TestPlank', type: 'item', context: 'output' })
+    assert.equal(
+      refs.some((r) => r.ref === 'Base.TestPlank' && r.type === 'item' && r.context === 'output'),
+      true
     );
-    expect(refs).toContainEqual(
-      expect.objectContaining({ ref: 'Base.HandSaw', type: 'item', context: 'ingredient' })
+    assert.equal(
+      refs.some((r) => r.ref === 'Base.HandSaw' && r.type === 'item' && r.context === 'ingredient'),
+      true
     );
   });
 
@@ -406,14 +410,14 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
       ].join('\n')
     );
     const results = await parser.parseModDirectory(tmpDir);
-    expect(results.errors).toEqual([]);
-    expect(results.recipeCount).toBe(1);
+    assert.deepEqual(results.errors, []);
+    assert.equal(results.recipeCount, 1);
 
     const recipe = inserted.find((i) => i.type === 'recipe');
-    expect(recipe.properties.Result).toBe('Base.LegacyPlank=2');
-    expect(recipe.properties.Time).toBe(150);
-    expect(recipe.properties.ingredients).toEqual([{ item: 'Base.Log', count: 4 }]);
-    expect(recipe.properties.outputs).toBeUndefined();
+    assert.equal(recipe.properties.Result, 'Base.LegacyPlank=2');
+    assert.equal(recipe.properties.Time, 150);
+    assert.deepEqual(recipe.properties.ingredients, [{ item: 'Base.Log', count: 4 }]);
+    assert.equal(recipe.properties.outputs, undefined);
   });
 
   test('scanner: a "module = Foo," property line is not swallowed as a module declaration', async () => {
@@ -431,10 +435,10 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
       ].join('\n')
     );
     const results = await parser.parseModDirectory(tmpDir);
-    expect(results.errors).toEqual([]);
+    assert.deepEqual(results.errors, []);
     const item = inserted.find((i) => i.type === 'item');
-    expect(item).toBeDefined();
-    expect(item.properties.module).toBe('Base.Something');
-    expect(item.properties.Weight).toBe(2);
+    assert.notEqual(item, undefined);
+    assert.equal(item.properties.module, 'Base.Something');
+    assert.equal(item.properties.Weight, 2);
   });
 });

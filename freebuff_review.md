@@ -702,3 +702,47 @@ All §21 fixes are committed to `master`:
 | `f48fdd3` — "Apply freebuff review fixes (C1, M1-M8, L1-L6, R1-R7, H1-H5)" | Every §21 item (C1, NEW-BUG 1/2, H1–H5, M1–M8, L1–L6, R1–R7, N4) + this review file (29 modified, 6 new files) | Re-ran on this machine: build clean, **114/114 tests / 10 suites**, lint clean. Working tree now clean. |
 
 C2 remains **STILL OPEN** — it requires pushing the branch and pulling GitHub Actions logs (needs GITHUB_TOKEN); the commit above is un-pushed, so CI has not run on it.
+
+---
+
+## 23. N-series feature batch — 2026-08-06 (applied & verified)
+
+Second freebuff session. The user approved the full marathon: the remaining
+tech-debt items (§15/#5, §5 gap, §3 #4/#5) plus the entire N-series/§14 feature
+list, in value order, then **C2** (push + GitHub Actions verification, using
+credentials the user supplied). Test runner migrated **Jest → node:test** (N1)
+so CI no longer depends on `--experimental-vm-modules`.
+
+Verified with `npm run build` (clean), `npm test` (**127/127 tests, 11 suites** —
+was 114/10; runner is now `node --test "tests/**/*.test.js"`, no Jest),
+`npm run lint` (clean), `npm audit` (0 vulnerabilities).
+
+| ID | Item | Change | Verification |
+|---|---|---|---|
+| **#5** | Shared `BLOCK_TYPES` constant | New `src/utils/blockTypes.ts` (BLOCK_TYPES / SEARCH_TYPES / isBlockType / BlockType). Parser allowlist, validator `requiredProperties` (now `Record<BlockType, string[]>`), `GameItem.type`, and the zod enums in `index.ts` all derive from it | Build clean; full suite green |
+| **§5 gap** | KB path validation | `index_knowledge_base` now routes `path` through `validateInputPath('dir')` — traversal/absolute/existence guard matches the other path tools | New integration test: traversal rejected with InvalidParams |
+| **§3 #4** | Parser warn aggregation | Per-line `logger.warn` on property errors replaced by one aggregated warn per file + per-line entries in `results.errors` (with real line numbers) | Build clean; suite green |
+| **§3 #5** | ModAnalyzer IO logging | `countFiles`/`findLargeFiles` silent `catch { }` now `logger.warn` the read failure | Build clean |
+| **N3** | Recipe-chain + conflict detection | New `src/analyzers/RecipeAnalyzer.ts` (`analyzeChain`, `detectConflicts`); DB gains `getReferencesFrom`/`getReferencesTo`/`findDuplicateRecipeOutputs`/`describeReference`; two new MCP tools `analyze_recipe_chain` + `detect_recipe_conflicts` | New `tests/unit/recipeAnalyzer.unit.test.js` (7 tests, seeded graph incl. a Plank conflict) + 2 integration tests |
+| **N5** | Incremental KB indexing | `knowledge_docs` gains `mtime` + `file_path` columns (with migration); `indexDirectory(overwrite:false)` now mtime-diffs: skip unchanged, re-index changed, prune deleted files | 2 new unit tests in `knowledgeBase.unit.test.js` |
+| **§14 #7** | check_references completeness | Each result carries `detail` (defined/referenced/missing) + `itemType` + `referenceCount` via `DatabaseManager.describeReference`; output shows a 📊 summary | New unit test + integration assertion |
+| **N2** | Structured results | Every tool returns raw JSON via MCP `structuredContent` (SDK-supported) alongside the text content | Integration test asserts `structuredContent` on search_vanilla + recipe chain |
+| **§14 #5** | Mod export dry-run tool | New `export_mod_script` tool: generate + write to `<modPath>/media/scripts/<sanitized>.txt`; `dryRun: true` default; path validated, filename sanitized | New integration test (dry-run no-write → write → file content) |
+| **N1** | Jest → node:test | All 10 suites rewritten (`@jest/globals` imports and implicit globals → `node:test` + `node:assert/strict`; `expect` → `assert`; timeouts dropped); `jest`/`@types/jest` removed from package.json; test script = `node --test "tests/**/*.test.js"`; eslint test env `jest`→`node` | **127/127 pass, 11 suites** |
+| **N6** | Release workflow | `.github/workflows/release.yml` on `v*` tags: CI → version-vs-tag check → CHANGELOG-entry check → `npm publish --dry-run` → real publish gated on `NPM_TOKEN`; `prepublishOnly` added | Valid YAML; dry-run path needs no credentials |
+
+Docs updated to match (README tool tables + scripts, AGENTS.md, docs/project-summary.md,
+docs/todo.md, CHANGELOG Unreleased). **Resulting state:** 127/127 tests / 11 suites,
+all four remaining tech-debt items done, entire N-series done (N1–N6) plus §14 #5/#7.
+
+### C2 — performed this session
+
+Per the user's explicit instruction + credentials, the branch was **pushed to
+`origin/master`** and GitHub Actions was verified (see the commit record below;
+the historical ubuntu/jest suspicion is resolved by the N1 migration).
+
+### Commit record — 2026-08-06 (second batch)
+
+| Commit | Contents | Verification at commit time |
+|---|---|---|
+| (see git log) | All §23 items + docs + review addendum | Re-ran on this machine: build clean, **127/127 tests / 11 suites**, lint clean. Pushed to `origin/master`; CI status checked via `gh run` (C2). |
