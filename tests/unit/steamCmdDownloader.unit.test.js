@@ -103,9 +103,13 @@ describe('SteamCmdDownloader', () => {
     });
 
     test('throws an actionable error when steamcmd is missing', async () => {
+      // Environment-independent: the dev machine HAS steamcmd at
+      // C:\steamcmd\steamcmd.exe (a COMMON_STEAMCMD_PATHS entry), so override
+      // the candidate list to simulate a machine without it.
       const d = new SteamCmdDownloader({
         workshopDir,
         runner: fakeRunner({}),
+        commonSteamCmdPaths: [],
         pathManager: { detectProjectZomboidPath: async () => null },
       });
       await assert.rejects(() => d.resolveSteamCmdPath(), /SteamCMD not found/);

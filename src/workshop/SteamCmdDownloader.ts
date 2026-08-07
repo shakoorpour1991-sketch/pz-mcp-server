@@ -53,6 +53,8 @@ export interface SteamCmdDownloaderOptions {
   workshopDir?: string;
   /** Injectable process runner for tests: (cmd, args) => {code, output}. */
   runner?: (cmd: string, args: string[]) => Promise<SteamCmdRunResult>;
+  /** Common installation paths to probe (defaults to COMMON_STEAMCMD_PATHS for the platform). */
+  commonSteamCmdPaths?: string[];
   pathManager?: PathManager;
   /** Clock injection (tests). */
   now?: () => number;
@@ -80,6 +82,7 @@ export class SteamCmdDownloader {
   private steamCmdPath: string | null;
   private workshopDir: string | null;
   private runner: (cmd: string, args: string[]) => Promise<SteamCmdRunResult>;
+  private commonSteamCmdPaths: string[];
   private pathManager: PathManager;
   private now: () => number;
   private diskFree: (dir: string) => number;
@@ -87,6 +90,8 @@ export class SteamCmdDownloader {
   constructor(opts: SteamCmdDownloaderOptions = {}) {
     this.steamCmdPath = opts.steamCmdPath ?? null;
     this.workshopDir = opts.workshopDir ?? null;
+    this.commonSteamCmdPaths =
+      opts.commonSteamCmdPaths ?? COMMON_STEAMCMD_PATHS[process.platform] ?? [];
     this.runner =
       opts.runner ??
       ((cmd, args) =>
@@ -121,7 +126,7 @@ export class SteamCmdDownloader {
     if (this.steamCmdPath) return this.steamCmdPath;
     const envPath = process.env.STEAMCMD_PATH;
     if (envPath && existsSync(envPath)) return envPath;
-    const candidates = COMMON_STEAMCMD_PATHS[process.platform] ?? [];
+    const candidates = this.commonSteamCmdPaths;
     for (const p of candidates) {
       if (existsSync(p)) return p;
     }
