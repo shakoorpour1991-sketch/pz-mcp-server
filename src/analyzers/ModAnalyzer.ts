@@ -796,7 +796,9 @@ export class ModAnalyzer {
     const stringLiteralRe = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
     for (let i = 0; i < lines.length; i++) {
       const lineNumber = i + 1;
-      const unquoted = lines[i].replace(stringLiteralRe, (m) => " ".repeat(m.length));
+      const unquoted = lines[i].replace(stringLiteralRe, (m) =>
+        " ".repeat(m.length),
+      );
 
       for (const pattern of deprecatedPatterns) {
         if (unquoted.includes(pattern.pattern)) {
@@ -824,7 +826,11 @@ export class ModAnalyzer {
 
     // Note: standalone `do ... end` blocks and keywords inside string literals
     // are not tracked here (do appears together with for/while; strings are handled separately).
-    const blockOpenerCount = ((content.match(/\bif\b/g) || []).length + (content.match(/\bfor\b/g) || []).length + (content.match(/\bwhile\b/g) || []).length + (content.match(/\bfunction\b/g) || []).length);
+    const blockOpenerCount =
+      (content.match(/\bif\b/g) || []).length +
+      (content.match(/\bfor\b/g) || []).length +
+      (content.match(/\bwhile\b/g) || []).length +
+      (content.match(/\bfunction\b/g) || []).length;
     const endKeywordCount = (content.match(/\bend\b/g) || []).length;
 
     if (blockOpenerCount !== endKeywordCount) {

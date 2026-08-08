@@ -14,7 +14,13 @@
  * This module only READS public metadata — it never downloads or executes mod
  * content (security stance: workshop mods are untrusted).
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+} from "fs";
 import { join, dirname } from "path";
 import { dataDir } from "../utils/config.js";
 import logger from "../utils/logger.js";
@@ -90,17 +96,17 @@ export function parseWorkshopInput(input: string): string {
     );
   }
   const host = url.hostname;
-  if (host !== 'steamcommunity.com' && host !== 'www.steamcommunity.com') {
+  if (host !== "steamcommunity.com" && host !== "www.steamcommunity.com") {
     throw new Error(
       `Could not parse workshop id from "${raw}". Paste a workshop URL (https://steamcommunity.com/sharedfiles/filedetails/?id=…) or a numeric item id.`,
     );
   }
-  if (!url.pathname.startsWith('/sharedfiles/filedetails/')) {
+  if (!url.pathname.startsWith("/sharedfiles/filedetails/")) {
     throw new Error(
       `Could not parse workshop id from "${raw}". Paste a workshop URL (https://steamcommunity.com/sharedfiles/filedetails/?id=…) or a numeric item id.`,
     );
   }
-  const id = url.searchParams.get('id');
+  const id = url.searchParams.get("id");
   if (!id || !ITEM_ID_RE.test(id)) {
     throw new Error(
       `Could not parse workshop id from "${raw}". Paste a workshop URL (https://steamcommunity.com/sharedfiles/filedetails/?id=…) or a numeric item id.`,
@@ -117,7 +123,8 @@ export class SteamWorkshopClient {
   private cache: CacheShape;
 
   constructor(opts: SteamWorkshopClientOptions = {}) {
-    this.cacheFile = opts.cacheFile ?? join(dataDir(), "workshop_metadata.json");
+    this.cacheFile =
+      opts.cacheFile ?? join(dataDir(), "workshop_metadata.json");
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.now = opts.now ?? Date.now;
@@ -175,7 +182,8 @@ export class SteamWorkshopClient {
     const items = this.parseBrowseHtml(html, limit);
     if (items.length === 0) {
       const hasFileDetails = /sharedfiles\/filedetails/i.test(html);
-      const hasBrowseEvidence = /workshop\/browse/i.test(html) || /appid=/i.test(html);
+      const hasBrowseEvidence =
+        /workshop\/browse/i.test(html) || /appid=/i.test(html);
       if (!hasFileDetails && !hasBrowseEvidence) {
         throw new Error(
           `No items parsed from Steam for "${q}" (page may be down, blocked, or age-gated). ` +
@@ -375,7 +383,9 @@ export class SteamWorkshopClient {
     try {
       mkdirSync(dirname(this.cacheFile), { recursive: true });
       const tmpFile = `${this.cacheFile}.tmp`;
-      writeFileSync(tmpFile, JSON.stringify(this.cache, null, 2), { mode: 0o600 });
+      writeFileSync(tmpFile, JSON.stringify(this.cache, null, 2), {
+        mode: 0o600,
+      });
       renameSync(tmpFile, this.cacheFile);
     } catch (err) {
       logger.warn(
@@ -394,7 +404,11 @@ export class SteamWorkshopClient {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
     try {
-      const res = await this.fetchImpl(url, { ...init, signal: ctrl.signal, redirect: "error" });
+      const res = await this.fetchImpl(url, {
+        ...init,
+        signal: ctrl.signal,
+        redirect: "error",
+      });
       if (!res.ok) {
         throw new Error(`Steam responded HTTP ${res.status} (${url})`);
       }

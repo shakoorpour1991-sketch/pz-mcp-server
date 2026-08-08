@@ -178,10 +178,7 @@ export class RecipeAnalyzer {
           for (const ing of node.ingredients) {
             const producers = await this.db.getReferencesTo(ing.id);
             for (const p of producers) {
-              if (
-                p.type === "item" &&
-                RESULT_CONTEXTS.has(p.context)
-              ) {
+              if (p.type === "item" && RESULT_CONTEXTS.has(p.context)) {
                 const key = `${p.itemId}::recipe`;
                 if (!visited.has(key)) {
                   neighbors.push({ id: p.itemId, kind: "recipe" });
@@ -201,10 +198,7 @@ export class RecipeAnalyzer {
           for (const res of node.results) {
             const consumers = await this.db.getReferencesTo(res.id);
             for (const c of consumers) {
-              if (
-                c.type === "item" &&
-                c.context === "ingredient"
-              ) {
+              if (c.type === "item" && c.context === "ingredient") {
                 const key = `${c.itemId}::recipe`;
                 if (!visited.has(key)) {
                   neighbors.push({ id: c.itemId, kind: "recipe" });

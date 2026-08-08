@@ -322,7 +322,8 @@ export function formatWorkshopSearchResults(
   items.forEach((it, i) => {
     output += `${i + 1}. **${it.title}** — by ${it.author} · id \`${it.id}\`\n`;
     output += `   🔗 ${it.url}\n`;
-    if (it.subscribers > 0) output += `   👥 ${it.subscribers.toLocaleString()} subscribers\n`;
+    if (it.subscribers > 0)
+      output += `   👥 ${it.subscribers.toLocaleString()} subscribers\n`;
     if (it.tags.length > 0) output += `   🏷️ ${it.tags.join(", ")}\n`;
     if (it.shortDescription) {
       output += `   ${it.shortDescription.slice(0, 160)}\n`;

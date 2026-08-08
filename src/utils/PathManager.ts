@@ -454,7 +454,9 @@ export class PathManager {
    * with `writable` boolean and, when not writable, an `error` message.
    * Used by export_mod_script dry-run to warn early (audit D6).
    */
-  async isAncestorWritable(target: string): Promise<{ writable: boolean; error?: string }> {
+  async isAncestorWritable(
+    target: string,
+  ): Promise<{ writable: boolean; error?: string }> {
     let current = target;
     for (;;) {
       try {

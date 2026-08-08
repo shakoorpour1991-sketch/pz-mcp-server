@@ -1,6 +1,10 @@
 import { DatabaseManager } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
-import { scanScriptBlocks, stripLineComments, countBraces } from "../utils/scriptScanner.js";
+import {
+  scanScriptBlocks,
+  stripLineComments,
+  countBraces,
+} from "../utils/scriptScanner.js";
 import { BlockType } from "../utils/blockTypes.js";
 
 export interface ValidationResult {
@@ -645,7 +649,7 @@ export class ValidationEngine {
       if (braceLevel < 0) {
         result.errors.push({
           line: lineNumber,
-          message: "Unexpected closing brace \"}\"",
+          message: 'Unexpected closing brace "}"',
           severity: "error",
           code: "SYNTAX_ERROR",
         });

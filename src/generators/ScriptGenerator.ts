@@ -315,7 +315,10 @@ export class ScriptGenerator {
 
   private getTemplate(type: string, category?: string): ItemTemplate | null {
     if (category) {
-      const key = category.toLowerCase().replace(/[\s_]+/g, " ").trim();
+      const key = category
+        .toLowerCase()
+        .replace(/[\s_]+/g, " ")
+        .trim();
       const templateKey = this.categoryTemplateMap[key];
       if (templateKey) {
         return this.templates.get(templateKey)!;

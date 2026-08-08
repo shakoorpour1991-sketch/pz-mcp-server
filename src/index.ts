@@ -140,7 +140,11 @@ const SearchVanillaSchema = z.object({
     .describe("Filter by tags (comma-separated, matches if ANY tag present)"),
   metalValueMin: z.number().optional().describe("Minimum metal value"),
   metalValueMax: z.number().optional().describe("Maximum metal value"),
-  attachmentType: z.string().max(256).optional().describe("Filter by attachment type"),
+  attachmentType: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Filter by attachment type"),
   limit: z
     .number()
     .min(1)
@@ -226,7 +230,10 @@ const IndexKnowledgeBaseSchema = z.object({
 });
 
 const AnalyzeRecipeChainSchema = z.object({
-  seed: z.string().max(1000).describe("Item or recipe id to start the chain from"),
+  seed: z
+    .string()
+    .max(1000)
+    .describe("Item or recipe id to start the chain from"),
   direction: z
     .enum(["upstream", "downstream", "both"])
     .default("both")
@@ -289,7 +296,10 @@ const ExportModScriptSchema = z.object({
 });
 
 const SearchKnowledgeBaseSchema = z.object({
-  query: z.string().max(1000).describe("Search query for knowledge base content"),
+  query: z
+    .string()
+    .max(1000)
+    .describe("Search query for knowledge base content"),
   topic: z
     .string()
     .max(256)
@@ -1088,13 +1098,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
         const onPhase = (phase: string) =>
-          logger.info({ workshopId: resolvedId }, "workshop_analyze: %s", phase);
+          logger.info(
+            { workshopId: resolvedId },
+            "workshop_analyze: %s",
+            phase,
+          );
 
-        const dl = await steamCmdDownloader.download(
-          resolvedId,
-          onPhase,
-          { expectedBytes: details.fileSize },
-        );
+        const dl = await steamCmdDownloader.download(resolvedId, onPhase, {
+          expectedBytes: details.fileSize,
+        });
         onPhase("parsing mod scripts");
         // Audit M5: analyze workshop mods in a throwaway DB so third-party rows
         // never pollute the vanilla game DB.
@@ -1180,8 +1192,8 @@ async function main() {
     }
     process.exit(0);
   };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   await initializeServer();
 

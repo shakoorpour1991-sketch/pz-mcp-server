@@ -123,13 +123,15 @@ export class DatabaseManager {
       // Single atomic statement: SQLite reads one statement in a snapshot,
       // so the four signals cannot race a concurrent writer (audit D3b).
       const row = this.db
-        .prepare(`
+        .prepare(
+          `
       SELECT
         (SELECT COUNT(*) FROM items) AS item_count,
         (SELECT COUNT(*) FROM items_fts) AS fts_count,
         (SELECT IFNULL(MAX(rowid), 0) FROM items) AS item_max_rowid,
         (SELECT IFNULL(MAX(rowid), 0) FROM items_fts) AS fts_max_rowid
-    `)
+    `,
+        )
         .get() as {
         item_count: number;
         fts_count: number;
@@ -790,7 +792,9 @@ export class DatabaseManager {
    */
   async getReferencesToMany(
     referenceIds: string[],
-  ): Promise<Map<string, Array<{ itemId: string; type: string; context: string }>>> {
+  ): Promise<
+    Map<string, Array<{ itemId: string; type: string; context: string }>>
+  > {
     const map = new Map<
       string,
       Array<{ itemId: string; type: string; context: string }>

@@ -72,7 +72,10 @@ const COMMON_STEAMCMD_PATHS: Record<string, string[]> = {
     "D:\\Steam\\steamcmd.exe",
     "E:\\steamcmd\\steamcmd.exe",
   ],
-  linux: ["/usr/games/steamcmd", join(homedir(), ".steam/steamcmd/steamcmd.sh")],
+  linux: [
+    "/usr/games/steamcmd",
+    join(homedir(), ".steam/steamcmd/steamcmd.sh"),
+  ],
   darwin: [
     "/Applications/Steam/steamcmd",
     join(homedir(), "steamcmd/steamcmd"),
@@ -115,11 +118,17 @@ export class SteamCmdDownloader {
           };
           child.stdout.on("data", sink);
           child.stderr.on("data", sink);
-          
-          const timeout = setTimeout(() => {
-            child.kill();
-            resolveRun({ code: -1, output: output + "\n[Timed out after 10 minutes]" });
-          }, 10 * 60 * 1000);
+
+          const timeout = setTimeout(
+            () => {
+              child.kill();
+              resolveRun({
+                code: -1,
+                output: output + "\n[Timed out after 10 minutes]",
+              });
+            },
+            10 * 60 * 1000,
+          );
 
           child.on("error", (err) => {
             clearTimeout(timeout);
@@ -213,8 +222,13 @@ export class SteamCmdDownloader {
     const dest = join(workshopDir, id);
     const resolvedWorkshopDir = resolve(workshopDir);
     const resolvedDest = resolve(dest);
-    if (!resolvedDest.startsWith(resolvedWorkshopDir + sep) && resolvedDest !== resolvedWorkshopDir) {
-      throw new Error(`Path traversal detected: id "${id}" escapes workshop directory.`);
+    if (
+      !resolvedDest.startsWith(resolvedWorkshopDir + sep) &&
+      resolvedDest !== resolvedWorkshopDir
+    ) {
+      throw new Error(
+        `Path traversal detected: id "${id}" escapes workshop directory.`,
+      );
     }
 
     // Disk-space guard: refuse before downloading if the known item size
@@ -247,7 +261,7 @@ export class SteamCmdDownloader {
 
     // Temp dir beside the output: same filesystem for the final rename.
     let tempDir = "";
-    
+
     const maxAttempts = 3;
     let attempts = 0;
     try {
@@ -315,7 +329,9 @@ export class SteamCmdDownloader {
           logger.warn({ id, attempt: attempts }, "steamcmd exit code 7");
           continue;
         }
-        throw new Error(`SteamCMD exited with code ${code}${this.tail(output)}`);
+        throw new Error(
+          `SteamCMD exited with code ${code}${this.tail(output)}`,
+        );
       }
     } finally {
       if (tempDir) {
@@ -323,8 +339,14 @@ export class SteamCmdDownloader {
           rmSync(tempDir, { recursive: true, force: true });
         } catch (cleanupErr) {
           logger.warn(
-            { tempDir, err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) },
-            "Failed to clean up steamcmd temp directory"
+            {
+              tempDir,
+              err:
+                cleanupErr instanceof Error
+                  ? cleanupErr.message
+                  : String(cleanupErr),
+            },
+            "Failed to clean up steamcmd temp directory",
           );
         }
       }
@@ -335,19 +357,21 @@ export class SteamCmdDownloader {
   private loginArgs(): string[] {
     const user = process.env.STEAMCMD_USER;
     const pass = process.env.STEAMCMD_PASS;
-    const useCreds = process.env.STEAMCMD_USE_CREDENTIALS === "1" || process.env.STEAMCMD_USE_CREDENTIALS === "true";
+    const useCreds =
+      process.env.STEAMCMD_USE_CREDENTIALS === "1" ||
+      process.env.STEAMCMD_USE_CREDENTIALS === "true";
 
     if (user) {
       if (!useCreds) {
         throw new Error(
           "STEAMCMD_USER is set but STEAMCMD_USE_CREDENTIALS is not enabled. " +
-          "Passing credentials as process arguments exposes them in process listings. " +
-          "To accept this risk, set STEAMCMD_USE_CREDENTIALS=1. Otherwise, unset STEAMCMD_USER to use anonymous login."
+            "Passing credentials as process arguments exposes them in process listings. " +
+            "To accept this risk, set STEAMCMD_USE_CREDENTIALS=1. Otherwise, unset STEAMCMD_USER to use anonymous login.",
         );
       }
       if (!pass) {
         throw new Error(
-          "STEAMCMD_USER is set but STEAMCMD_PASS is empty — +login would fail with an empty password. Set both, or unset STEAMCMD_USER to use anonymous."
+          "STEAMCMD_USER is set but STEAMCMD_PASS is empty — +login would fail with an empty password. Set both, or unset STEAMCMD_USER to use anonymous.",
         );
       }
       return ["+login", user, pass];
