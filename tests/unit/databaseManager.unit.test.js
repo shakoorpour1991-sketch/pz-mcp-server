@@ -355,6 +355,206 @@ describe('DatabaseManager', () => {
     });
   });
 
+  describe('deeper indexing: weight/calories filters', () => {
+    before(async () => {
+      await db.insertItems([
+        {
+          id: 'Base.Burger',
+          name: 'Burger',
+          displayName: 'Burger',
+          type: 'item',
+          module: 'Base',
+          category: 'Food',
+          properties: { Weight: 0.5, Calories: 750 },
+          rawContent: 'item Burger {}',
+          filePath: 'food.txt',
+          weight: 0.5,
+          calories: 750,
+        },
+        {
+          id: 'Base.Salad',
+          name: 'Salad',
+          displayName: 'Salad',
+          type: 'item',
+          module: 'Base',
+          category: 'Food',
+          properties: { Weight: 0.3, Calories: 120 },
+          rawContent: 'item Salad {}',
+          filePath: 'food.txt',
+          weight: 0.3,
+          calories: 120,
+        },
+        {
+          id: 'Base.Barbell',
+          name: 'Barbell',
+          displayName: 'Barbell',
+          type: 'item',
+          module: 'Base',
+          category: 'Weapon',
+          properties: { Weight: 25 },
+          rawContent: 'item Barbell {}',
+          filePath: 'weapon.txt',
+          weight: 25,
+        },
+      ]);
+    });
+
+    test('maxWeight filter returns items under the bound', async () => {
+      const results = await db.searchContent('', { maxWeight: 1 });
+      assert.ok(results.some((r) => r.id === 'Base.Burger'));
+      assert.ok(results.some((r) => r.id === 'Base.Salad'));
+      assert.ok(!results.some((r) => r.id === 'Base.Barbell'));
+    });
+
+    test('minCalories filter returns high-calorie food', async () => {
+      const results = await db.searchContent('', { minCalories: 500 });
+      assert.ok(results.some((r) => r.id === 'Base.Burger'));
+      assert.ok(!results.some((r) => r.id === 'Base.Salad'));
+    });
+
+    test('minWeight + maxWeight bound a range', async () => {
+      const results = await db.searchContent('', { minWeight: 10, maxWeight: 30 });
+      assert.ok(results.some((r) => r.id === 'Base.Barbell'));
+      assert.ok(!results.some((r) => r.id === 'Base.Burger'));
+    });
+
+    test('dotted query never crashes and matches via FTS', async () => {
+      // Regression: FTS5 must not crash on dotted ids like Base.Burger — the
+      // shared sanitizeFtsTerms helper splits them into safe terms.
+      const results = await db.searchContent('Base.Burger');
+      assert.equal(Array.isArray(results), true);
+      assert.ok(results.some((r) => r.id === 'Base.Burger'));
+    });
+  });
+
+  describe('deeper indexing: searchRecipes', () => {
+    before(async () => {
+      // Recipe rows must exist before their ingredient rows (FK recipes.id).
+      await db.insertRecipes([
+        {
+          id: 'Base.NailBox',
+          name: 'NailBox',
+          module: 'Base',
+          category: 'Carpentry',
+          time: 120,
+          skill: 'Woodwork',
+          skillLevel: 4,
+          result: 'Base.NailBox',
+          resultCount: 1,
+          properties: { category: 'Carpentry' },
+          filePath: 'recipes.txt',
+        },
+        {
+          id: 'Base.BurgerRecipe',
+          name: 'BurgerRecipe',
+          module: 'Base',
+          category: 'Cooking',
+          time: 60,
+          result: 'Base.Burger',
+          properties: { category: 'Cooking' },
+          filePath: 'recipes.txt',
+        },
+      ]);
+      await db.insertRecipeIngredients([
+        {
+          recipeId: 'Base.NailBox',
+          ref: 'Base.Plank',
+          refType: 'item',
+          count: 4,
+          role: 'ingredient',
+          sortOrder: 0,
+        },
+        {
+          recipeId: 'Base.NailBox',
+          ref: 'Base.Nails',
+          refType: 'item',
+          count: 6,
+          role: 'ingredient',
+          sortOrder: 1,
+        },
+        {
+          recipeId: 'Base.NailBox',
+          ref: 'base:saw',
+          refType: 'tag',
+          count: 1,
+          role: 'tool',
+          sortOrder: 2,
+        },
+        {
+          recipeId: 'Base.NailBox',
+          ref: 'Base.NailBox',
+          refType: 'item',
+          count: 1,
+          role: 'output',
+          sortOrder: 3,
+        },
+        {
+          recipeId: 'Base.BurgerRecipe',
+          ref: 'Base.Burger',
+          refType: 'item',
+          count: 1,
+          role: 'output',
+          sortOrder: 0,
+        },
+      ]);
+    });
+
+    test('finds recipes by ingredient (accepts bare name)', async () => {
+      const results = await db.searchRecipes({ ingredient: 'Nails' });
+      assert.ok(results.some((r) => r.id === 'Base.NailBox'));
+    });
+
+    test('finds recipes by tag tool', async () => {
+      const results = await db.searchRecipes({ tool: 'base:saw' });
+      assert.ok(results.some((r) => r.id === 'Base.NailBox'));
+    });
+
+    test('finds recipes by skill + level bound (Carpentry 4-style query)', async () => {
+      const results = await db.searchRecipes({
+        ingredient: 'Nails',
+        skill: 'Woodwork',
+        minSkillLevel: 4,
+      });
+      assert.ok(results.some((r) => r.id === 'Base.NailBox'));
+
+      const tooHigh = await db.searchRecipes({
+        ingredient: 'Nails',
+        skill: 'Woodwork',
+        minSkillLevel: 5,
+      });
+      assert.equal(tooHigh.length, 0);
+    });
+
+    test('finds recipes by result and returns structured ingredients', async () => {
+      const results = await db.searchRecipes({ result: 'Burger' });
+      assert.ok(results.some((r) => r.id === 'Base.BurgerRecipe'));
+      const nailBox = results.find((r) => r.id === 'Base.NailBox');
+      if (nailBox) {
+        assert.ok(
+          nailBox.ingredients.some(
+            (i) => i.ref === 'Base.Nails' && i.count === 6 && i.role === 'ingredient',
+          ),
+        );
+        assert.ok(
+          nailBox.ingredients.some(
+            (i) => i.ref === 'base:saw' && i.role === 'tool',
+          ),
+        );
+      }
+    });
+
+    test('category filter narrows recipe search', async () => {
+      const results = await db.searchRecipes({ category: 'Cooking' });
+      assert.ok(results.some((r) => r.id === 'Base.BurgerRecipe'));
+      assert.ok(!results.some((r) => r.id === 'Base.NailBox'));
+    });
+
+    test('free-text query matches recipe name substring', async () => {
+      const results = await db.searchRecipes({ query: 'nailbox' });
+      assert.ok(results.some((r) => r.id === 'Base.NailBox'));
+    });
+  });
+
   describe('getSimilarItems LIKE escaping (audit M7)', () => {
     before(async () => {
       await db.insertItem({

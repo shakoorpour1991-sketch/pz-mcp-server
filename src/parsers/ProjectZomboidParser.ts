@@ -1,7 +1,13 @@
 import { readFileSync, existsSync } from "fs";
 import { readFile, readdir, stat } from "fs/promises";
 import { join, extname, basename } from "path";
-import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
+import {
+  DatabaseManager,
+  GameItem,
+  GameRecipe,
+  RecipeIngredient,
+  RecipeIngredientRole,
+} from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
 import { scanScriptBlocks, ScanBlock } from "../utils/scriptScanner.js";
 import { isBlockType } from "../utils/blockTypes.js";
@@ -224,6 +230,13 @@ export class ProjectZomboidParser {
   ): Promise<void> {
     const content = await readFile(filePath, "utf-8");
     const accumulatedItems: any[] = [];
+    // Structured recipe mirror rows (freebuff deeper indexing): recipes stay
+    // items rows too, but each craftRecipe additionally lands a structured row
+    // in `recipes` + `recipe_ingredients` for search_recipes.
+    const accumulatedRecipes: Array<{
+      recipe: GameRecipe;
+      ingredients: RecipeIngredient[];
+    }> = [];
 
     // Split the file into blocks with the shared scanner (freebuff M1) — the
     // same algorithm the validation engine uses, so the two consumers can
@@ -231,12 +244,27 @@ export class ProjectZomboidParser {
     const blocks = scanScriptBlocks(content, defaultModule);
 
     for (const block of blocks) {
-      await this.finalizeBlock(block, filePath, accumulatedItems, results);
+      await this.finalizeBlock(
+        block,
+        filePath,
+        accumulatedItems,
+        accumulatedRecipes,
+        results,
+      );
     }
 
     // Flush accumulated items to database
     if (accumulatedItems.length > 0) {
       await this.db.insertItems(accumulatedItems);
+
+      // Structured recipe rows: recipes must be inserted before their
+      // ingredients (recipe_ingredients.recipe_id has a FK to recipes.id).
+      if (accumulatedRecipes.length > 0) {
+        await this.db.insertRecipes(accumulatedRecipes.map((r) => r.recipe));
+        await this.db.insertRecipeIngredients(
+          accumulatedRecipes.flatMap((r) => r.ingredients),
+        );
+      }
 
       // Populate cross-item references (recipe ingredients/results, fixing
       // requirements). Must run AFTER the flush: "references".item_id has a
@@ -262,6 +290,10 @@ export class ProjectZomboidParser {
     block: ScanBlock,
     filePath: string,
     accumulatedItems: any[],
+    accumulatedRecipes: Array<{
+      recipe: GameRecipe;
+      ingredients: RecipeIngredient[];
+    }>,
     results: ParseResults,
   ): Promise<void> {
     // Per-line property parse problems are collected here and surfaced once
@@ -294,6 +326,19 @@ export class ProjectZomboidParser {
         // so their inner lines never leak as fake items.
         if (isBlockType(storedType)) {
           accumulatedItems.push(item);
+
+          // Structured recipe mirror: build rows for search_recipes. Non-fatal
+          // — a malformed recipe body must not abort the file's item flush.
+          if (item.type === "recipe") {
+            try {
+              const record = this.buildRecipeRecord(block, item);
+              if (record) accumulatedRecipes.push(record);
+            } catch (err) {
+              logger.warn(
+                `Structured recipe extraction failed for ${item.id}: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
 
           // Update counters
           switch (item.type) {
@@ -420,6 +465,8 @@ export class ProjectZomboidParser {
     const runSpeedModifier = properties.RunSpeedModifier;
     const hungerChange = properties.HungerChange;
     const thirstChange = properties.ThirstChange;
+    const icon = properties.Icon;
+    const calories = properties.Calories;
 
     // Generate item ID
     const itemId =
@@ -455,9 +502,220 @@ export class ProjectZomboidParser {
         typeof hungerChange === "number" ? hungerChange : undefined,
       thirst_change:
         typeof thirstChange === "number" ? thirstChange : undefined,
+      icon: typeof icon === "string" ? icon : undefined,
+      calories: typeof calories === "number" ? calories : undefined,
       rawContent,
       filePath,
     };
+  }
+
+  /**
+   * Build the structured recipe mirror row + ingredient/tool/output rows for
+   * one recipe block (freebuff deeper indexing). Scans the block's raw lines
+   * directly so it can capture what the generic property parser skips:
+   *   - B42 `item N [A;B] flags[...]` alternatives (each alternative becomes
+   *     its own ingredient row so "recipes using Base.Nails" finds recipes
+   *     where Nails appears as `[Base.Nails;...]`)
+   *   - B42 `item N tags[base:x;base:y] mode:keep` → tool rows by tag
+   *   - B42 outputs section → role 'output' rows
+   *   - legacy `keep [Base.Saw]` → tool rows; `Result:Base.X=2` → result
+   * Uses the same inputs/outputs section tracking as parseBlock (F9).
+   */
+  private buildRecipeRecord(
+    block: ScanBlock,
+    item: GameItem,
+  ): { recipe: GameRecipe; ingredients: RecipeIngredient[] } | null {
+    const ingredients: RecipeIngredient[] = [];
+    const b42Style =
+      block.rawType === "craftRecipe" || block.rawType === "craftrecipe";
+    let section: "inputs" | "outputs" | null = null;
+    let sortOrder = 0;
+
+    for (let i = 1; i < block.content.length; i++) {
+      const line = block.content[i];
+      const trimmed = line.trim();
+      // Track inputs/outputs sections (same logic as parseBlock F9).
+      const bare = trimmed.replace(/[{}]+\s*$/, "").trim();
+      if (bare === "inputs" || bare === "outputs") {
+        section = bare;
+        continue;
+      }
+      if (trimmed.includes("}")) {
+        section = null;
+      }
+      if (!trimmed || trimmed.includes("{") || trimmed.includes("}")) continue;
+
+      // B42 item lines: `item <count> <ref-or-alternatives-or-tags>`
+      const itemMatch = trimmed.match(/^item\s+(\d+)\s+(.+)$/);
+      if (itemMatch) {
+        const count = parseInt(itemMatch[1], 10);
+        const spec = itemMatch[2].trim();
+        const keep = /mode:keep/.test(spec);
+        const role: RecipeIngredientRole =
+          section === "outputs" ? "output" : keep ? "tool" : "ingredient";
+
+        // Tag-based inputs: `tags[base:saw;base:crudesaw] ...`
+        const tagsMatch = spec.match(/^tags\[([^\]]*)\]/);
+        if (tagsMatch) {
+          for (const rawTag of tagsMatch[1].split(";")) {
+            const tag = rawTag.trim();
+            if (tag) {
+              ingredients.push({
+                recipeId: item.id,
+                ref: tag,
+                refType: "tag",
+                count,
+                role,
+                sortOrder: sortOrder++,
+              });
+            }
+          }
+          continue;
+        }
+
+        // Mapper outputs (`item 2 mapper:StickMapper,`) — record the mapper
+        // name as an output ref so the row exists, flagged by refType.
+        // Trailing comma stripped like the plain/bracket paths.
+        const mapperMatch = spec.match(/^mapper:(.+)$/);
+        if (mapperMatch) {
+          const mapperRef = mapperMatch[1].trim().replace(/,$/, "");
+          ingredients.push({
+            recipeId: item.id,
+            ref: `mapper:${mapperRef}`,
+            refType: "mapper",
+            count,
+            role,
+            sortOrder: sortOrder++,
+          });
+          continue;
+        }
+
+        // Bracket alternatives: `[Base.Log;Base.WoodenStick]` — each becomes
+        // its own row (a recipe "uses" every alternative). Percentage-prefixed
+        // alternatives (`25:Base.Thread_Sinew`) have the chance stripped.
+        const bracketMatch = spec.match(/^\[([^\]]*)\]/);
+        // Strip the trailing comma (`item 1 Base.HandSaw,`) and any flags.
+        const plainRef = spec.split(/\s+/)[0].replace(/,$/, "");
+        const alternatives = bracketMatch
+          ? bracketMatch[1].split(";")
+          : [plainRef];
+        for (const rawAlt of alternatives) {
+          const ref = rawAlt.trim().replace(/^\d+:/, "").replace(/,$/, "");
+          if (ref) {
+            ingredients.push({
+              recipeId: item.id,
+              ref,
+              refType: "item",
+              count,
+              role,
+              sortOrder: sortOrder++,
+            });
+          }
+        }
+        continue;
+      }
+
+      // Legacy B41: `keep [Base.Saw],` → tool row
+      const keepMatch = trimmed.match(/^keep\s+\[([^\]]+)\]/);
+      if (keepMatch) {
+        for (const rawRef of keepMatch[1].split(";")) {
+          const ref = rawRef.trim();
+          if (ref) {
+            ingredients.push({
+              recipeId: item.id,
+              ref,
+              refType: "item",
+              count: 1,
+              role: "tool",
+              sortOrder: sortOrder++,
+            });
+          }
+        }
+        continue;
+      }
+
+      // Legacy B41 ingredient: `Base.Log=4,`
+      const legacyIngredient = trimmed.match(/^([\w.]+)=(\d+),?\s*$/);
+      if (legacyIngredient && !b42Style) {
+        ingredients.push({
+          recipeId: item.id,
+          ref: legacyIngredient[1],
+          refType: "item",
+          count: parseInt(legacyIngredient[2], 10),
+          role: "ingredient",
+          sortOrder: sortOrder++,
+        });
+      }
+    }
+
+    // Result: B42 outputs section (first item output) or legacy Result property.
+    const outputs = ingredients.filter((i) => i.role === "output");
+    const firstItemOutput = outputs.find((o) => o.refType === "item");
+    let result: string | undefined;
+    let resultCount: number | undefined;
+    if (firstItemOutput) {
+      result = firstItemOutput.ref;
+      resultCount = firstItemOutput.count;
+    } else if (typeof item.properties.Result === "string") {
+      const resultMatch = item.properties.Result.match(/^([\w.]+)(?:=(\d+))?/);
+      if (resultMatch) {
+        result = resultMatch[1];
+        resultCount = resultMatch[2] ? parseInt(resultMatch[2], 10) : 1;
+        // Legacy recipes declare their result in the Result property — surface
+        // it as an output row too so search_recipes result queries and the
+        // formatter see it like a B42 outputs section.
+        ingredients.push({
+          recipeId: item.id,
+          ref: result,
+          refType: "item",
+          count: resultCount,
+          role: "output",
+          sortOrder: sortOrder++,
+        });
+      }
+    }
+
+    // Skill requirement: B42 `SkillRequired = Woodwork:2`, legacy
+    // `SkillRequired: Carpentry=2`. Both separators accepted.
+    const skillRaw = item.properties.SkillRequired;
+    let skill: string | undefined;
+    let skillLevel: number | undefined;
+    if (typeof skillRaw === "string") {
+      const skillMatch = skillRaw.trim().match(/^([\w.]+)\s*[:=]\s*(\d+)$/);
+      if (skillMatch) {
+        skill = skillMatch[1];
+        skillLevel = parseInt(skillMatch[2], 10);
+      }
+    }
+
+    const recipe: GameRecipe = {
+      id: item.id,
+      name: item.name,
+      module: item.module,
+      properties: item.properties,
+      filePath: item.filePath,
+    };
+    // exactOptionalPropertyTypes: only assign when actually present.
+    const category = item.properties.category ?? item.properties.Category;
+    if (typeof category === "string" && category) {
+      recipe.category = category;
+    }
+    const time = item.properties.time ?? item.properties.Time;
+    if (typeof time === "number") {
+      recipe.time = time;
+    }
+    if (skill !== undefined) {
+      recipe.skill = skill;
+      if (skillLevel !== undefined) {
+        recipe.skillLevel = skillLevel;
+      }
+    }
+    if (result !== undefined) {
+      recipe.result = result;
+      if (resultCount !== undefined) recipe.resultCount = resultCount;
+    }
+
+    return { recipe, ingredients };
   }
 
   private parseItemProperty(

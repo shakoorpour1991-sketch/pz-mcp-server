@@ -51,6 +51,7 @@ import {
   formatParseResults,
   formatRecipeChain,
   formatRecipeConflicts,
+  formatRecipeSearchResults,
   formatReferenceResults,
   formatSearchResults,
   formatValidationResults,
@@ -145,6 +146,71 @@ const SearchVanillaSchema = z.object({
     .max(256)
     .optional()
     .describe("Filter by attachment type"),
+  minWeight: z.number().min(0).optional().describe("Minimum Weight (kg)"),
+  maxWeight: z.number().min(0).optional().describe("Maximum Weight (kg)"),
+  minCalories: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Minimum Calories (food items)"),
+  maxCalories: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Maximum Calories (food items)"),
+  limit: z
+    .number()
+    .min(1)
+    .max(100)
+    .default(20)
+    .describe("Maximum number of results"),
+});
+
+const SearchRecipesSchema = z.object({
+  query: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe("Free-text search on recipe name or id"),
+  category: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Filter by recipe category (e.g. Carpentry, Cooking, Repair)"),
+  skill: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Filter by required skill (e.g. Woodwork, Blacksmith, Carpentry)",
+    ),
+  minSkillLevel: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Minimum required skill level"),
+  maxSkillLevel: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Maximum required skill level"),
+  ingredient: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Recipes using this item or tag as an ingredient (accepts Base.Nails, Nails, or base:nails)",
+    ),
+  tool: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Recipes requiring this item or tag as a tool (mode:keep input)"),
+  result: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Recipes producing this item"),
   limit: z
     .number()
     .min(1)
@@ -371,8 +437,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_vanilla",
         description:
-          "Search vanilla Project Zomboid content (items, recipes, sounds, vehicles) with intelligent matching",
+          "Search vanilla Project Zomboid content (items, recipes, sounds, vehicles) with intelligent matching and filters (category, weight, calories, tags, type)",
         inputSchema: SearchVanillaSchema,
+      },
+      {
+        name: "search_recipes",
+        description:
+          "Search structured craft recipes by ingredient, tool, skill requirement, category, or result",
+        inputSchema: SearchRecipesSchema,
       },
       {
         name: "generate_script",
@@ -664,6 +736,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           metalValueMin,
           metalValueMax,
           attachmentType,
+          minWeight,
+          maxWeight,
+          minCalories,
+          maxCalories,
           limit,
         } = SearchVanillaSchema.parse(args);
         const searchOptions: {
@@ -673,6 +749,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           metalValueMin?: number;
           metalValueMax?: number;
           attachmentType?: string;
+          minWeight?: number;
+          maxWeight?: number;
+          minCalories?: number;
+          maxCalories?: number;
           limit?: number;
         } = {};
         if (type !== undefined && type !== "all") searchOptions.type = type;
@@ -684,6 +764,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           searchOptions.metalValueMax = metalValueMax;
         if (attachmentType !== undefined)
           searchOptions.attachmentType = attachmentType;
+        if (minWeight !== undefined) searchOptions.minWeight = minWeight;
+        if (maxWeight !== undefined) searchOptions.maxWeight = maxWeight;
+        if (minCalories !== undefined) searchOptions.minCalories = minCalories;
+        if (maxCalories !== undefined) searchOptions.maxCalories = maxCalories;
         if (limit !== undefined) searchOptions.limit = limit;
         const results = await dbManager.searchContent(query, searchOptions);
 
@@ -704,8 +788,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: r.type,
               module: r.module,
               category: r.category,
+              weight: r.weight,
+              calories: r.calories,
               properties: r.properties,
             })),
+          },
+        };
+      }
+
+      case "search_recipes": {
+        const {
+          query,
+          category,
+          skill,
+          minSkillLevel,
+          maxSkillLevel,
+          ingredient,
+          tool,
+          result,
+          limit,
+        } = SearchRecipesSchema.parse(args);
+        const recipeOptions: {
+          query?: string;
+          category?: string;
+          skill?: string;
+          minSkillLevel?: number;
+          maxSkillLevel?: number;
+          ingredient?: string;
+          tool?: string;
+          result?: string;
+          limit?: number;
+        } = {};
+        if (query !== undefined) recipeOptions.query = query;
+        if (category !== undefined) recipeOptions.category = category;
+        if (skill !== undefined) recipeOptions.skill = skill;
+        if (minSkillLevel !== undefined)
+          recipeOptions.minSkillLevel = minSkillLevel;
+        if (maxSkillLevel !== undefined)
+          recipeOptions.maxSkillLevel = maxSkillLevel;
+        if (ingredient !== undefined) recipeOptions.ingredient = ingredient;
+        if (tool !== undefined) recipeOptions.tool = tool;
+        if (result !== undefined) recipeOptions.result = result;
+        if (limit !== undefined) recipeOptions.limit = limit;
+        const recipes = await dbManager.searchRecipes(recipeOptions);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatRecipeSearchResults(recipes),
+            },
+          ],
+          structuredContent: {
+            count: recipes.length,
+            recipes: structuredClone(recipes),
           },
         };
       }

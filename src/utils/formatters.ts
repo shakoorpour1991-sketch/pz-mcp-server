@@ -22,6 +22,40 @@ export function formatSearchResults(results: any[]): string {
     .join("\n\n");
 }
 
+export function formatRecipeSearchResults(recipes: any[]): string {
+  if (recipes.length === 0) {
+    return `Found 0 recipes matching the criteria.`;
+  }
+
+  let output = `Found ${recipes.length} recipe(s):\n\n`;
+  recipes.forEach((r, idx) => {
+    output += `${idx + 1}. **${r.name}** (${r.id})\n`;
+    if (r.category) output += `   Category: ${r.category}\n`;
+    if (r.time !== undefined && r.time !== null)
+      output += `   Time: ${r.time}s\n`;
+    if (r.skill) {
+      output += `   Requires: ${r.skill} ${r.skillLevel ?? "?"}\n`;
+    }
+    const ing = (r.ingredients || []).filter(
+      (i: any) => i.role === "ingredient",
+    );
+    const tools = (r.ingredients || []).filter((i: any) => i.role === "tool");
+    const outs = (r.ingredients || []).filter((i: any) => i.role === "output");
+    if (ing.length > 0)
+      output += `   Ingredients: ${ing
+        .map((i: any) => `${i.count}x ${i.ref}`)
+        .join(", ")}\n`;
+    if (tools.length > 0)
+      output += `   Tools: ${tools.map((i: any) => i.ref).join(", ")}\n`;
+    if (outs.length > 0)
+      output += `   Results: ${outs
+        .map((i: any) => `${i.count}x ${i.ref}`)
+        .join(", ")}\n`;
+    output += "\n";
+  });
+  return output;
+}
+
 export function formatValidationResults(validation: any): string {
   let output = `## Validation Results\n\n`;
 

@@ -8,7 +8,7 @@ import { BlockType } from "../utils/blockTypes.js";
 
 /** Shared item column list (freebuff L3) — keeps the SQL in sync. */
 const ITEM_SELECT_COLUMNS =
-  "id, name, display_name, type, module, category, properties, raw_content, file_path, tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier, hunger_change, thirst_change";
+  "id, name, display_name, type, module, category, properties, raw_content, file_path, tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier, hunger_change, thirst_change, icon, calories";
 
 /**
  * Flatten item properties into plain, searchable text for the FTS mirror
@@ -54,6 +54,8 @@ export interface GameItem {
   run_speed_modifier?: number | undefined;
   hunger_change?: number | undefined;
   thirst_change?: number | undefined;
+  icon?: string | undefined;
+  calories?: number | undefined;
 }
 
 export interface SearchOptions {
@@ -63,6 +65,10 @@ export interface SearchOptions {
   metalValueMin?: number;
   metalValueMax?: number;
   attachmentType?: string;
+  minWeight?: number;
+  maxWeight?: number;
+  minCalories?: number;
+  maxCalories?: number;
   limit?: number;
 }
 
@@ -84,7 +90,66 @@ interface ItemRow {
   run_speed_modifier: number | null;
   hunger_change: number | null;
   thirst_change: number | null;
+  icon: string | null;
+  calories: number | null;
   rank?: number;
+}
+
+export interface GameRecipe {
+  id: string;
+  name: string;
+  module: string;
+  category?: string;
+  time?: number;
+  skill?: string;
+  skillLevel?: number;
+  result?: string;
+  resultCount?: number;
+  properties: Record<string, any>;
+  filePath: string;
+}
+
+export type RecipeIngredientRole = "ingredient" | "tool" | "output";
+export type RecipeRefType = "item" | "tag" | "mapper";
+
+export interface RecipeIngredient {
+  recipeId: string;
+  ref: string;
+  refType: RecipeRefType;
+  count: number;
+  role: RecipeIngredientRole;
+  sortOrder: number;
+}
+
+export interface RecipeSearchOptions {
+  query?: string;
+  category?: string;
+  skill?: string;
+  minSkillLevel?: number;
+  maxSkillLevel?: number;
+  ingredient?: string;
+  tool?: string;
+  result?: string;
+  limit?: number;
+}
+
+export interface RecipeSearchResult {
+  id: string;
+  name: string;
+  module: string;
+  category?: string;
+  time?: number;
+  skill?: string;
+  skillLevel?: number;
+  result?: string;
+  resultCount?: number;
+  ingredients: Array<{
+    ref: string;
+    refType: RecipeRefType;
+    count: number;
+    role: RecipeIngredientRole;
+  }>;
+  properties: Record<string, any>;
 }
 
 export class DatabaseManager {
@@ -191,6 +256,11 @@ export class DatabaseManager {
         name: "thirst_change",
         sql: "ALTER TABLE items ADD COLUMN thirst_change REAL",
       },
+      { name: "icon", sql: "ALTER TABLE items ADD COLUMN icon TEXT" },
+      {
+        name: "calories",
+        sql: "ALTER TABLE items ADD COLUMN calories REAL",
+      },
     ];
 
     for (const col of newColumns) {
@@ -289,6 +359,43 @@ export class DatabaseManager {
         last_analyzed DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Structured recipe table: one row per craftRecipe with its category,
+    // skill requirement, craft time and primary result (freebuff deeper
+    // indexing). The recipes also remain items rows (type='recipe') so the
+    // existing search/reference/chain features keep working unchanged.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        module TEXT NOT NULL,
+        category TEXT,
+        time REAL,
+        skill TEXT,
+        skill_level INTEGER,
+        result TEXT,
+        result_count INTEGER,
+        properties TEXT,
+        file_path TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Recipe ingredients/tools/outputs: structured rows powering search_recipes.
+    // ref is an item id (Base.Nails) or tag (base:nails); ref_type and role
+    // disambiguate which kind of reference each row is.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_ingredients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipe_id TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        ref_type TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 1,
+        role TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (recipe_id) REFERENCES recipes (id) ON DELETE CASCADE
+      )
+    `);
   }
 
   private async createIndexes(): Promise<void> {
@@ -317,6 +424,25 @@ export class DatabaseManager {
     this.db.exec(
       `CREATE INDEX IF NOT EXISTS idx_references_type ON "references" (reference_type)`,
     );
+
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipes_category ON recipes (category)`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipes_skill ON recipes (skill)`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipes_skill_level ON recipes (skill_level)`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients (recipe_id)`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ref ON recipe_ingredients (ref)`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_role ON recipe_ingredients (role)`,
+    );
   }
 
   async insertItem(item: GameItem): Promise<void> {
@@ -324,8 +450,8 @@ export class DatabaseManager {
       INSERT INTO items 
       (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
-       hunger_change, thirst_change)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       hunger_change, thirst_change, icon, calories)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         display_name = excluded.display_name,
@@ -343,7 +469,9 @@ export class DatabaseManager {
         attachment_type = excluded.attachment_type,
         run_speed_modifier = excluded.run_speed_modifier,
         hunger_change = excluded.hunger_change,
-        thirst_change = excluded.thirst_change
+        thirst_change = excluded.thirst_change,
+        icon = excluded.icon,
+        calories = excluded.calories
     `);
 
     stmt.run(
@@ -365,6 +493,8 @@ export class DatabaseManager {
       item.run_speed_modifier ?? null,
       item.hunger_change ?? null,
       item.thirst_change ?? null,
+      item.icon ?? null,
+      item.calories ?? null,
     );
   }
 
@@ -373,8 +503,8 @@ export class DatabaseManager {
       INSERT INTO items 
       (id, name, display_name, type, module, category, properties, properties_text, raw_content, file_path,
        tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier,
-       hunger_change, thirst_change)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       hunger_change, thirst_change, icon, calories)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         display_name = excluded.display_name,
@@ -392,7 +522,9 @@ export class DatabaseManager {
         attachment_type = excluded.attachment_type,
         run_speed_modifier = excluded.run_speed_modifier,
         hunger_change = excluded.hunger_change,
-        thirst_change = excluded.thirst_change
+        thirst_change = excluded.thirst_change,
+        icon = excluded.icon,
+        calories = excluded.calories
     `);
 
     this.db.exec("BEGIN");
@@ -417,6 +549,8 @@ export class DatabaseManager {
           item.run_speed_modifier ?? null,
           item.hunger_change ?? null,
           item.thirst_change ?? null,
+          item.icon ?? null,
+          item.calories ?? null,
         );
       }
       this.db.exec("COMMIT");
@@ -424,6 +558,238 @@ export class DatabaseManager {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  /**
+   * Upsert structured recipe rows (one per craftRecipe block). The recipe
+   * remains an items row (type='recipe') too — this is the queryable mirror.
+   */
+  async insertRecipes(recipes: GameRecipe[]): Promise<void> {
+    if (recipes.length === 0) return;
+    const stmt = this.db.prepare(`
+      INSERT INTO recipes (id, name, module, category, time, skill, skill_level, result, result_count, properties, file_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        module = excluded.module,
+        category = excluded.category,
+        time = excluded.time,
+        skill = excluded.skill,
+        skill_level = excluded.skill_level,
+        result = excluded.result,
+        result_count = excluded.result_count,
+        properties = excluded.properties,
+        file_path = excluded.file_path
+    `);
+
+    this.db.exec("BEGIN");
+    try {
+      for (const r of recipes) {
+        stmt.run(
+          r.id,
+          r.name,
+          r.module,
+          r.category ?? null,
+          r.time ?? null,
+          r.skill ?? null,
+          r.skillLevel ?? null,
+          r.result ?? null,
+          r.resultCount ?? null,
+          JSON.stringify(r.properties),
+          r.filePath,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  /**
+   * Replace a recipe's ingredient/tool/output rows (delete-then-insert keeps
+   * re-parses idempotent without needing a unique index on (recipe_id, ref, role)).
+   */
+  async insertRecipeIngredients(entries: RecipeIngredient[]): Promise<void> {
+    if (entries.length === 0) return;
+
+    const recipeIds = [...new Set(entries.map((e) => e.recipeId))];
+    const deleteStmt = this.db.prepare(
+      "DELETE FROM recipe_ingredients WHERE recipe_id = ?",
+    );
+    const insertStmt = this.db.prepare(`
+      INSERT INTO recipe_ingredients (recipe_id, ref, ref_type, count, role, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    this.db.exec("BEGIN");
+    try {
+      for (const rid of recipeIds) {
+        deleteStmt.run(rid);
+      }
+      for (const e of entries) {
+        insertStmt.run(
+          e.recipeId,
+          e.ref,
+          e.refType,
+          e.count,
+          e.role,
+          e.sortOrder,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
+   * Search the structured recipe tables. Filters: free-text query (name/id),
+   * category, skill requirement (name + optional level bounds), and ref-based
+   * filters for ingredient / tool / result rows. Every column is table-
+   * qualified (recipe_ingredients has no 'type'/'name' columns, but keeping
+   * the join unambiguous is the house rule from the searchContent fix).
+   */
+  async searchRecipes(
+    options: RecipeSearchOptions = {},
+  ): Promise<RecipeSearchResult[]> {
+    const params: any[] = [];
+    const clauses: string[] = [];
+
+    // Free-text: name or id substring (LIKE wildcards escaped, audit M7)
+    if (options.query && options.query.trim()) {
+      const escaped = options.query.trim().replace(/[\\%_]/g, "\\$&");
+      const like = `%${escaped}%`;
+      clauses.push("(r.name LIKE ? ESCAPE '\\' OR r.id LIKE ? ESCAPE '\\')");
+      params.push(like, like);
+    }
+
+    if (options.category) {
+      clauses.push("r.category = ?");
+      params.push(options.category);
+    }
+
+    // Skill requirement filter: match name case-insensitively, apply level bounds
+    if (options.skill) {
+      clauses.push("LOWER(r.skill) = LOWER(?)");
+      params.push(options.skill);
+    }
+    if (options.minSkillLevel !== undefined) {
+      clauses.push("r.skill_level >= ?");
+      params.push(options.minSkillLevel);
+    }
+    if (options.maxSkillLevel !== undefined) {
+      clauses.push("r.skill_level <= ?");
+      params.push(options.maxSkillLevel);
+    }
+
+    // Ref filters: expand a bare "Nails" to also try the "Base.Nails" item
+    // form and the "base:nails" tag form so callers don't need to guess.
+    const refCandidates = (raw: string): string[] => {
+      const trimmed = raw.trim();
+      const out = [trimmed];
+      if (trimmed && !trimmed.startsWith("Base.") && !trimmed.includes(":")) {
+        out.push(`Base.${trimmed}`, `base:${trimmed.toLowerCase()}`);
+      }
+      return out;
+    };
+
+    if (options.ingredient) {
+      const cands = refCandidates(options.ingredient);
+      clauses.push(
+        `EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.recipe_id = r.id AND ri.role = 'ingredient' AND ri.ref IN (${cands.map(() => "?").join(",")}))`,
+      );
+      params.push(...cands);
+    }
+    if (options.tool) {
+      const cands = refCandidates(options.tool);
+      clauses.push(
+        `EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.recipe_id = r.id AND ri.role = 'tool' AND ri.ref IN (${cands.map(() => "?").join(",")}))`,
+      );
+      params.push(...cands);
+    }
+    if (options.result) {
+      const cands = refCandidates(options.result);
+      clauses.push(
+        `EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.recipe_id = r.id AND ri.role = 'output' AND ri.ref IN (${cands.map(() => "?").join(",")}))`,
+      );
+      params.push(...cands);
+    }
+
+    const limit = options.limit ?? 20;
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT r.id, r.name, r.module, r.category, r.time, r.skill, r.skill_level,
+                r.result, r.result_count, r.properties
+         FROM recipes r
+         ${where}
+         ORDER BY r.name ASC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as unknown as Array<{
+      id: string;
+      name: string;
+      module: string;
+      category: string | null;
+      time: number | null;
+      skill: string | null;
+      skill_level: number | null;
+      result: string | null;
+      result_count: number | null;
+      properties: string | null;
+    }>;
+
+    if (rows.length === 0) return [];
+
+    // Batch-load all ingredients for the matched recipes in one IN query.
+    const recipeIds = rows.map((r) => r.id);
+    const placeholders = recipeIds.map(() => "?").join(",");
+    const ingRows = this.db
+      .prepare(
+        `SELECT recipe_id, ref, ref_type, count, role
+         FROM recipe_ingredients
+         WHERE recipe_id IN (${placeholders})
+         ORDER BY sort_order ASC`,
+      )
+      .all(...recipeIds) as unknown as Array<{
+      recipe_id: string;
+      ref: string;
+      ref_type: string;
+      count: number;
+      role: string;
+    }>;
+    const byRecipe = new Map<string, RecipeSearchResult["ingredients"]>();
+    for (const ing of ingRows) {
+      const arr = byRecipe.get(ing.recipe_id) ?? [];
+      arr.push({
+        ref: ing.ref,
+        refType: ing.ref_type as RecipeRefType,
+        count: ing.count,
+        role: ing.role as RecipeIngredientRole,
+      });
+      byRecipe.set(ing.recipe_id, arr);
+    }
+
+    return rows.map((r) => {
+      const result: RecipeSearchResult = {
+        id: r.id,
+        name: r.name,
+        module: r.module,
+        ingredients: byRecipe.get(r.id) ?? [],
+        properties: JSON.parse(r.properties ?? "{}"),
+      };
+      // Built conditionally: exactOptionalPropertyTypes forbids assigning
+      // undefined to an optional property.
+      if (r.category !== null) result.category = r.category;
+      if (r.time !== null) result.time = r.time;
+      if (r.skill !== null) result.skill = r.skill;
+      if (r.skill_level !== null) result.skillLevel = r.skill_level;
+      if (r.result !== null) result.result = r.result;
+      if (r.result_count !== null) result.resultCount = r.result_count;
+      return result;
+    });
   }
 
   async searchContent(
@@ -443,7 +809,7 @@ export class DatabaseManager {
                items.category, items.properties, items.raw_content, items.file_path,
                items.tags, items.metal_value, items.weight, items.condition_max,
                items.attachment_type, items.run_speed_modifier, items.hunger_change,
-               items.thirst_change, items_fts.rank
+               items.thirst_change, items.icon, items.calories, items_fts.rank
         FROM items_fts
         JOIN items ON items.rowid = items_fts.rowid
         WHERE items_fts MATCH ?
@@ -496,6 +862,27 @@ export class DatabaseManager {
       params.push(options.attachmentType);
     }
 
+    // Add weight bounds filter (fully qualified like every filter below — the
+    // FTS join makes bare column names ambiguous, freebuff deeper indexing)
+    if (options.minWeight !== undefined) {
+      sql += " AND items.weight >= ?";
+      params.push(options.minWeight);
+    }
+    if (options.maxWeight !== undefined) {
+      sql += " AND items.weight <= ?";
+      params.push(options.maxWeight);
+    }
+
+    // Add calories bounds filter (e.g. "food over 500 calories")
+    if (options.minCalories !== undefined) {
+      sql += " AND items.calories >= ?";
+      params.push(options.minCalories);
+    }
+    if (options.maxCalories !== undefined) {
+      sql += " AND items.calories <= ?";
+      params.push(options.maxCalories);
+    }
+
     // Add ordering and limit
     // FTS5 bm25 rank is NEGATIVE for matches (more negative = more relevant),
     // so ASC puts best matches first; DESC would invert it (audit finding).
@@ -537,6 +924,8 @@ export class DatabaseManager {
       item.run_speed_modifier = row.run_speed_modifier;
     if (row.hunger_change !== null) item.hunger_change = row.hunger_change;
     if (row.thirst_change !== null) item.thirst_change = row.thirst_change;
+    if (row.icon !== null) item.icon = row.icon;
+    if (row.calories !== null) item.calories = row.calories;
     return item;
   }
 
@@ -914,6 +1303,8 @@ export class DatabaseManager {
     // FK is enforced (freebuff M6): children must be deleted before parents,
     // otherwise DELETE FROM items throws FOREIGN KEY constraint failed.
     this.db.exec('DELETE FROM "references"');
+    this.db.exec("DELETE FROM recipe_ingredients");
+    this.db.exec("DELETE FROM recipes");
     this.db.exec("DELETE FROM mods");
     this.db.exec("DELETE FROM items");
   }

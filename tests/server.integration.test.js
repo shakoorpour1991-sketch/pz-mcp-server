@@ -127,6 +127,7 @@ function createClient(cwd) {
 
 const TOOLS = [
   'search_vanilla',
+  'search_recipes',
   'generate_script',
   'validate_script',
   'check_references',
@@ -181,7 +182,7 @@ describe('pz-mcp-server integration', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('tools/list exposes all 16 MCP tools', async () => {
+  test('tools/list exposes all 17 MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());
@@ -245,6 +246,47 @@ describe('pz-mcp-server integration', () => {
     // but the item row must rank first (name-column match beats a property).
     assert.ok(result.structuredContent.count >= 1);
     assert.equal(result.structuredContent.results[0].id, 'TestSword');
+  });
+
+  test('search_recipes finds fixture recipes by ingredient and result', async () => {
+    // The fixture game script has `recipe TestSwordRecipe { Result: TestSword=1, Water=2, }`
+    const byIngredient = await client.call('tools/call', {
+      name: 'search_recipes',
+      arguments: { ingredient: 'Water' },
+    });
+    const text = byIngredient.content[0].text;
+    assert.ok(text.includes('TestSwordRecipe'));
+    assert.ok(text.includes('Ingredients: 2x Water'));
+    assert.ok(text.includes('Results: 1x TestSword'));
+    assert.equal(byIngredient.structuredContent.recipes[0].result, 'TestSword');
+
+    const byResult = await client.call('tools/call', {
+      name: 'search_recipes',
+      arguments: { result: 'TestSword' },
+    });
+    assert.ok(byResult.content[0].text.includes('TestSwordRecipe'));
+
+    const none = await client.call('tools/call', {
+      name: 'search_recipes',
+      arguments: { ingredient: 'NoSuchItem', skill: 'Carpentry', minSkillLevel: 4 },
+    });
+    assert.ok(none.content[0].text.includes('Found 0 recipes'));
+    assert.equal(none.structuredContent.count, 0);
+  });
+
+  test('search_vanilla weight and calories filters work', async () => {
+    // Fixture TestSword has Weight = 2; TestHelmet has no Weight.
+    const heavy = await client.call('tools/call', {
+      name: 'search_vanilla',
+      arguments: { query: '', minWeight: 1.5, limit: 50 },
+    });
+    assert.ok(heavy.structuredContent.results.some((r) => r.id === 'TestSword'));
+
+    const light = await client.call('tools/call', {
+      name: 'search_vanilla',
+      arguments: { query: '', maxWeight: 1, limit: 50 },
+    });
+    assert.ok(!light.structuredContent.results.some((r) => r.id === 'TestSword'));
   });
 
   test('search_vanilla empty query lists items without crashing', async () => {

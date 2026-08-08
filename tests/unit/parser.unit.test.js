@@ -347,6 +347,8 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
   let tmpDir;
   let inserted;
   let refs;
+  let recipes;
+  let ingredients;
   let dbStub;
   let parser;
 
@@ -354,9 +356,17 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-mcp-m1-'));
     inserted = [];
     refs = [];
+    recipes = [];
+    ingredients = [];
     dbStub = {
       insertItems: async (items) => {
         inserted.push(...items);
+      },
+      insertRecipes: async (recipeList) => {
+        recipes.push(...recipeList);
+      },
+      insertRecipeIngredients: async (ingList) => {
+        ingredients.push(...ingList);
       },
       addReference: async (id, ref, type, context) => {
         refs.push({ id, ref, type, context });
@@ -479,6 +489,165 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
     assert.notEqual(item, undefined);
     assert.equal(item.properties.module, 'Base.Something');
     assert.equal(item.properties.Weight, 2);
+  });
+});
+
+// ===========================================================================
+// Deeper indexing: structured recipe records (freebuff deeper indexing)
+// ===========================================================================
+
+describe('Structured recipe records (deeper indexing)', () => {
+  let tmpDir;
+  let inserted;
+  let recipes;
+  let ingredients;
+  let dbStub;
+  let parser;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-mcp-recipe-'));
+    inserted = [];
+    recipes = [];
+    ingredients = [];
+    dbStub = {
+      insertItems: async (items) => {
+        inserted.push(...items);
+      },
+      insertRecipes: async (recipeList) => {
+        recipes.push(...recipeList);
+      },
+      insertRecipeIngredients: async (ingList) => {
+        ingredients.push(...ingList);
+      },
+      addReference: async () => {},
+      transaction: async (fn) => {
+        await fn();
+      },
+      getStats: async () => ({ total: 0 }),
+      clearDatabase: async () => {},
+    };
+    parser = new ProjectZomboidParser(dbStub);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const writeScript = (content) => {
+    const fullPath = path.join(tmpDir, 'media', 'scripts', 'test.txt');
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, 'utf-8');
+  };
+
+  test('B42 craftRecipe: category/time/skill/result + ingredient/tool/output rows', async () => {
+    writeScript([
+      'module Base',
+      '{',
+      '    craftRecipe Build_Nail_Box',
+      '    {',
+      '        category = Carpentry,',
+      '        time = 120,',
+      '        SkillRequired = Woodwork:4,',
+      '        inputs',
+      '        {',
+      '            item 4 [Base.Plank] flags[Prop2],',
+      '            item 6 [Base.Nails],',
+      '            item 1 tags[base:saw;base:smallsaw] mode:keep flags[MayDegradeLight],',
+      '        }',
+      '        outputs',
+      '        {',
+      '            item 1 Base.NailBox,',
+      '        }',
+      '    }',
+      '}',
+    ].join('\n'));
+
+    const results = await parser.parseModDirectory(tmpDir);
+    assert.deepEqual(results.errors, []);
+
+    // Recipe mirror row: category, time, skill, result
+    const recipe = recipes.find((r) => r.id === 'Build_Nail_Box');
+    assert.notEqual(recipe, undefined);
+    assert.equal(recipe.category, 'Carpentry');
+    assert.equal(recipe.time, 120);
+    assert.equal(recipe.skill, 'Woodwork');
+    assert.equal(recipe.skillLevel, 4);
+    assert.equal(recipe.result, 'Base.NailBox');
+    assert.equal(recipe.resultCount, 1);
+
+    // Ingredients: brackets expand each alternative into its own row
+    const plank = ingredients.filter(
+      (i) => i.recipeId === 'Build_Nail_Box' && i.ref === 'Base.Plank'
+    );
+    assert.equal(plank.length, 1);
+    assert.equal(plank[0].count, 4);
+    assert.equal(plank[0].role, 'ingredient');
+
+    const nails = ingredients.find(
+      (i) => i.recipeId === 'Build_Nail_Box' && i.ref === 'Base.Nails'
+    );
+    assert.notEqual(nails, undefined);
+    assert.equal(nails.count, 6);
+    assert.equal(nails.role, 'ingredient');
+
+    // Tools: mode:keep tag lines become tool rows, one per tag
+    const saw = ingredients.find(
+      (i) => i.recipeId === 'Build_Nail_Box' && i.ref === 'base:saw'
+    );
+    assert.notEqual(saw, undefined);
+    assert.equal(saw.refType, 'tag');
+    assert.equal(saw.role, 'tool');
+    const smallSaw = ingredients.find(
+      (i) => i.recipeId === 'Build_Nail_Box' && i.ref === 'base:smallsaw'
+    );
+    assert.notEqual(smallSaw, undefined);
+    assert.equal(smallSaw.role, 'tool');
+
+    // Outputs
+    const output = ingredients.find(
+      (i) => i.recipeId === 'Build_Nail_Box' && i.role === 'output'
+    );
+    assert.notEqual(output, undefined);
+    assert.equal(output.ref, 'Base.NailBox');
+  });
+
+  test('legacy B41 recipe: keep tools, =count ingredients, Result property', async () => {
+    writeScript([
+      'module Base',
+      '{',
+      '    recipe Make LegacyPlank',
+      '    {',
+      '        Base.Log=4,',
+      '        keep [Base.Saw],',
+      '        Result:Base.LegacyPlank=2,',
+      '        Time:150.0,',
+      '        Category:Carpentry,',
+      '    }',
+      '}',
+    ].join('\n'));
+
+    const results = await parser.parseModDirectory(tmpDir);
+    assert.deepEqual(results.errors, []);
+
+    const found = recipes.find((r) => r.name === 'Make LegacyPlank');
+    assert.notEqual(found, undefined);
+    assert.equal(found.result, 'Base.LegacyPlank');
+    assert.equal(found.resultCount, 2);
+    assert.equal(found.time, 150);
+    assert.equal(found.category, 'Carpentry');
+
+    const log = ingredients.find(
+      (i) => i.recipeId === found.id && i.ref === 'Base.Log'
+    );
+    assert.notEqual(log, undefined);
+    assert.equal(log.count, 4);
+    assert.equal(log.role, 'ingredient');
+
+    const saw = ingredients.find(
+      (i) => i.recipeId === found.id && i.ref === 'Base.Saw'
+    );
+    assert.notEqual(saw, undefined);
+    assert.equal(saw.role, 'tool');
   });
 });
 
