@@ -618,7 +618,7 @@ function catForTool(name){ const c = TOOL_CATS.find(x => x.match.includes(name))
 const TOOL_GUIDES = {
   search_vanilla: {
     what:'Search the real Project Zomboid database — items, recipes, sounds and vehicles.',
-    how:'Type a keyword like <b>axe</b> or <b>canned</b>, press Run, and browse the results. Add filters (type, category, weight, calories) to narrow things down.',
+    how:'<b>query</b> is required — type a keyword like <b>axe</b> or <b>canned</b> and press Run. Everything else is optional: filter by <b>type</b> (item, recipe, sound, …), <b>category</b>, <b>tags</b>, <b>metalValueMin/Max</b>, <b>attachmentType</b>, <b>minWeight/maxWeight</b>, <b>minCalories/maxCalories</b>, or set <b>limit</b> for more/fewer results.',
     ex:'query: "axe" · limit: 10',
   },
   search_recipes: {
@@ -1083,22 +1083,195 @@ const EXAMPLE_ACTIONS = [
   { label:'Check references', tool:'check_references', args:EXAMPLES.check_references },
   { label:'List KB topics', tool:'list_knowledge_topics', args:{} },
 ];
-function fieldsForTool(tool){
+/* The MCP server serializes raw zod schemas (not JSON Schema), and zod only
+ * fills its `_cached.shape` lazily after a tool is first parsed. So the deck
+ * normalizes fields from (1) proper `properties` if present, (2) the zod
+ * `_cached.shape`, or (3) a static mirror of the real schemas in src/index.ts.
+ */
+const BLOCK_TYPES = ['item','recipe','evolvedrecipe','fixing','sound','vehicle'];
+const SEARCH_TYPES = BLOCK_TYPES.concat(['all']);
+const SCHEMA_FALLBACK = {
+  search_vanilla: { required:['query'], properties:{
+    query:{ type:'string', maxLength:1000, description:'Search query for vanilla game content' },
+    type:{ type:'string', enum:SEARCH_TYPES, description:'Filter by content type' },
+    category:{ type:'string', maxLength:256, description:'Filter by item category' },
+    tags:{ type:'string', maxLength:256, description:'Filter by tags (comma-separated, matches if ANY tag present)' },
+    metalValueMin:{ type:'number', description:'Minimum metal value' },
+    metalValueMax:{ type:'number', description:'Maximum metal value' },
+    attachmentType:{ type:'string', maxLength:256, description:'Filter by attachment type' },
+    minWeight:{ type:'number', minimum:0, description:'Minimum Weight (kg)' },
+    maxWeight:{ type:'number', minimum:0, description:'Maximum Weight (kg)' },
+    minCalories:{ type:'number', minimum:0, description:'Minimum Calories (food items)' },
+    maxCalories:{ type:'number', minimum:0, description:'Maximum Calories (food items)' },
+    limit:{ type:'number', minimum:1, maximum:100, default:20, description:'Maximum number of results' },
+  }},
+  search_recipes: { required:[], properties:{
+    query:{ type:'string', maxLength:1000, description:'Free-text search on recipe name or id' },
+    category:{ type:'string', maxLength:256, description:'Filter by recipe category (e.g. Carpentry, Cooking, Repair)' },
+    skill:{ type:'string', maxLength:256, description:'Filter by required skill (e.g. Woodwork, Blacksmith, Carpentry)' },
+    minSkillLevel:{ type:'number', minimum:0, description:'Minimum required skill level' },
+    maxSkillLevel:{ type:'number', minimum:0, description:'Maximum required skill level' },
+    ingredient:{ type:'string', maxLength:256, description:'Recipes using this item or tag as an ingredient (accepts Base.Nails, Nails, or base:nails)' },
+    tool:{ type:'string', maxLength:256, description:'Recipes requiring this item or tag as a tool (mode:keep input)' },
+    result:{ type:'string', maxLength:256, description:'Recipes producing this item' },
+    limit:{ type:'number', minimum:1, maximum:100, default:20, description:'Maximum number of results' },
+  }},
+  generate_script: { required:['type','name','properties'], properties:{
+    type:{ type:'string', enum:BLOCK_TYPES, description:'Type of script to generate' },
+    name:{ type:'string', maxLength:256, description:'Name of the item/recipe/etc to generate' },
+    properties:{ type:'record', description:'Properties and specifications for the generated content' },
+    module:{ type:'string', maxLength:256, default:'Base', description:'Module name to use' },
+    balance:{ type:'string', enum:['vanilla','powerful','weak','custom'], description:'Balance mode: vanilla (default), powerful, weak, or custom (no adjustments)' },
+    includeComments:{ type:'boolean', description:'Include explanatory comments in the generated script' },
+  }},
+  validate_script: { required:['content'], properties:{
+    content:{ type:'string', maxLength:1000000, description:'Script content to validate' },
+    type:{ type:'string', enum:BLOCK_TYPES, description:'Expected script type' },
+    strict:{ type:'boolean', default:false, description:'Enable strict validation mode' },
+  }},
+  check_references: { required:['references'], properties:{
+    references:{ type:'array', description:'List of references to validate' },
+    type:{ type:'string', enum:['item','sound','sprite','all'], default:'all', description:'Type of references to check' },
+  }},
+  analyze_mod: { required:['modPath'], properties:{
+    modPath:{ type:'string', maxLength:4096, description:'Path to mod directory' },
+    checkBalance:{ type:'boolean', default:true, description:'Perform balance analysis' },
+    checkCompatibility:{ type:'boolean', default:true, description:'Check compatibility with vanilla' },
+  }},
+  parse_game_files: { required:[], properties:{
+    gamePath:{ type:'string', maxLength:4096, description:'Path to Project Zomboid installation (auto-detected if not provided)' },
+    forceReparse:{ type:'boolean', default:false, description:'Force re-parsing even if data exists' },
+  }},
+  index_knowledge_base: { required:[], properties:{
+    path:{ type:'string', maxLength:4096, description:'Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)' },
+    overwrite:{ type:'boolean', default:true, description:'Full re-index. Set to false for an mtime-based incremental sync (unchanged docs skipped, changed docs updated, deleted docs pruned)' },
+  }},
+  analyze_recipe_chain: { required:['seed'], properties:{
+    seed:{ type:'string', maxLength:1000, description:'Item or recipe id to start the chain from' },
+    direction:{ type:'string', enum:['upstream','downstream','both'], default:'both', description:'Which edges to follow: what makes it (upstream), what it makes / consumes it (downstream), or both' },
+    maxDepth:{ type:'number', minimum:1, maximum:10, default:3, description:'Maximum chain depth to traverse' },
+  }},
+  detect_recipe_conflicts: { required:[], properties:{
+    limit:{ type:'number', minimum:1, maximum:200, default:50, description:'Maximum number of conflicts to report' },
+  }},
+  export_mod_script: { required:['modPath','type','name'], properties:{
+    modPath:{ type:'string', maxLength:4096, description:'Path to the mod directory to write the script into' },
+    type:{ type:'string', enum:BLOCK_TYPES, description:'Type of script to generate' },
+    name:{ type:'string', maxLength:256, description:'Name of the item/recipe/etc (also used for the output filename)' },
+    properties:{ type:'record', default:{}, description:'Properties and specifications for the generated content' },
+    module:{ type:'string', maxLength:256, default:'Base', description:'Module name to use' },
+    balance:{ type:'string', enum:['vanilla','powerful','weak','custom'], description:'Balance mode: vanilla (default), powerful, weak, or custom (no adjustments)' },
+    includeComments:{ type:'boolean', description:'Include explanatory comments in the generated script' },
+    dryRun:{ type:'boolean', default:true, description:'Preview the target file only — no disk changes. Set to false to actually write' },
+  }},
+  search_knowledge_base: { required:['query'], properties:{
+    query:{ type:'string', maxLength:1000, description:'Search query for knowledge base content' },
+    topic:{ type:'string', maxLength:256, description:'Filter by exact topic (filename without .md)' },
+    limit:{ type:'number', minimum:1, maximum:100, default:10, description:'Maximum number of results' },
+  }},
+  workshop_search: { required:['query'], properties:{
+    query:{ type:'string', minLength:1, maxLength:120, description:'Workshop search text (browse the Project Zomboid workshop)' },
+    limit:{ type:'number', minimum:1, maximum:100, default:20, description:'Maximum number of results (default 20)' },
+  }},
+  workshop_get_details: { required:['id'], properties:{
+    id:{ type:'string', minLength:1, maxLength:300, description:'Workshop item id or URL, e.g. 2696145877 or https://steamcommunity.com/sharedfiles/filedetails/?id=2696145877' },
+    forceRefresh:{ type:'boolean', default:false, description:'Bypass the 24h metadata cache and re-fetch from Steam' },
+  }},
+  workshop_download: { required:['id'], properties:{
+    id:{ type:'string', minLength:1, maxLength:300, description:'Workshop item id or URL to download via SteamCMD (verified to be a Project Zomboid item first)' },
+  }},
+  workshop_analyze: { required:['id'], properties:{
+    id:{ type:'string', minLength:1, maxLength:300, description:'Workshop item id or URL — downloads it (SteamCMD), parses its scripts into the DB, and runs the full analysis suite, returning a Mod Report' },
+  }},
+  list_knowledge_topics: { required:[], properties:{} },
+};
+
+function fieldKindFor(s, k){
+  if (s.enum) return 'select';
+  if (s.type === 'boolean') return 'bool';
+  if (s.type === 'number' || s.type === 'integer') return 'num';
+  if (s.type === 'array') return 'list';
+  if (s.type === 'record' || s.type === 'object' || s.additionalProperties) return 'json';
+  if (k === 'content') return 'textarea';
+  return 'text';
+}
+function normField(k, s, required){
+  s = s || {};
+  const norm = {
+    type: s.type || 'string',
+    description: s.description || '',
+    enum: s.enum || undefined,
+    default: s.default,
+    minimum: s.minimum,
+    maximum: s.maximum,
+  };
+  return { k, kind: fieldKindFor(norm, k), s: norm, required: !!required };
+}
+function normZodField(k, z){
+  if (!z || !z._def) return { k, kind: 'text', s: { type:'string', description:'' }, required:false };
+  let def = z._def;
+  let required = true;
+  let description = def.description || '';
+  let guard = 0;
+  while (def && guard++ < 6 && (def.typeName === 'ZodOptional' || def.typeName === 'ZodDefault' || def.typeName === 'ZodNullable')){
+    required = false;
+    if (!description) description = def.description || '';
+    def = def.innerType && def.innerType._def ? def.innerType._def : null;
+    if (def && !description) description = def.description || '';
+  }
+  const typeName = def ? def.typeName : 'ZodUnknown';
+  const s = { type:'string', description };
+  if (typeName === 'ZodString'){
+    s.type = 'string';
+    (def.checks || []).forEach(c => {
+      if (c.kind === 'min') s.minLength = c.value;
+      else if (c.kind === 'max') s.maxLength = c.value;
+    });
+  } else if (typeName === 'ZodNumber'){
+    s.type = 'number';
+    (def.checks || []).forEach(c => {
+      if (c.kind === 'min') s.minimum = c.value;
+      else if (c.kind === 'max') s.maximum = c.value;
+    });
+  } else if (typeName === 'ZodBoolean'){
+    s.type = 'boolean';
+  } else if (typeName === 'ZodEnum'){
+    s.type = 'string';
+    const v = def.values;
+    s.enum = Array.isArray(v) ? v.slice() : (v && Array.isArray(v.values) ? v.values.slice() : undefined);
+  } else if (typeName === 'ZodArray'){
+    s.type = 'array';
+  } else if (typeName === 'ZodRecord'){
+    s.type = 'record';
+  } else if (typeName === 'ZodObject'){
+    s.type = 'object';
+  }
+  return { k, kind: fieldKindFor(s, k), s, required };
+}
+function getToolFields(tool){
   const schema = tool.inputSchema || {};
-  const props = schema.properties || {};
-  const req = new Set(schema.required || []);
-  return Object.entries(props).map(([k, s]) => {
-    let kind = 'text';
-    if (s.enum) kind = 'select';
-    else if (s.type === 'boolean') kind = 'bool';
-    else if (s.type === 'number' || s.type === 'integer') kind = 'num';
-    else if (s.type === 'array') kind = 'list';
-    else if (s.type === 'object' || s.additionalProperties) kind = 'json';
-    else if (k === 'content') kind = 'textarea';
+  const props = schema.properties;
+  if (props && typeof props === 'object' && !Array.isArray(props) && Object.keys(props).length){
+    const req = new Set(schema.required || []);
+    return Object.entries(props).map(([k, s]) => normField(k, s, req.has(k)));
+  }
+  const shape = schema._cached && schema._cached.shape;
+  if (shape && typeof shape === 'object' && Object.keys(shape).length){
+    return Object.entries(shape).map(([k, z]) => normZodField(k, z));
+  }
+  const fb = SCHEMA_FALLBACK[tool.name];
+  if (fb){
+    const req = new Set(fb.required || []);
+    return Object.entries(fb.properties).map(([k, s]) => normField(k, s, req.has(k)));
+  }
+  return [];
+}
+function fieldsForTool(tool){
+  return getToolFields(tool).map(f => {
     const saved = S.pg.values[tool.name] || {};
-    const hasSaved = Object.prototype.hasOwnProperty.call(saved, k);
-    const def = hasSaved ? saved[k] : ((EXAMPLES[tool.name] || {})[k] ?? s.default);
-    return { k, kind, s, required: req.has(k), def, hasSaved };
+    const hasSaved = Object.prototype.hasOwnProperty.call(saved, f.k);
+    const def = hasSaved ? saved[f.k] : ((EXAMPLES[tool.name] || {})[f.k] ?? f.s.default);
+    return { k: f.k, kind: f.kind, s: f.s, required: f.required, def, hasSaved };
   });
 }
 function fieldHTML(tool, f){
@@ -1113,8 +1286,9 @@ function fieldHTML(tool, f){
       '<button class="switch" id="'+fid+'" role="switch" aria-checked="'+(f.def===true)+'" aria-label="'+esc(f.k)+'"><span class="trk"></span><span class="knb"></span></button></div>';
   }
   if (f.kind === 'select'){
+    const opts = (f.required ? [] : ['']).concat(f.s.enum || []);
     return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><select class="field" id="'+fid+'">' +
-      f.s.enum.map(o => '<option value="'+esc(o)+'"'+(o===f.def?' selected':'')+'>'+esc(o)+'</option>').join('') + '</select>'+hint+errEl+'</div>';
+      opts.map(o => '<option value="'+esc(o)+'"'+(o===f.def?' selected':'')+'>'+(o===''?'(any)':esc(o))+'</option>').join('') + '</select>'+hint+errEl+'</div>';
   }
   if (f.kind === 'num'){
     const val = f.def == null || f.def === '' ? '' : f.def;
@@ -1149,7 +1323,7 @@ function toolCardHTML(tool){
       '<span class="tool-ic">'+(ICONS[TOOL_ICONS[tool.name]] || ICONS.spark)+'</span>' +
       '<span style="min-width:0;flex:1"><span class="tool-name">'+esc(tool.name)+'</span>' +
       '<span class="tool-desc">'+esc(tool.description || '')+'</span></span>' +
-      '<span class="badge b-dim" style="flex:none">'+Object.keys(tool.inputSchema?.properties || {}).length+' params</span>' +
+      '<span class="badge b-dim" style="flex:none">'+getToolFields(tool).length+' params</span>' +
       '<span class="tool-chv">'+ICONS.chev+'</span>' +
     '</button>' +
     '<div class="tool-panel"'+(open?' style="height:auto;opacity:1"':'')+'>' +
