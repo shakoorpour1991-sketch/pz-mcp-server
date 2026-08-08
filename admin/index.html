@@ -4,41 +4,43 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0B0B0E" />
+<meta name="description" content="Project Zomboid Mod Dev MCP Control Deck - Live server monitoring and tool playground" />
 <title>pz-mcp-server · Control Deck</title>
-<link rel="stylesheet" href="vendor/fonts/inter/400.css" />
-<link rel="stylesheet" href="vendor/fonts/inter/500.css" />
-<link rel="stylesheet" href="vendor/fonts/inter/600.css" />
-<link rel="stylesheet" href="vendor/fonts/inter/700.css" />
-<link rel="stylesheet" href="vendor/fonts/inter/800.css" />
-<link rel="stylesheet" href="vendor/fonts/jetbrains-mono/400.css" />
-<link rel="stylesheet" href="vendor/fonts/jetbrains-mono/500.css" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322D3EE' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 17l6-5-6-5'/%3E%3Cpath d='M12 19h8'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <script src="vendor/tailwind.js"></script>
 <style>
-/* ============ pz-mcp-server · Control Deck — final real-MCP build ============ */
+/* ============ pz-mcp-server · Control Deck — Production v2 ============ */
 :root{
   --bg:#0B0B0E; --text:#F4F5F8; --muted:#9BA1AE; --faint:#6E7480;
   --stroke:rgba(255,255,255,.10); --stroke-soft:rgba(255,255,255,.06);
   --cyan:#22D3EE; --violet:#A78BFA; --emerald:#34D399; --amber:#FBBF24; --rose:#FB7185;
   --accent:#22D3EE; --accent-rgb:34,211,238;
+  --font-sans:'Inter',system-ui,-apple-system,sans-serif;
   --font-mono:'JetBrains Mono',ui-monospace,monospace;
-  --spring:cubic-bezier(.34,1.56,.64,1); --easeout:cubic-bezier(.22,1,.36,1);
-  --tb-h:74px;
+  --spring:cubic-bezier(.34,1.56,.64,1); --easeout:cubic-bezier(.22,1,.36,1); --easein:cubic-bezier(.4,0,.2,1);
+  --tb-h:74px; --header-h:72px;
+  --shadow-sm:0 2px 8px rgba(0,0,0,.24);
+  --shadow-md:0 8px 24px rgba(0,0,0,.32);
+  --shadow-lg:0 16px 48px rgba(0,0,0,.42);
+  --radius-sm:10px; --radius-md:14px; --radius-lg:22px; --radius-xl:28px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition:none!important}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.5;
-  -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;min-height:100vh}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain;min-height:100vh}
 ::selection{background:rgba(var(--accent-rgb),.35)}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
 input,select,textarea{font:inherit;color:inherit}
-:focus{outline:none}
 :focus-visible{outline:2px solid rgba(var(--accent-rgb),.95);outline-offset:2px;border-radius:10px}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:99px;border:2px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-track{background:transparent}
 .mono{font-family:var(--font-mono)}
 .num{font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 #bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:
   radial-gradient(120% 90% at 80% -10%,#101024 0%,transparent 55%),
@@ -58,8 +60,8 @@ input,select,textarea{font:inherit;color:inherit}
 @keyframes drift3{to{transform:translate3d(4vmax,-5vmax,0) scale(1.06)}}
 
 .glass{background:linear-gradient(160deg,rgba(255,255,255,.085),rgba(255,255,255,.028));border:1px solid var(--stroke);
-  -webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);border-radius:22px;
-  box-shadow:0 12px 40px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.07)}
+  -webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg),inset 0 1px 0 rgba(255,255,255,.07)}
 .card{position:relative;transition:transform .35s var(--spring),border-color .3s var(--easeout)}
 .card::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;
   background:radial-gradient(120% 120% at 50% -10%,rgba(var(--accent-rgb),.14),transparent 55%);transition:opacity .35s var(--easeout)}
@@ -67,7 +69,7 @@ input,select,textarea{font:inherit;color:inherit}
 .card:hover::before{opacity:1}
 
 header#top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:12px clamp(14px,4vw,36px);
-  background:rgba(11,11,14,.55);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);border-bottom:1px solid var(--stroke-soft)}
+  background:rgba(11,11,14,.65);-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);border-bottom:1px solid var(--stroke-soft)}
 .logo-dot{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;flex:none;
   background:linear-gradient(135deg,rgba(var(--accent-rgb),.9),rgba(167,139,250,.85));color:#051014;box-shadow:0 4px 18px rgba(var(--accent-rgb),.35)}
 .logo-dot svg{width:20px;height:20px}
