@@ -208,6 +208,236 @@ function broadcast(event, data) {
   for (const res of sseClients) { try { res.write(payload); } catch { /* drop */ } }
 }
 
+/* ================= zod → JSON Schema normalization =================
+ * The MCP server ships raw zod instances as `inputSchema` (the SDK only
+ * converts zod for registerTool, not for a hand-rolled tools/list). Zod
+ * serializes to `{ _def, ~standard, _cached }`; field names only survive in
+ * `_cached.shape`, which zod populates lazily after the first parse. So every
+ * tools/list reply is normalized here to real JSON Schema so the dashboard
+ * always receives `{ type: 'object', properties, required }`:
+ *   1. keep a proper `properties` if the server ever sends one
+ *   2. else walk `_cached.shape` (live truth for tools already called)
+ *   3. else mirror the real schemas from src/index.ts
+ */
+
+const BLOCK_TYPES = ['item', 'recipe', 'evolvedrecipe', 'fixing', 'sound', 'vehicle'];
+const SEARCH_TYPES = BLOCK_TYPES.concat(['all']);
+const SCHEMA_MIRROR = {
+  search_vanilla: {
+    required: ['query'],
+    properties: {
+      query: { type: 'string', maxLength: 1000, description: 'Search query for vanilla game content' },
+      type: { type: 'string', enum: SEARCH_TYPES, description: 'Filter by content type' },
+      category: { type: 'string', maxLength: 256, description: 'Filter by item category' },
+      tags: { type: 'string', maxLength: 256, description: 'Filter by tags (comma-separated, matches if ANY tag present)' },
+      metalValueMin: { type: 'number', description: 'Minimum metal value' },
+      metalValueMax: { type: 'number', description: 'Maximum metal value' },
+      attachmentType: { type: 'string', maxLength: 256, description: 'Filter by attachment type' },
+      minWeight: { type: 'number', minimum: 0, description: 'Minimum Weight (kg)' },
+      maxWeight: { type: 'number', minimum: 0, description: 'Maximum Weight (kg)' },
+      minCalories: { type: 'number', minimum: 0, description: 'Minimum Calories (food items)' },
+      maxCalories: { type: 'number', minimum: 0, description: 'Maximum Calories (food items)' },
+      limit: { type: 'number', minimum: 1, maximum: 100, default: 20, description: 'Maximum number of results' },
+    },
+  },
+  search_recipes: {
+    required: [],
+    properties: {
+      query: { type: 'string', maxLength: 1000, description: 'Free-text search on recipe name or id' },
+      category: { type: 'string', maxLength: 256, description: 'Filter by recipe category (e.g. Carpentry, Cooking, Repair)' },
+      skill: { type: 'string', maxLength: 256, description: 'Filter by required skill (e.g. Woodwork, Blacksmith, Carpentry)' },
+      minSkillLevel: { type: 'number', minimum: 0, description: 'Minimum required skill level' },
+      maxSkillLevel: { type: 'number', minimum: 0, description: 'Maximum required skill level' },
+      ingredient: { type: 'string', maxLength: 256, description: 'Recipes using this item or tag as an ingredient (accepts Base.Nails, Nails, or base:nails)' },
+      tool: { type: 'string', maxLength: 256, description: 'Recipes requiring this item or tag as a tool (mode:keep input)' },
+      result: { type: 'string', maxLength: 256, description: 'Recipes producing this item' },
+      limit: { type: 'number', minimum: 1, maximum: 100, default: 20, description: 'Maximum number of results' },
+    },
+  },
+  generate_script: {
+    required: ['type', 'name', 'properties'],
+    properties: {
+      type: { type: 'string', enum: BLOCK_TYPES, description: 'Type of script to generate' },
+      name: { type: 'string', maxLength: 256, description: 'Name of the item/recipe/etc to generate' },
+      properties: { type: 'record', description: 'Properties and specifications for the generated content' },
+      module: { type: 'string', maxLength: 256, default: 'Base', description: 'Module name to use' },
+      balance: { type: 'string', enum: ['vanilla', 'powerful', 'weak', 'custom'], description: 'Balance mode: vanilla (default), powerful, weak, or custom (no adjustments)' },
+      includeComments: { type: 'boolean', description: 'Include explanatory comments in the generated script' },
+    },
+  },
+  validate_script: {
+    required: ['content'],
+    properties: {
+      content: { type: 'string', maxLength: 1000000, description: 'Script content to validate' },
+      type: { type: 'string', enum: BLOCK_TYPES, description: 'Expected script type' },
+      strict: { type: 'boolean', default: false, description: 'Enable strict validation mode' },
+    },
+  },
+  check_references: {
+    required: ['references'],
+    properties: {
+      references: { type: 'array', description: 'List of references to validate' },
+      type: { type: 'string', enum: ['item', 'sound', 'sprite', 'all'], default: 'all', description: 'Type of references to check' },
+    },
+  },
+  analyze_mod: {
+    required: ['modPath'],
+    properties: {
+      modPath: { type: 'string', maxLength: 4096, description: 'Path to mod directory' },
+      checkBalance: { type: 'boolean', default: true, description: 'Perform balance analysis' },
+      checkCompatibility: { type: 'boolean', default: true, description: 'Check compatibility with vanilla' },
+    },
+  },
+  parse_game_files: {
+    required: [],
+    properties: {
+      gamePath: { type: 'string', maxLength: 4096, description: 'Path to Project Zomboid installation (auto-detected if not provided)' },
+      forceReparse: { type: 'boolean', default: false, description: 'Force re-parsing even if data exists' },
+    },
+  },
+  index_knowledge_base: {
+    required: [],
+    properties: {
+      path: { type: 'string', maxLength: 4096, description: 'Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)' },
+      overwrite: { type: 'boolean', default: true, description: 'Full re-index. Set to false for an mtime-based incremental sync (unchanged docs skipped, changed docs updated, deleted docs pruned)' },
+    },
+  },
+  analyze_recipe_chain: {
+    required: ['seed'],
+    properties: {
+      seed: { type: 'string', maxLength: 1000, description: 'Item or recipe id to start the chain from' },
+      direction: { type: 'string', enum: ['upstream', 'downstream', 'both'], default: 'both', description: 'Which edges to follow: what makes it (upstream), what it makes / consumes it (downstream), or both' },
+      maxDepth: { type: 'number', minimum: 1, maximum: 10, default: 3, description: 'Maximum chain depth to traverse' },
+    },
+  },
+  detect_recipe_conflicts: {
+    required: [],
+    properties: {
+      limit: { type: 'number', minimum: 1, maximum: 200, default: 50, description: 'Maximum number of conflicts to report' },
+    },
+  },
+  export_mod_script: {
+    required: ['modPath', 'type', 'name'],
+    properties: {
+      modPath: { type: 'string', maxLength: 4096, description: 'Path to the mod directory to write the script into' },
+      type: { type: 'string', enum: BLOCK_TYPES, description: 'Type of script to generate' },
+      name: { type: 'string', maxLength: 256, description: 'Name of the item/recipe/etc (also used for the output filename)' },
+      properties: { type: 'record', default: {}, description: 'Properties and specifications for the generated content' },
+      module: { type: 'string', maxLength: 256, default: 'Base', description: 'Module name to use' },
+      balance: { type: 'string', enum: ['vanilla', 'powerful', 'weak', 'custom'], description: 'Balance mode: vanilla (default), powerful, weak, or custom (no adjustments)' },
+      includeComments: { type: 'boolean', description: 'Include explanatory comments in the generated script' },
+      dryRun: { type: 'boolean', default: true, description: 'Preview the target file only — no disk changes. Set to false to actually write' },
+    },
+  },
+  search_knowledge_base: {
+    required: ['query'],
+    properties: {
+      query: { type: 'string', maxLength: 1000, description: 'Search query for knowledge base content' },
+      topic: { type: 'string', maxLength: 256, description: 'Filter by exact topic (filename without .md)' },
+      limit: { type: 'number', minimum: 1, maximum: 100, default: 10, description: 'Maximum number of results' },
+    },
+  },
+  workshop_search: {
+    required: ['query'],
+    properties: {
+      query: { type: 'string', minLength: 1, maxLength: 120, description: 'Workshop search text (browse the Project Zomboid workshop)' },
+      limit: { type: 'number', minimum: 1, maximum: 100, default: 20, description: 'Maximum number of results (default 20)' },
+    },
+  },
+  workshop_get_details: {
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 300, description: 'Workshop item id or URL, e.g. 2696145877 or https://steamcommunity.com/sharedfiles/filedetails/?id=2696145877' },
+      forceRefresh: { type: 'boolean', default: false, description: 'Bypass the 24h metadata cache and re-fetch from Steam' },
+    },
+  },
+  workshop_download: {
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 300, description: 'Workshop item id or URL to download via SteamCMD (verified to be a Project Zomboid item first)' },
+    },
+  },
+  workshop_analyze: {
+    required: ['id'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 300, description: 'Workshop item id or URL — downloads it (SteamCMD), parses its scripts into the DB, and runs the full analysis suite, returning a Mod Report' },
+    },
+  },
+  list_knowledge_topics: { required: [], properties: {} },
+};
+
+function zodShapeToProp(k, z) {
+  if (!z || !z._def) return { prop: { type: 'string' }, required: false };
+  let def = z._def;
+  let required = true;
+  let description = def.description || '';
+  let guard = 0;
+  while (def && guard++ < 6 && (def.typeName === 'ZodOptional' || def.typeName === 'ZodDefault' || def.typeName === 'ZodNullable')) {
+    required = false;
+    if (!description) description = def.description || '';
+    def = def.innerType && def.innerType._def ? def.innerType._def : null;
+    if (def && !description) description = def.description || '';
+  }
+  const prop = { type: 'string' };
+  if (description) prop.description = description;
+  const typeName = def ? def.typeName : 'ZodUnknown';
+  if (typeName === 'ZodString') {
+    (def.checks || []).forEach(c => {
+      if (c.kind === 'min') prop.minLength = c.value;
+      else if (c.kind === 'max') prop.maxLength = c.value;
+    });
+  } else if (typeName === 'ZodNumber') {
+    prop.type = 'number';
+    (def.checks || []).forEach(c => {
+      if (c.kind === 'min') prop.minimum = c.value;
+      else if (c.kind === 'max') prop.maximum = c.value;
+    });
+  } else if (typeName === 'ZodBoolean') {
+    prop.type = 'boolean';
+  } else if (typeName === 'ZodEnum') {
+    const v = def.values;
+    const vals = Array.isArray(v) ? v.slice() : (v && Array.isArray(v.values) ? v.values.slice() : null);
+    if (vals && vals.length) prop.enum = vals;
+  } else if (typeName === 'ZodArray') {
+    prop.type = 'array';
+  } else if (typeName === 'ZodRecord') {
+    prop.type = 'record';
+  } else if (typeName === 'ZodObject') {
+    prop.type = 'object';
+  }
+  return { prop, required };
+}
+
+function normalizeInputSchema(tool) {
+  const raw = tool && tool.inputSchema;
+  if (!raw || typeof raw !== 'object') return raw;
+  if (raw.properties && typeof raw.properties === 'object' && Object.keys(raw.properties).length) return raw; // already JSON Schema
+  const shape = raw._cached && raw._cached.shape;
+  if (shape && typeof shape === 'object' && Object.keys(shape).length) {
+    const required = [];
+    const properties = {};
+    for (const [k, z] of Object.entries(shape)) {
+      const entry = zodShapeToProp(k, z);
+      properties[k] = entry.prop;
+      if (entry.required) required.push(k);
+    }
+    return { type: 'object', properties, required };
+  }
+  const mirror = tool.name && SCHEMA_MIRROR[tool.name];
+  if (mirror) return { type: 'object', properties: mirror.properties, required: mirror.required };
+  return raw;
+}
+
+function normalizeToolsReply(reply) {
+  const tools = reply && reply.result && reply.result.tools;
+  if (Array.isArray(tools)) {
+    for (const t of tools) {
+      if (t && t.inputSchema) t.inputSchema = normalizeInputSchema(t);
+    }
+  }
+  return reply;
+}
+
 /* ================= HTTP server ================= */
 function json(res, obj, code = 200) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -255,7 +485,7 @@ const server = http.createServer(async (req, res) => {
       const timeout = LONG_TOOLS.has(msg.params?.name) ? 300000 : 120000;
       try {
         const reply = await sendToServer(msg, timeout);
-        return reply === null ? json(res, { ok: true }, 202) : json(res, reply);
+        return reply === null ? json(res, { ok: true }, 202) : json(res, normalizeToolsReply(reply));
       } catch (e) {
         return json(res, { jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32000, message: String(e.message || e) } }, 502);
       }
