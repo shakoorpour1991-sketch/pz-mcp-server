@@ -22,7 +22,7 @@ Hermes references this file in every task prompt sent to OpenCode for this repo.
 | Purpose | Command |
 |---|---|
 | Compile | `npm run build` |
-| Tests (build + node:test) | `npm test` — 127 tests, 11 suites, must stay green |
+| Tests (build + node:test) | `npm test` — 205 tests, 52 suites, must stay green |
 | Lint | `npm run lint` |
 | Format | `npm run format` |
 | Run server | `npm start` (compiled) / `npm run dev` (tsx) |
@@ -45,7 +45,7 @@ Always run build + tests + lint before declaring a task done. Tests run on Node'
 - **MCP stdio protocol**: stdout is the wire. The pino logger writes **stderr-only (fd 2)** — never print anything to stdout.
 - Game data for `parse_game_files`: Project Zomboid **Build 42.20** install at `D:\Games\ProjectZomboid\`. Path detection: hardcoded Windows paths, WSL paths, or explicit `gamePath` param.
 - Modding knowledge base docs live at `D:\PZ-Modding\Documentation\` (markdown with YAML frontmatter, ~13 research files) — indexed with `index_knowledge_base`.
-- Workspace status (Aug 2026): 127/127 tests green (node:test runner, 11 suites), lint+build clean, `npm audit` 0 vulnerabilities. Open items tracked in `AUDIT_2026-08-06.md` (repo root) and `freebuff_review.md` (repo root, with Fix Log).
+- Workspace status (Aug 2026): 205/205 tests green (node:test runner, 52 suites), lint+build clean, `npm audit` 0 vulnerabilities.
 
 ## Conventions
 
