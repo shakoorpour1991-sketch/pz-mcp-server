@@ -114,8 +114,10 @@ header#top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:
 textarea.field{min-height:88px;resize:vertical;font-family:var(--font-mono);font-size:12.5px;line-height:1.6}
 select.field{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
   background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:36px}
-.f-label{display:block;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px 2px}
-.f-hint{font-size:11px;color:var(--faint);margin:4px 2px 0}
+.f-label{display:block;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px 2px}  .f-hint{font-size:11px;color:var(--faint);margin:4px 2px 0}
+  .field.invalid{border-color:rgba(251,113,133,.6);box-shadow:0 0 0 3px rgba(251,113,133,.14)}
+  .field.invalid:focus{border-color:rgba(251,113,133,.8);box-shadow:0 0 0 3px rgba(251,113,133,.2)}
+  .f-err{font-size:11px;color:#FDA4AF;margin:4px 2px 0;line-height:1.45}
 
 main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(--tb-h) + 48px)}
 .view{animation:viewIn .5s var(--easeout) both}
@@ -186,24 +188,43 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .tool-head{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;min-height:64px;text-align:left;border-radius:22px}
 .tool-ic{width:40px;height:40px;flex:none;border-radius:12px;display:grid;place-items:center;
   background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:rgb(var(--accent-rgb))}
-.tool-ic svg{width:19px;height:19px}
-.tool-name{font-family:var(--font-mono);font-size:13.5px;font-weight:600}
-.tool-desc{font-size:12px;color:var(--muted);margin-top:1px;line-height:1.4}
+.tool-ic svg{width:19px;height:19px}  .tool-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:13.5px;font-weight:600}
+  .tool-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;color:var(--muted);margin-top:1px;line-height:1.4}
 .tool-chv{margin-left:auto;color:var(--faint);transition:transform .35s var(--spring);flex:none}
 .tool-chv svg{width:16px;height:16px;display:block}
 .tool.open .tool-chv{transform:rotate(180deg)}
 .tool-panel{height:0;overflow:hidden;opacity:0}
-.tool-panel-in{padding:14px 16px 16px;border-top:1px solid var(--stroke-soft);display:flex;flex-direction:column;gap:12px}
-.tool-panel-in .frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:480px){.tool-panel-in .frow{grid-template-columns:1fr}}
-.run-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tool-panel-in{padding:14px 16px 16px;border-top:1px solid var(--stroke-soft);display:flex;flex-direction:column;gap:12px}  .tool-panel-in .frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}  .run-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:2px}
+  .ex-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .ex-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:2px}
+  .pg-search{position:relative;margin-bottom:12px}
+  .pg-search .pg-ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--faint);display:grid;place-items:center;pointer-events:none}
+  .pg-search .pg-ic svg{width:16px;height:16px}
+  .pg-search .field{padding-left:40px;padding-right:44px}
+  .pg-search .pg-clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:10px}
+  .cat{margin-bottom:14px}
+  .cat-head{width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.045);border:1px solid var(--stroke-soft);text-align:left;transition:background .2s,border-color .2s}
+  .cat-head:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14)}
+  .cat-head .cat-ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:rgb(var(--accent-rgb));flex:none}
+  .cat-head .cat-ic svg{width:15px;height:15px}
+  .cat-name{font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cat-chv{margin-left:auto;color:var(--faint);transition:transform .3s var(--spring);flex:none}
+  .cat-chv svg{width:15px;height:15px;display:block}
+  .cat.open .cat-chv{transform:rotate(180deg)}
+  .cat-body{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+  .cat-body.hidden{display:none}
+  .pg-none{padding:28px 16px;text-align:center;color:var(--faint);font-size:13px;border:1px dashed var(--stroke);border-radius:16px}
+  .pg-none svg{width:18px;height:18px;vertical-align:-4px}
 .spinner{width:16px;height:16px;border-radius:50%;border:2px solid rgba(var(--accent-rgb),.25);border-top-color:rgb(var(--accent-rgb));animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* Result viewer + markdown rendering */
 #resultCard{margin-bottom:16px;overflow:hidden}
-#resultHead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--stroke-soft);flex-wrap:wrap}
-#resultBody{padding:14px 16px;max-height:480px;overflow-y:auto;font-size:13px;line-height:1.7}
+#resultHead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--stroke-soft);flex-wrap:wrap}  #resultBody{padding:14px 16px;max-height:420px;overflow-y:auto;font-size:13px;line-height:1.7}
+  #resultBody.long{max-height:340px;overflow:hidden;position:relative}
+  #resultBody.long::after{content:'';position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(transparent,rgba(11,11,14,.94));pointer-events:none}
+  #resultBody.long.show-all{max-height:none;overflow:visible}
+  #resultBody.long.show-all::after{display:none}
 .md-h{font-weight:700;font-size:13.5px;margin:12px 0 6px}
 .md-h:first-child{margin-top:0}
 .md-p{margin:3px 0}
@@ -217,8 +238,7 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 
 .console{display:flex;flex-direction:column;overflow:hidden}
 .console-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--stroke-soft);flex-wrap:wrap}
-.console-head h3{margin:0;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
-.log-body{height:420px;overflow-y:auto;padding:8px;font-family:var(--font-mono);font-size:12px;scroll-behavior:smooth}
+.console-head h3{margin:0;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}  .log-body{height:380px;overflow-y:auto;padding:8px;font-family:var(--font-mono);font-size:12px;scroll-behavior:smooth}
 @media(max-width:620px){.log-body{height:300px}}
 .log-line{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto 20px;align-items:center;gap:8px;
   min-height:44px;padding:4px 10px;border-radius:12px;cursor:pointer;transition:background .15s,transform .15s;animation:logIn .35s var(--easeout) both}
@@ -234,8 +254,13 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .lg-chv{color:var(--faint);opacity:0;transition:opacity .2s}
 .log-line:hover .lg-chv,.log-line:focus-visible .lg-chv{opacity:1}
 .lg-chv svg{width:14px;height:14px;display:block}
-.log-empty{color:var(--faint);text-align:center;padding:60px 0;font-family:'Inter'}
-.console-foot{padding:9px 16px;border-top:1px solid var(--stroke-soft);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:8px}
+.log-empty{color:var(--faint);text-align:center;padding:60px 0;font-family:'Inter'}  .console-foot{padding:9px 16px;border-top:1px solid var(--stroke-soft);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:8px}
+  .recent-list{display:flex;flex-direction:column}
+  .recent-item{width:100%;display:flex;align-items:center;gap:10px;padding:10px 14px;min-height:46px;border-bottom:1px solid var(--stroke-soft);font-size:12.5px;text-align:left;transition:background .15s}
+  .recent-item:last-child{border-bottom:0}
+  .recent-item:hover{background:rgba(255,255,255,.055)}
+  .recent-item .r-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recent-item .r-time{color:var(--faint);font-size:11px;flex:none}
 .kbd{font-family:var(--font-mono);font-size:10.5px;padding:2px 6px;border-radius:6px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--muted)}
 
 .tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px}
@@ -492,6 +517,15 @@ const ICONS = {
 };
 const TOOL_ICONS = { validate_script:'shield', generate_script:'spark', search_vanilla:'search', check_references:'link',
   analyze_mod:'scan', parse_game_files:'db', index_knowledge_base:'book', search_knowledge_base:'search', list_knowledge_topics:'book' };
+const TOOL_CATS = [
+  { id:'search', label:'Search & Query', icon:'search', match:['search_vanilla','search_recipes'] },
+  { id:'gen', label:'Generation', icon:'spark', match:['generate_script','export_mod_script'] },
+  { id:'valid', label:'Validation & References', icon:'shield', match:['validate_script','check_references'] },
+  { id:'analysis', label:'Analysis', icon:'scan', match:['analyze_mod','parse_game_files','analyze_recipe_chain','detect_recipe_conflicts'] },
+  { id:'kb', label:'Knowledge Base', icon:'book', match:['index_knowledge_base','search_knowledge_base','list_knowledge_topics'] },
+  { id:'ws', label:'Workshop', icon:'download', match:['workshop_search','workshop_get_details','workshop_download','workshop_analyze'] },
+];
+function catForTool(name){ const c = TOOL_CATS.find(x => x.match.includes(name)); return c ? c.id : 'search'; }
 
 /* ---------- state ---------- */
 const S = {
@@ -505,6 +539,7 @@ const S = {
   lat:{ ema:null, calls:0, spark:[] },
   memSpark:[], sesSpark:[], itemsSpark:[], upSpark:[],
   events:[], lastResult:null,
+  pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
   settings:{ accent:'#22D3EE', reduceMotion:false, autoScroll:true, follow:false },
 };
 const MEM_BUDGET_MB = 512;
@@ -542,8 +577,8 @@ async function rpc(method, params, opts = {}){
   if (!opts.notify) msg.id = ++S.seq;
   let res;
   try {
-    res = await fetch('/rpc', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(msg) });
-  } catch (e) { setConn('offline'); throw new Error('bridge unreachable'); }
+    res = await fetch('/rpc', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(msg), signal: opts.signal });
+  } catch (e) { if (opts.signal?.aborted) throw e; setConn('offline'); throw new Error('bridge unreachable'); }
   if (opts.notify) return null;
   const reply = await res.json();
   const dt = Math.round(performance.now() - (msg._t0 || 0));
@@ -668,7 +703,10 @@ function renderView(){
   else html += settingsHTML();
   wrap.innerHTML = html;
   if (S.view === 'status'){ updateStatusDom(); renderEvents(); }
-  if (S.view === 'playground') renderAllLogs();
+  if (S.view === 'playground'){
+    renderToolStack(); renderRecent(); renderAllLogs();
+    if (S.lastResult) restoreResult();
+  }
   if (S.view === 'database') renderDbStats();
   if (S.view === 'workshop') renderWorkshopResults();
   requestAnimationFrame(moveIndicator);
@@ -814,14 +852,18 @@ function fieldsForTool(tool){
     else if (s.type === 'array') kind = 'list';
     else if (s.type === 'object' || s.additionalProperties) kind = 'json';
     else if (k === 'content') kind = 'textarea';
-    const def = (EXAMPLES[tool.name] || {})[k] ?? s.default;
-    return { k, kind, s, required: req.has(k), def };
+    const saved = S.pg.values[tool.name] || {};
+    const hasSaved = Object.prototype.hasOwnProperty.call(saved, k);
+    const def = hasSaved ? saved[k] : ((EXAMPLES[tool.name] || {})[k] ?? s.default);
+    return { k, kind, s, required: req.has(k), def, hasSaved };
   });
 }
 function fieldHTML(tool, f){
   const fid = 'pf-' + tool.name + '-' + f.k;
+  const eid = 'pe-' + tool.name + '-' + f.k;
   const reqTag = f.required ? ' <span style="color:var(--rose)">*</span>' : '';
   const hint = f.s.description ? '<div class="f-hint">'+esc(f.s.description)+'</div>' : '';
+  const errEl = '<div class="f-err" id="'+eid+'" style="display:none"></div>';
   if (f.kind === 'bool'){
     return '<div style="display:flex;align-items:center;justify-content:space-between;min-height:44px;gap:10px">' +
       '<div><span class="f-label" style="margin:0">'+esc(f.k)+reqTag+'</span>'+hint+'</div>' +
@@ -829,24 +871,25 @@ function fieldHTML(tool, f){
   }
   if (f.kind === 'select'){
     return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><select class="field" id="'+fid+'">' +
-      f.s.enum.map(o => '<option value="'+esc(o)+'"'+(o===f.def?' selected':'')+'>'+esc(o)+'</option>').join('') + '</select>'+hint+'</div>';
+      f.s.enum.map(o => '<option value="'+esc(o)+'"'+(o===f.def?' selected':'')+'>'+esc(o)+'</option>').join('') + '</select>'+hint+errEl+'</div>';
   }
   if (f.kind === 'num'){
-    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><input type="number" class="field num" id="'+fid+'" value="'+(f.def ?? '')+'" ' +
-      (f.s.minimum!=null?('min="'+f.s.minimum+'"'):'')+' '+(f.s.maximum!=null?('max="'+f.s.maximum+'"'):'')+'>'+hint+'</div>';
+    const val = f.def == null || f.def === '' ? '' : f.def;
+    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><input type="number" class="field num" id="'+fid+'" value="'+(val ?? '')+'" ' +
+      (f.s.minimum!=null?('min="'+f.s.minimum+'"'):'')+' '+(f.s.maximum!=null?('max="'+f.s.maximum+'"'):'')+'>'+hint+errEl+'</div>';
   }
   if (f.kind === 'list'){
-    const val = Array.isArray(f.def) ? f.def.join('\n') : '';
-    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="3" placeholder="one per line">'+esc(val)+'</textarea>'+hint+'</div>';
+    const val = Array.isArray(f.def) ? f.def.join('\n') : String(f.def ?? '');
+    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="3" placeholder="one per line">'+esc(val)+'</textarea>'+hint+errEl+'</div>';
   }
   if (f.kind === 'json'){
-    const val = f.def != null ? JSON.stringify(f.def, null, 2) : '{}';
-    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="6">'+esc(val)+'</textarea>'+hint+'</div>';
+    const val = typeof f.def === 'string' ? f.def : (f.def != null ? JSON.stringify(f.def, null, 2) : '{}');
+    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="6">'+esc(val)+'</textarea>'+hint+errEl+'</div>';
   }
   if (f.kind === 'textarea'){
-    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="6">'+esc(f.def ?? '')+'</textarea>'+hint+'</div>';
+    return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><textarea class="field" id="'+fid+'" rows="6">'+esc(f.def ?? '')+'</textarea>'+hint+errEl+'</div>';
   }
-  return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><input class="field" id="'+fid+'" value="'+esc(f.def ?? '')+'">'+hint+'</div>';
+  return '<div><label class="f-label" for="'+fid+'">'+esc(f.k)+reqTag+'</label><input class="field" id="'+fid+'" value="'+esc(f.def ?? '')+'">'+hint+errEl+'</div>';
 }
 function toolCardHTML(tool){
   const open = S.openTool === tool.name;
@@ -868,22 +911,31 @@ function toolCardHTML(tool){
     '</button>' +
     '<div class="tool-panel"'+(open?' style="height:auto;opacity:1"':'')+'>' +
       '<div class="tool-panel-in">'+parts.join('') +
-        '<div class="run-row"><button class="btn primary" data-act="run-tool" style="flex:1"><span class="run-label" style="display:inline-flex;align-items:center;gap:8px">'+ICONS.play+' Run '+esc(tool.name)+'</span></button></div>' +
+        '<div class="run-row"><button class="btn primary" data-act="run-tool" style="flex:1"><span class="run-label" style="display:inline-flex;align-items:center;gap:8px">'+ICONS.play+' Run '+esc(tool.name)+'</span></button>' +
+        '<button class="btn danger" data-act="cancel-run" style="display:none">'+ICONS.x+' Cancel</button></div>' +
       '</div></div></article>';
 }
 function playgroundHTML(){
   const skTool = '<div class="glass sk-card"><div class="sk" style="width:40px;height:40px;border-radius:12px"></div><div style="flex:1"><div class="sk sk-line" style="width:45%"></div><div class="sk sk-line" style="width:80%"></div></div></div>';
-  const toolsHTML = S.handshaken ? S.tools.map(toolCardHTML).join('') : skTool + skTool + skTool;
-  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
+  const toolsHTML = S.handshaken ? '' : skTool + skTool + skTool;
+  return '<div class="ex-row"><span class="ex-label">Quick actions</span>' +
       EXAMPLE_ACTIONS.map((e,i) => '<button class="btn sm ghost" data-act="example" data-i="'+i+'" style="border:1px solid var(--stroke)">'+ICONS.play+' '+esc(e.label)+'</button>').join('') +
     '</div>' +
     '<div class="play-grid">' +
-      '<div><div class="sec-title" style="margin-top:0">MCP Tools · <span id="toolCount">'+(S.handshaken?S.tools.length:'…')+'</span> registered</div>' +
-        '<div class="tool-stack" id="toolStack">'+toolsHTML+'</div></div>' +
+      '<div>' +
+        '<div class="pg-search"><span class="pg-ic">'+ICONS.search+'</span>' +
+          '<input class="field" id="pgFilter" placeholder="Filter tools by name or description…" value="'+esc(S.pg.query)+'" aria-label="Filter tools">' +
+          (S.pg.query ? '<button class="ibtn pg-clear" data-act="pg-clear" aria-label="Clear filter" title="Clear filter">'+ICONS.x+'</button>' : '') +
+        '</div>' +
+        '<div class="sec-title" style="margin-top:0">MCP Tools · <span id="toolCount">'+(S.handshaken?S.tools.length:'…')+'</span> registered</div>' +
+        '<div class="tool-stack" id="toolStack">'+toolsHTML+'</div>' +
+      '</div>' +
       '<div>' +
         '<section class="glass card" id="resultCard" style="display:none">' +
           '<div id="resultHead"></div><div id="resultBody"></div>' +
         '</section>' +
+        '<div class="sec-title" style="margin-top:22px">Recent Runs <span class="badge b-dim num" id="recentCount">'+S.pg.recent.length+'</span></div>' +
+        '<section class="glass card" id="recentCard" style="margin-bottom:16px;display:none;overflow:hidden"><div id="recentList"></div></section>' +
         '<div class="sec-title" style="margin-top:0">Wire Log · Live JSON-RPC</div>' +
         '<section class="glass card console">' +
           '<div class="console-head"><h3><span style="width:7px;height:7px;border-radius:50%;background:var(--emerald);display:inline-block;animation:pulse 2.2s infinite"></span> mcp://wire</h3>' +
@@ -895,6 +947,31 @@ function playgroundHTML(){
           '<div class="log-body" id="logBody" tabindex="0" aria-label="Live JSON-RPC wire log"></div>' +
           '<div class="console-foot"><span>Click any frame to inspect the raw payload</span><span class="kbd">⏎ inspect</span></div>' +
         '</section></div></div>';
+}
+function renderToolStack(){
+  const stack = $('#toolStack'); if (!stack || !S.handshaken) return;
+  const q = S.pg.query.trim().toLowerCase();
+  let html = ''; let shown = 0;
+  for (const cat of TOOL_CATS){
+    const tools = S.tools.filter(t => catForTool(t.name) === cat.id);
+    if (!tools.length) continue;
+    const vis = q ? tools.filter(t => (t.name + ' ' + (t.description || '')).toLowerCase().includes(q)) : tools;
+    if (!vis.length) continue;
+    shown += vis.length;
+    const open = q ? true : S.pg.cats[cat.id] !== false;
+    html += '<section class="cat'+(open?' open':'')+'" data-cat="'+cat.id+'">' +
+      '<button class="cat-head" data-act="cat-toggle" data-cat="'+cat.id+'" aria-expanded="'+open+'">' +
+        '<span class="cat-ic">'+(ICONS[cat.icon]||ICONS.spark)+'</span>' +
+        '<span class="cat-name">'+esc(cat.label)+'</span>' +
+        '<span class="badge b-dim num">'+vis.length+'</span>' +
+        '<span class="cat-chv">'+ICONS.chev+'</span>' +
+      '</button>' +
+      '<div class="cat-body'+(open?'':' hidden')+'">'+vis.map(toolCardHTML).join('')+'</div>' +
+    '</section>';
+  }
+  stack.innerHTML = html || '<div class="pg-none">'+ICONS.search+' No tools match “'+esc(S.pg.query)+'”</div>';
+  const cnt = $('#toolCount'); if (cnt) cnt.textContent = q ? shown + ' / ' + S.tools.length : S.tools.length;
+  S.tools.forEach(t => syncToolValidation(t.name));
 }
 function expandPanel(card, open){
   const panel = $('.tool-panel', card), head = $('.tool-head', card);
@@ -924,13 +1001,57 @@ function collectArgs(tool){
     if (!el) continue;
     let v;
     if (f.kind === 'bool') v = el.getAttribute('aria-checked') === 'true';
-    else if (f.kind === 'num'){ if (el.value === '') { if (f.required){ toast(f.k + ' is required', 'warn'); return null; } continue; } v = Number(el.value); }
-    else if (f.kind === 'list'){ const lines = el.value.split('\n').map(x => x.trim()).filter(Boolean); if (!lines.length){ if (f.required){ toast(f.k + ' is required','warn'); return null; } continue; } v = lines; }
-    else if (f.kind === 'json'){ try { v = JSON.parse(el.value || '{}'); } catch (e){ toast(f.k + ': invalid JSON','warn'); return null; } }
-    else { if (el.value === ''){ if (f.required){ toast(f.k + ' is required','warn'); return null; } continue; } v = el.value; }
+    else if (f.kind === 'num'){ if (el.value === '') continue; v = Number(el.value); }
+    else if (f.kind === 'list'){ const lines = el.value.split('\n').map(x => x.trim()).filter(Boolean); if (!lines.length) continue; v = lines; }
+    else if (f.kind === 'json'){ try { v = JSON.parse(el.value || '{}'); } catch { return null; } }
+    else { if (el.value === '') continue; v = el.value; }
     args[f.k] = v;
   }
   return args;
+}
+function fieldErrors(tool){
+  const errs = {};
+  for (const f of fieldsForTool(tool)){
+    const el = $('#pf-' + tool.name + '-' + f.k);
+    if (!el || f.kind === 'bool') continue;
+    const v = el.value;
+    if (f.required && v.trim() === '') errs[f.k] = 'Required';
+    if (f.kind === 'num' && v.trim() !== ''){
+      const n = Number(v);
+      if (!Number.isFinite(n)) errs[f.k] = 'Not a number';
+      else if (f.s.minimum != null && n < f.s.minimum) errs[f.k] = 'Min ' + f.s.minimum;
+      else if (f.s.maximum != null && n > f.s.maximum) errs[f.k] = 'Max ' + f.s.maximum;
+    }
+    else if (f.kind === 'json' && v.trim() !== ''){
+      try { JSON.parse(v); } catch { errs[f.k] = 'Invalid JSON'; }
+    }
+    else if (f.kind === 'list' && f.required){
+      if (!v.split('\n').map(x => x.trim()).filter(Boolean).length) errs[f.k] = 'Required';
+    }
+  }
+  return errs;
+}
+function syncToolValidation(name){
+  const tool = S.tools.find(t => t.name === name); if (!tool) return;
+  const errs = fieldErrors(tool);
+  for (const f of fieldsForTool(tool)){
+    const el = $('#pf-' + tool.name + '-' + f.k);
+    const errEl = $('#pe-' + tool.name + '-' + f.k);
+    if (el) el.classList.toggle('invalid', !!errs[f.k]);
+    if (errEl && errEl.style.display !== 'none') errEl.style.display = 'none';
+    if (errEl && errs[f.k]){ errEl.textContent = errs[f.k]; errEl.style.display = 'block'; }
+  }
+  const card = $('#tool-' + CSS.escape(name));
+  const btn = card && $('[data-act="run-tool"]', card);
+  if (btn) btn.disabled = Object.keys(errs).length > 0;
+  return Object.keys(errs).length;
+}
+function runTool(name){
+  const tool = S.tools.find(t => t.name === name); if (!tool) return;
+  const n = syncToolValidation(name);
+  if (n > 0){ toast('Fix the highlighted fields first','warn'); return; }
+  const args = collectArgs(tool);
+  if (args !== null) callTool(name, args);
 }
 function markTool(name, running){
   const card = $('#tool-' + CSS.escape(name)); if (!card) return;
@@ -942,38 +1063,81 @@ function markTool(name, running){
 async function callTool(name, args){
   if (!S.handshaken){ toast('Not connected — waiting for handshake','warn'); return; }
   if (S.view !== 'playground') switchView('playground');
+  const ctrl = new AbortController();
+  S.pg.ctrls[name] = ctrl;
   markTool(name, true);
+  const cb = $('#tool-' + CSS.escape(name) + ' [data-act="cancel-run"]');
+  if (cb) cb.style.display = 'inline-flex';
   const t0 = performance.now();
+  const status = { name, dt: null, isError: false, text: '' };
   try {
-    const reply = await rpc('tools/call', { name, arguments: args });
+    const reply = await rpc('tools/call', { name, arguments: args }, { signal: ctrl.signal });
     const dt = Math.round(performance.now() - t0);
     recordLatency(dt);
     const text = reply.result?.content?.map(c => c.text || '').join('\n') || '(empty result)';
     addEvent(name + ' · ' + dt + 'ms');
     showResult(name, text, dt, reply, false);
+    pushRecent(name, dt, 'ok', text);
     toast(name + ' completed · ' + dt + 'ms');
   } catch (e){
-    addEvent(name + ' failed');
-    showResult(name, String(e.message || e), Math.round(performance.now() - t0), null, true);
-    toast(name + ' failed: ' + e.message, 'warn');
-  } finally { markTool(name, false); }
+    const dt = Math.round(performance.now() - t0);
+    if (ctrl.signal.aborted){
+      addEvent(name + ' cancelled');
+      showResult(name, '(cancelled by user)', dt, null, true);
+      pushRecent(name, dt, 'cancel', '(cancelled by user)');
+      toast(name + ' cancelled', 'warn');
+    } else {
+      addEvent(name + ' failed');
+      showResult(name, String(e.message || e), dt, null, true);
+      pushRecent(name, dt, 'err', String(e.message || e));
+      toast(name + ' failed: ' + e.message, 'warn');
+    }
+  } finally {
+    markTool(name, false);
+    if (cb) cb.style.display = 'none';
+    delete S.pg.ctrls[name];
+    syncToolValidation(name);
+  }
+}
+function pushRecent(name, dt, status, text){
+  S.pg.recent.unshift({ name, dt, status, t: Date.now(), text });
+  if (S.pg.recent.length > 10) S.pg.recent.pop();
+  renderRecent();
+}
+function renderRecent(){
+  const card = $('#recentCard'), cnt = $('#recentCount'), list = $('#recentList');
+  if (!card || !cnt || !list) return;
+  card.style.display = S.pg.recent.length ? '' : 'none';
+  cnt.textContent = S.pg.recent.length + '/10';
+  list.innerHTML = S.pg.recent.map((r,i) =>
+    '<button class="recent-item" data-act="recent-open" data-i="'+i+'" aria-label="Reopen '+esc(r.name)+'">' +
+      '<span class="r-name mono">'+esc(r.name)+'</span>' +
+      '<span class="badge '+(r.status==='ok'?'b-ok':r.status==='cancel'?'b-warn':'b-err')+'" style="flex:none">'+(r.status==='ok'?'✓ '+r.dt+'ms':r.status==='cancel'?'✖ cancelled':'✖ error')+'</span>' +
+      '<span class="r-time num">'+fmtClock(r.t)+'</span>' +
+    '</button>').join('');
 }
 function showResult(name, text, dt, reply, isError){
   const card = $('#resultCard'); if (!card) return;
   const fences = text.match(/```[\s\S]*?```/);
   const script = fences ? fences[0].replace(/^```[a-zA-Z]*\r?\n?/, '').replace(/```$/, '') : null;
-  S.lastResult = { name, text, script, reply };
+  S.lastResult = { name, text, script, reply, isError };
+  const long = text.length > 6000;
   card.style.display = '';
   $('#resultHead').innerHTML =
-    '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px">'+(ICONS[TOOL_ICONS[name]]||ICONS.spark)+'</span>' +
-    '<span class="mono" style="font-size:13px;font-weight:600">'+esc(name)+'</span>' +
+    '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">'+(ICONS[TOOL_ICONS[name]]||ICONS.spark)+'</span>' +
+    '<span class="mono" style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span>' +
     (isError ? '<span class="badge b-err">✖ error</span>' : '<span class="badge b-ok">✓ '+dt+'ms</span>') +
     '<span style="flex:1"></span>' +
+    '<button class="btn sm ghost" data-act="copy-result">'+ICONS.copy+' Copy</button>' +
+    (long ? '<button class="btn sm" data-act="res-toggle">Show more</button>' : '') +
     (script ? '<button class="btn sm" data-act="copy-script">'+ICONS.copy+' Copy script</button>' : '') +
     (script && name === 'generate_script' ? '<button class="btn sm primary" data-act="to-validate">'+ICONS.shield+' Validate it</button>' : '') +
     (reply ? '<button class="btn sm ghost" data-act="inspect-raw">raw JSON</button>' : '') +
-    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
-  $('#resultBody').innerHTML = isError
+    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px;flex:none" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
+  const body = $('#resultBody');
+  body.classList.toggle('long', long);
+  body.classList.remove('show-all');
+  body.innerHTML = isError
     ? '<div class="md-p" style="color:#FDA4AF">'+esc(text)+'</div>'
     : renderMD(text);
   card.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -984,11 +1148,38 @@ function sendToValidate(script){
     if (S.openTool && S.openTool !== 'validate_script') toggleTool(S.openTool);
     if (S.openTool !== 'validate_script') toggleTool('validate_script');
     const ta = $('#pf-validate_script-content');
-    if (ta){ ta.value = script; ta.focus(); }
+    if (ta){
+      ta.value = script;
+      S.pg.values.validate_script = S.pg.values.validate_script || {};
+      S.pg.values.validate_script.content = script;
+      syncToolValidation('validate_script');
+      ta.focus();
+    }
     const el = $('#tool-validate_script');
     el?.scrollIntoView({ behavior:'smooth', block:'center' });
     toast('Generated script loaded into validate_script — press Run');
   }, 80);
+}
+function restoreResult(){
+  const card = $('#resultCard'); if (!card || !S.lastResult) return;
+  const r = S.lastResult;
+  const long = r.text && r.text.length > 6000;
+  card.style.display = '';
+  $('#resultHead').innerHTML =
+    '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">'+(ICONS[TOOL_ICONS[r.name]]||ICONS.spark)+'</span>' +
+    '<span class="mono" style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</span>' +
+    (r.isError ? '<span class="badge b-err">✖ error</span>' : '<span class="badge b-ok">✓ done</span>') +
+    '<span style="flex:1"></span>' +
+    '<button class="btn sm ghost" data-act="copy-result">'+ICONS.copy+' Copy</button>' +
+    (long ? '<button class="btn sm" data-act="res-toggle">Show more</button>' : '') +
+    (r.script ? '<button class="btn sm" data-act="copy-script">'+ICONS.copy+' Copy script</button>' : '') +
+    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px;flex:none" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
+  const body = $('#resultBody');
+  body.classList.toggle('long', long);
+  body.classList.remove('show-all');
+  body.innerHTML = r.isError
+    ? '<div class="md-p" style="color:#FDA4AF">'+esc(r.text)+'</div>'
+    : renderMD(r.text);
 }
 
 /* ---------- wire log ---------- */
@@ -1369,13 +1560,37 @@ document.addEventListener('click', e => {
   if (act){
     const a = act.dataset.act;
     if (a === 'toggle-tool') toggleTool(act.closest('.tool').dataset.tool);
-    else if (a === 'run-tool'){
-      const name = act.closest('.tool').dataset.tool;
-      const tool = S.tools.find(x => x.name === name);
-      const args = tool && collectArgs(tool);
-      if (tool && args !== null) callTool(name, args);
-    }
+    else if (a === 'run-tool'){ runTool(act.closest('.tool').dataset.tool); }
+    else if (a === 'cancel-run'){ const c = S.pg.ctrls[act.closest('.tool').dataset.tool]; if (c) c.abort(); }
     else if (a === 'example'){ const ex = EXAMPLE_ACTIONS[+act.dataset.i]; callTool(ex.tool, ex.args); }
+    else if (a === 'cat-toggle'){
+      const id = act.dataset.cat;
+      const open = act.getAttribute('aria-expanded') !== 'true';
+      S.pg.cats[id] = open;
+      act.setAttribute('aria-expanded', String(open));
+      act.closest('.cat').classList.toggle('open', open);
+      const body = act.nextElementSibling;
+      if (body) body.classList.toggle('hidden', !open);
+    }
+    else if (a === 'pg-clear'){
+      S.pg.query = '';
+      const f = $('#pgFilter'); if (f) f.value = '';
+      act.style.display = 'none';
+      renderToolStack();
+    }
+    else if (a === 'recent-open'){
+      const r = S.pg.recent[+act.dataset.i];
+      if (r) showResult(r.name, r.text, r.dt, null, r.status !== 'ok');
+    }
+    else if (a === 'copy-result'){
+      const txt = S.lastResult ? (S.lastResult.script || S.lastResult.text) : '';
+      if (txt) navigator.clipboard?.writeText(txt).then(() => toast('Result copied')).catch(() => toast('Copy blocked by browser','warn'));
+    }
+    else if (a === 'res-toggle'){
+      const body = $('#resultBody'); if (!body) return;
+      const open = body.classList.toggle('show-all');
+      act.textContent = open ? 'Show less' : 'Show more';
+    }
     else if (a === 'db-search') dbSearch();
     else if (a === 'ws-search') wsSearch();
     else if (a === 'ws-details'){
@@ -1428,11 +1643,50 @@ document.addEventListener('click', e => {
     }
     return;
   }
+  const sw = walkUp(t, '.switch');
+  if (sw && sw.id.startsWith('pf-') && sw.closest('.tool')){
+    const on = sw.getAttribute('aria-checked') !== 'true';
+    sw.setAttribute('aria-checked', String(on));
+    const m = /^pf-(.+)-([^-]+)$/.exec(sw.id);
+    if (m){
+      S.pg.values[m[1]] = S.pg.values[m[1]] || {};
+      S.pg.values[m[1]][m[2]] = on;
+      syncToolValidation(m[1]);
+    }
+    return;
+  }
   const line = walkUp(t, '.log-line');
   if (line) openLogEntry(line.dataset.id);
 });
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'pgFilter'){
+    S.pg.query = t.value;
+    const clearBtn = $('.pg-search .pg-clear');
+    if (clearBtn) clearBtn.style.display = t.value ? '' : 'none';
+    renderToolStack();
+    return;
+  }
+  if (t.id && t.id.startsWith('pf-')){
+    const m = /^pf-(.+)-([^-]+)$/.exec(t.id);
+    if (m){
+      S.pg.values[m[1]] = S.pg.values[m[1]] || {};
+      S.pg.values[m[1]][m[2]] = t.value;
+      syncToolValidation(m[1]);
+    }
+  }
+});
 document.addEventListener('change', e => {
-  if (e.target.id === 'accentPicker'){ applyAccent(e.target.value); toast('Custom accent applied'); }
+  const t = e.target;
+  if (t.id === 'accentPicker'){ applyAccent(t.value); toast('Custom accent applied'); return; }
+  if (t.id && t.id.startsWith('pf-')){
+    const m = /^pf-(.+)-([^-]+)$/.exec(t.id);
+    if (m){
+      S.pg.values[m[1]] = S.pg.values[m[1]] || {};
+      S.pg.values[m[1]][m[2]] = t.value;
+      syncToolValidation(m[1]);
+    }
+  }
 });
 document.addEventListener('keydown', e => {
   const inField = walkUp(e.target, 'input,textarea,select,[contenteditable]');
@@ -1440,6 +1694,12 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inField.id === 'dbQuery'){ e.preventDefault(); dbSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsQuery'){ e.preventDefault(); wsSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsId'){ e.preventDefault(); wsFetchDetails(inField.value.trim()); }
+    else if (e.key === 'Enter' && inField.id && inField.id.startsWith('pf-')){
+      if (inField.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const toolEl = walkUp(inField, '.tool');
+      if (toolEl) runTool(toolEl.dataset.tool);
+    }
     return;
   }
   if (e.key === 'Escape' && term.open){ closeTerminal(); return; }
