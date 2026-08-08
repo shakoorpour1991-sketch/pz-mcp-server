@@ -1,0 +1,48 @@
+{
+  "name": "pz-mcp-server-desktop",
+  "version": "1.1.0",
+  "description": "Standalone desktop application for PZ MCP Server",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "author": "shakoorpour1991-sketch",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.shakoorpour1991.pz-mcp-server",
+    "productName": "PZ MCP Server",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      "../admin",
+      "../dist",
+      "../src",
+      "../data",
+      "../package.json",
+      "../node_modules"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
