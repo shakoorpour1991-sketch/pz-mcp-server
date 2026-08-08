@@ -95,8 +95,10 @@ header#top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:
 .btn.primary{background:linear-gradient(135deg,rgba(var(--accent-rgb),.95),rgba(var(--accent-rgb),.65));
   border-color:rgba(var(--accent-rgb),.65);color:#04121a;box-shadow:0 6px 24px rgba(var(--accent-rgb),.30)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
-.btn.ghost:hover{color:var(--text);background:rgba(255,255,255,.06)}
-.btn.danger{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.10);color:#FDA4AF}
+.btn.ghost:hover{color:var(--text);background:rgba(255,255,255,.06)}  .btn.danger{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.10);color:#FDA4AF}
+  .btn.success{background:linear-gradient(135deg,rgba(52,211,153,.95),rgba(52,211,153,.6));
+    border-color:rgba(52,211,153,.6);color:#04140e;box-shadow:0 6px 24px rgba(52,211,153,.30)}
+  .btn.success:hover{background:linear-gradient(135deg,rgba(52,211,153,1),rgba(52,211,153,.7))}
 .btn.sm{min-height:38px;padding:0 13px;font-size:12.5px;border-radius:11px}
 .btn:disabled{opacity:.45;pointer-events:none}
 .ibtn{width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:13px;
@@ -197,7 +199,10 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .tool-panel-in{padding:14px 16px 16px;border-top:1px solid var(--stroke-soft);display:flex;flex-direction:column;gap:12px}  .tool-panel-in .frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}  .run-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:2px}
   .ex-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
   .ex-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:2px}
-  .pg-search{position:relative;margin-bottom:12px}
+  .pg-toolbar{display:flex;gap:10px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
+  .pg-toolbar .pg-search{flex:1;min-width:220px}
+  .pg-toolbar .btn{flex:none;white-space:nowrap}
+  .pg-search{position:relative}
   .pg-search .pg-ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--faint);display:grid;place-items:center;pointer-events:none}
   .pg-search .pg-ic svg{width:16px;height:16px}
   .pg-search .field{padding-left:40px;padding-right:44px}
@@ -348,10 +353,41 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .toast{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:16px;font-size:13px;font-weight:500;
   background:rgba(16,16,22,.85);border:1px solid rgba(255,255,255,.12);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
   box-shadow:0 12px 40px rgba(0,0,0,.5);opacity:0;transform:translateY(-14px) scale(.96);transition:opacity .35s var(--easeout),transform .45s var(--spring)}
-.toast.show{opacity:1;transform:none}
-.toast svg{width:16px;height:16px;flex:none;color:rgb(var(--accent-rgb))}
-a.link{color:rgb(var(--accent-rgb));text-decoration:none;font-weight:600}
-a.link:hover{text-decoration:underline}
+.toast.show{opacity:1;transform:none}  .toast svg{width:16px;height:16px;flex:none;color:rgb(var(--accent-rgb))}
+  a.link{color:rgb(var(--accent-rgb));text-decoration:none;font-weight:600}
+  a.link:hover{text-decoration:underline}
+
+/* How-to help modal */
+#helpModal{position:fixed;inset:0;z-index:80;display:none;place-items:center;padding:20px;
+  background:rgba(5,6,9,.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#helpModal.open{display:grid}
+.help-shell{width:min(880px,100%);max-height:min(84vh,760px);display:flex;flex-direction:column;overflow:hidden;
+  border-radius:22px;background:linear-gradient(160deg,rgba(21,23,32,.94),rgba(12,13,18,.97));
+  border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(28px) saturate(160%);backdrop-filter:blur(28px) saturate(160%);
+  box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08);animation:helpIn .35s var(--spring) both}
+@keyframes helpIn{from{opacity:0;transform:translateY(16px) scale(.97)}}
+.help-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--stroke-soft);flex:none}
+.help-head h2{margin:0;font-size:14px;font-weight:700;display:flex;align-items:center;gap:9px}
+.help-head h2 svg{width:17px;height:17px;color:var(--emerald)}
+.help-body{flex:1;overflow-y:auto;padding:10px 18px 20px}
+.help-cat{margin:14px 2px 8px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.help-item{display:flex;gap:12px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--stroke-soft);margin-bottom:10px}
+.help-item .h-ic{width:38px;height:38px;flex:none;border-radius:11px;display:grid;place-items:center;
+  background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:rgb(var(--accent-rgb))}
+.help-item .h-ic svg{width:17px;height:17px}
+.help-item .h-body{min-width:0;flex:1}
+.help-item .h-name{font-family:var(--font-mono);font-size:13px;font-weight:600}
+.help-item .h-what{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.5}
+.help-item .h-how{font-size:12px;color:var(--text);margin-top:6px;line-height:1.55}
+.help-item .h-how b{color:var(--emerald)}
+.help-item .h-ex{display:inline-flex;align-items:center;gap:6px;margin-top:8px;max-width:100%;
+  font-family:var(--font-mono);font-size:11px;color:var(--faint);background:rgba(0,0,0,.3);
+  border:1px solid var(--stroke-soft);padding:3px 9px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.help-item .h-ex svg{width:12px;height:12px;color:var(--emerald);flex:none}
+.help-foot{padding:10px 18px;border-top:1px solid var(--stroke-soft);font-size:11.5px;color:var(--faint);
+  display:flex;justify-content:space-between;gap:8px;flex:none}
+.help-foot .kbd{margin-left:auto}
 </style>
 </head>
 <body>
@@ -423,6 +459,21 @@ a.link:hover{text-decoration:underline}
     <div class="term-resize" id="termResize" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 8L8 20M20 14l-6 6M20 20h.01"/></svg>
     </div>
+  </div>
+</div>
+
+<div id="helpModal" role="dialog" aria-modal="true" aria-label="How to use the tools">
+  <div class="help-shell">
+    <div class="help-head">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> How to use the tools</h2>
+      <span style="flex:1"></span>
+      <span class="badge b-ok" id="helpCount">—</span>
+      <button class="ibtn" data-act="close-help" style="width:36px;height:36px;border-radius:10px" aria-label="Close help">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="help-body" id="helpBody"></div>
+    <div class="help-foot"><span>Beginner-friendly guide · every tool runs live against the MCP server</span><span class="kbd">Esc close</span></div>
   </div>
 </div>
 
@@ -526,6 +577,124 @@ const TOOL_CATS = [
   { id:'ws', label:'Workshop', icon:'download', match:['workshop_search','workshop_get_details','workshop_download','workshop_analyze'] },
 ];
 function catForTool(name){ const c = TOOL_CATS.find(x => x.match.includes(name)); return c ? c.id : 'search'; }
+/* Beginner-friendly explanations for every tool (keyed by MCP tool name) */
+const TOOL_GUIDES = {
+  search_vanilla: {
+    what:'Search the real Project Zomboid database — items, recipes, sounds and vehicles.',
+    how:'Type a keyword like <b>axe</b> or <b>canned</b>, press Run, and browse the results. Add filters (type, category, weight, calories) to narrow things down.',
+    ex:'query: "axe" · limit: 10',
+  },
+  search_recipes: {
+    what:'Find structured crafting recipes by what they need or what they make.',
+    how:'Search by name, or filter by ingredient, tool, skill or result — e.g. find every recipe that uses <b>Nails</b> as an ingredient.',
+    ex:'ingredient: "Nails" · skill: "Woodwork"',
+  },
+  generate_script: {
+    what:'Generate balanced Project Zomboid scripts (items, recipes, sounds, vehicles) from templates.',
+    how:'Pick a <b>type</b>, give it a <b>name</b> (e.g. Katana_Custom), then describe it in <b>properties</b> as JSON. Balance mode tunes stats for you.',
+    ex:'type: "item" · name: "Katana_Custom" · properties: { … }',
+  },
+  validate_script: {
+    what:'Check a Project Zomboid script for syntax errors and broken references.',
+    how:'Paste your script into <b>content</b> and press Run. Turn on <b>strict</b> for a deeper check. Great after generate_script.',
+    ex:'content: module Base { item MyAxe { … } }',
+  },
+  check_references: {
+    what:'Verify that item, sound and sprite references actually exist in the game.',
+    how:'Put each reference on its own line in <b>references</b>, pick a <b>type</b> (item / sound / sprite / all), then Run.',
+    ex:'Axe · HandAxe · Sound_AxeSwing',
+  },
+  analyze_mod: {
+    what:'Deep analysis of a mod folder — structure, balance, compatibility and deprecated APIs.',
+    how:'Point <b>modPath</b> at your mod directory and press Run. Toggle balance / compatibility checks as needed.',
+    ex:'modPath: "C:/Users/you/Zomboid/mods/MyMod"',
+  },
+  parse_game_files: {
+    what:'Parse the installed Project Zomboid game files and index them into the database.',
+    how:'Run with no arguments — the game path is auto-detected. Set <b>gamePath</b> if detection fails, or force a re-parse.',
+    ex:'gamePath: "D:/Games/ProjectZomboid" (optional)',
+  },
+  index_knowledge_base: {
+    what:'Index markdown modding docs so they become searchable.',
+    how:'Run with no arguments to index the default docs folder, or set <b>path</b>. Set <b>overwrite</b> false for an incremental sync.',
+    ex:'path: "D:/PZ-Modding/Documentation" (optional)',
+  },
+  search_knowledge_base: {
+    what:'Search the indexed knowledge-base docs with relevance ranking and topic filters.',
+    how:'Type a <b>query</b> like "loot distribution" and optionally filter by <b>topic</b>.',
+    ex:'query: "loot distribution"',
+  },
+  list_knowledge_topics: {
+    what:'List every indexed knowledge-base topic with stats.',
+    how:'No arguments needed — just press Run.',
+    ex:'—',
+  },
+  analyze_recipe_chain: {
+    what:'Walk the recipe dependency graph from one item: what makes it, what it makes, what consumes it.',
+    how:'Start from a <b>seed</b> item or recipe id, choose a <b>direction</b> and how deep to traverse.',
+    ex:'seed: "Base.Axe" · direction: "both" · maxDepth: 3',
+  },
+  detect_recipe_conflicts: {
+    what:'Find items produced by more than one recipe — duplicate crafting paths that can break resolution.',
+    how:'Run as-is, or cap the report with <b>limit</b>.',
+    ex:'limit: 50',
+  },
+  export_mod_script: {
+    what:'Generate a script and write it into a mod\'s media/scripts folder.',
+    how:'Dry-run by default — set <b>dryRun</b> false to actually write the file. Useful for shipping generated content.',
+    ex:'modPath · type · name · dryRun: false',
+  },
+  workshop_search: {
+    what:'Browse the Project Zomboid Steam Workshop by text (best-effort).',
+    how:'Type a <b>query</b> like "Brita" and Run. For guaranteed results, paste a URL/id into workshop_get_details instead.',
+    ex:'query: "Brita" · limit: 20',
+  },
+  workshop_get_details: {
+    what:'Resolve full metadata for one workshop item from its id or steamcommunity URL.',
+    how:'Paste the numeric <b>id</b> or the full URL. Use <b>forceRefresh</b> to bypass the 24h cache.',
+    ex:'id: "2696145877" or a full steamcommunity URL',
+  },
+  workshop_download: {
+    what:'Download a workshop mod via SteamCMD into the workspace folder.',
+    how:'Pass the item <b>id</b>. Requires steamcmd (STEAMCMD_PATH or a common install location).',
+    ex:'id: "2696145877"',
+  },
+  workshop_analyze: {
+    what:'Fetch & analyze a workshop mod end-to-end: download, parse, balance check + full Mod Report.',
+    how:'Pass the item <b>id</b> and wait — the deck streams progress and shows the report.',
+    ex:'id: "2696145877"',
+  },
+};
+function openHelp(){
+  const modal = $('#helpModal'); if (!modal) return;
+  const body = $('#helpBody');
+  const count = $('#helpCount'); if (count) count.textContent = S.tools.length + ' tools';
+  let html = '';
+  for (const cat of TOOL_CATS){
+    const tools = S.tools.filter(t => catForTool(t.name) === cat.id);
+    if (!tools.length) continue;
+    html += '<div class="help-cat">'+esc(cat.label)+'</div>';
+    html += tools.map(t => {
+      const g = TOOL_GUIDES[t.name];
+      return '<div class="help-item">' +
+        '<span class="h-ic">'+(ICONS[TOOL_ICONS[t.name]] || ICONS.spark)+'</span>' +
+        '<div class="h-body">' +
+          '<div class="h-name">'+esc(t.name)+'</div>' +
+          (g ? '<div class="h-what">'+g.what+'</div><div class="h-how">How to use: '+g.how+'</div>' +
+            '<span class="h-ex">'+ICONS.play+' '+esc(g.ex)+'</span>' :
+            '<div class="h-what">'+esc(t.description || '')+'</div>') +
+        '</div></div>';
+    }).join('');
+  }
+  body.innerHTML = html || '<div class="md-p" style="color:var(--faint)">Tools not loaded yet — try again in a moment.</div>';
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeHelp(){
+  const modal = $('#helpModal'); if (!modal) return;
+  modal.classList.remove('open');
+  document.body.style.overflow = '';
+}
 
 /* ---------- state ---------- */
 const S = {
@@ -923,9 +1092,12 @@ function playgroundHTML(){
     '</div>' +
     '<div class="play-grid">' +
       '<div>' +
-        '<div class="pg-search"><span class="pg-ic">'+ICONS.search+'</span>' +
-          '<input class="field" id="pgFilter" placeholder="Filter tools by name or description…" value="'+esc(S.pg.query)+'" aria-label="Filter tools">' +
-          (S.pg.query ? '<button class="ibtn pg-clear" data-act="pg-clear" aria-label="Clear filter" title="Clear filter">'+ICONS.x+'</button>' : '') +
+        '<div class="pg-toolbar">' +
+          '<div class="pg-search"><span class="pg-ic">'+ICONS.search+'</span>' +
+            '<input class="field" id="pgFilter" placeholder="Filter tools by name or description…" value="'+esc(S.pg.query)+'" aria-label="Filter tools">' +
+            (S.pg.query ? '<button class="ibtn pg-clear" data-act="pg-clear" aria-label="Clear filter" title="Clear filter">'+ICONS.x+'</button>' : '') +
+          '</div>' +
+          '<button class="btn success" data-act="open-help" title="Beginner-friendly guide for every tool">'+ICONS.book+' How to use the tools</button>' +
         '</div>' +
         '<div class="sec-title" style="margin-top:0">MCP Tools · <span id="toolCount">'+(S.handshaken?S.tools.length:'…')+'</span> registered</div>' +
         '<div class="tool-stack" id="toolStack">'+toolsHTML+'</div>' +
@@ -1591,6 +1763,8 @@ document.addEventListener('click', e => {
       const open = body.classList.toggle('show-all');
       act.textContent = open ? 'Show less' : 'Show more';
     }
+    else if (a === 'open-help') openHelp();
+    else if (a === 'close-help') closeHelp();
     else if (a === 'db-search') dbSearch();
     else if (a === 'ws-search') wsSearch();
     else if (a === 'ws-details'){
@@ -1643,6 +1817,7 @@ document.addEventListener('click', e => {
     }
     return;
   }
+  if (t.id === 'helpModal'){ closeHelp(); return; }
   const sw = walkUp(t, '.switch');
   if (sw && sw.id.startsWith('pf-') && sw.closest('.tool')){
     const on = sw.getAttribute('aria-checked') !== 'true';
@@ -1703,6 +1878,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Escape' && term.open){ closeTerminal(); return; }
+  if (e.key === 'Escape' && $('#helpModal').classList.contains('open')){ closeHelp(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k >= '1' && k <= '5') switchView(VIEWS[parseInt(k,10) - 1]);
