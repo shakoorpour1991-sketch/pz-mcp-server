@@ -9,8 +9,8 @@ const ADMIN_PORT = 8787;
 
 // Get the correct paths depending on whether we're packed or unpacked
 const getAppRoot = () => {
-  if (process.resourcesPath) {
-    // Running as a packaged app
+  if (app.isPackaged) {
+    // Running as a packaged app - extraResources are copied into resourcesPath
     return process.resourcesPath;
   }
   // Running in development - use parent directory
