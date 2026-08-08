@@ -147,7 +147,6 @@ async function initializeServer() {
   }
 }
 
-
 // Tool definitions
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
