@@ -141,6 +141,25 @@ export class ProjectZomboidParser {
         }
       }
 
+      // Also scan versioned folders (e.g. 42.20, 42.21) — any top-level dir
+      // that looks like a build version gets its media/scripts parsed too
+      // (audit D6). readdir withFileTypes avoids extra stat calls.
+      const entries = await readdir(modPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && /^\d+(\.\d+)*$/.test(entry.name)) {
+          const versionedScripts = join(
+            modPath,
+            entry.name,
+            "media",
+            "scripts",
+          );
+          if (existsSync(versionedScripts)) {
+            await this.parseDirectory(versionedScripts, results, moduleName);
+            foundScripts = true;
+          }
+        }
+      }
+
       if (!foundScripts) {
         results.errors.push({
           file: modPath,
@@ -509,7 +528,7 @@ export class ProjectZomboidParser {
       const fixer: any = {};
 
       // Parse material and quantity
-      const materialMatch = parts[0].match(/(\w+)=(\d+)/);
+      const materialMatch = parts[0].match(/([\w.]+)=(\d+)/);
       if (materialMatch) {
         fixer.material = materialMatch[1];
         fixer.quantity = parseInt(materialMatch[2], 10);
@@ -710,6 +729,38 @@ export class ProjectZomboidParser {
           type: "item",
           context: "required_item",
         });
+      }
+    }
+
+    // Extract evolvedrecipe references (audit M3): BaseItem + Ingredients
+    if (item.type === "evolvedrecipe") {
+      if (
+        typeof item.properties.BaseItem === "string" &&
+        item.properties.BaseItem.trim()
+      ) {
+        refs.push({
+          ref: item.properties.BaseItem.trim(),
+          type: "item",
+          context: "baseItem",
+        });
+      }
+      const ingredients = item.properties.Ingredients;
+      if (Array.isArray(ingredients)) {
+        for (const ing of ingredients) {
+          const id = String(ing).split("=")[0].trim();
+          if (id) {
+            refs.push({ ref: id, type: "item", context: "ingredient" });
+          }
+        }
+      } else if (typeof ingredients === "string" && ingredients.trim()) {
+        // Generator emits comma-separated ("Base.Potato, Base.Cabbage,");
+        // game files may use semicolons. Split on both.
+        for (const part of ingredients.split(/[;,]/)) {
+          const id = part.split("=")[0].trim();
+          if (id) {
+            refs.push({ ref: id, type: "item", context: "ingredient" });
+          }
+        }
       }
     }
 

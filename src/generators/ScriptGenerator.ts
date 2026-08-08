@@ -18,6 +18,17 @@ export interface GenerationOptions {
 export class ScriptGenerator {
   private db: DatabaseManager;
   private templates: Map<string, ItemTemplate> = new Map();
+  private readonly categoryTemplateMap: Record<string, string> = {
+    weapon: "melee_weapon",
+    melee: "melee_weapon",
+    "melee weapon": "melee_weapon",
+    ranged: "ranged_weapon",
+    "ranged weapon": "ranged_weapon",
+    food: "food_item",
+    tool: "tool_item",
+    clothing: "clothing_item",
+    recipe: "basic_recipe",
+  };
 
   constructor(db: DatabaseManager) {
     this.db = db;
@@ -303,25 +314,11 @@ export class ScriptGenerator {
   }
 
   private getTemplate(type: string, category?: string): ItemTemplate | null {
-    // Category-based pick (first match wins): Weapon → melee_weapon,
-    // Food → food_item, Tool → tool_item, Clothing → clothing_item.
-    // NOTE: the loop must NOT also match on `type` — "food_item".includes("item")
-    // used to hijack every uncategorized item into the food template
-    // (freebuff review finding, fixed).
     if (category) {
-      const typeTemplates = [
-        "melee_weapon",
-        "ranged_weapon",
-        "food_item",
-        "tool_item",
-        "clothing_item",
-        "basic_recipe",
-      ];
-      const cat = category.toLowerCase();
-      for (const templateKey of typeTemplates) {
-        if (templateKey.includes(cat)) {
-          return this.templates.get(templateKey)!;
-        }
+      const key = category.toLowerCase().replace(/[\s_]+/g, " ").trim();
+      const templateKey = this.categoryTemplateMap[key];
+      if (templateKey) {
+        return this.templates.get(templateKey)!;
       }
     }
 

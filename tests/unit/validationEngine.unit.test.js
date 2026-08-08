@@ -138,6 +138,57 @@ describe('ValidationEngine', () => {
   });
 });
 
+describe('D11: brace counting uses shared comment-stripping', () => {
+  let tmpDir, db, validator;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-val-'));
+    const dbPath = path.join(tmpDir, 'data', 'pz_database.db');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    db = new DatabaseManager(dbPath);
+    await db.initialize();
+    validator = new ValidationEngine(db);
+  });
+
+  after(async () => {
+    if (db) await db.close();
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('braces inside block comments do not false-positive', async () => {
+    const content = [
+      'module Base {',
+      '  item GhostBrace { /* } */ }',
+      '}',
+    ].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    assert.ok(!result.errors.some((e) => e.code === 'SYNTAX_ERROR'));
+  });
+
+  test('missing closers still reported', async () => {
+    const content = [
+      'item A {',
+      '  Type = Weapon,',
+    ].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    assert.ok(
+      result.errors.some(
+        (e) => e.code === 'SYNTAX_ERROR' && /Missing 1 closing brace/.test(e.message),
+      ),
+    );
+  });
+
+  test('stray closing brace still reported', async () => {
+    const content = ['}', 'item A {', '}'].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    assert.ok(
+      result.errors.some(
+        (e) => e.code === 'SYNTAX_ERROR' && /Unexpected closing brace/.test(e.message),
+      ),
+    );
+  });
+});
+
 // ===========================================================================
 // M1 (F5-F8): B42 validator consistency
 // ===========================================================================

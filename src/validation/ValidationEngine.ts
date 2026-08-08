@@ -1,6 +1,6 @@
 import { DatabaseManager } from "../database/DatabaseManager.js";
 import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
-import { scanScriptBlocks } from "../utils/scriptScanner.js";
+import { scanScriptBlocks, stripLineComments, countBraces } from "../utils/scriptScanner.js";
 import { BlockType } from "../utils/blockTypes.js";
 
 export interface ValidationResult {
@@ -627,27 +627,29 @@ export class ValidationEngine {
   private validateSyntax(content: string, result: ValidationResult): void {
     const lines = content.split("\n");
     let braceLevel = 0;
+    let inBlockComment = false;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
       const lineNumber = i + 1;
+      const { code, inBlockComment: newState } = stripLineComments(
+        lines[i],
+        inBlockComment,
+      );
+      inBlockComment = newState;
+      const line = code.trim();
+      if (!line) continue;
 
-      if (!line || line.startsWith("//") || line.startsWith("/*")) continue;
-
-      // Count braces
-      const openBraces = (line.match(/\{/g) || []).length;
-      const closeBraces = (line.match(/\}/g) || []).length;
+      const { open: openBraces, close: closeBraces } = countBraces(line);
       braceLevel += openBraces - closeBraces;
 
-      // Check for negative brace level (more closing than opening)
       if (braceLevel < 0) {
         result.errors.push({
           line: lineNumber,
-          message: 'Unexpected closing brace "}"',
+          message: "Unexpected closing brace \"}\"",
           severity: "error",
           code: "SYNTAX_ERROR",
         });
-        braceLevel = 0; // Reset to continue parsing
+        braceLevel = 0;
       }
     }
 

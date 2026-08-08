@@ -69,6 +69,34 @@ describe('ScriptGenerator', () => {
     assert.ok(!script.includes('HungerChange')); // would come from food template
   });
 
+  test('category "Ranged Weapon" picks the ranged_weapon template', async () => {
+    const script = await generator.generateScript(
+      'item',
+      'RifleX',
+      {
+        Type: 'Weapon',
+        DisplayName: 'Rifle',
+        category: 'Ranged Weapon',
+        AmmoType: '9mm',
+      },
+      'Base'
+    );
+    assert.ok(script.includes('MaxRange = 20'));
+    assert.ok(script.includes('Categories = Firearm'));
+    assert.ok(!script.includes('MaxDamage'));
+  });
+
+  test('category "item" does not hijack into the food template', async () => {
+    const script = await generator.generateScript(
+      'item',
+      'OddThing',
+      { category: 'item', DisplayName: 'Odd' },
+      'Base'
+    );
+    assert.ok(!script.includes('HungerChange'));
+    assert.ok(script.includes('Categories = Tool'));
+  });
+
   test('generates a recipe with ingredients and result', async () => {
     const script = await generator.generateScript('recipe', 'Make Plank', {
       ingredients: [{ item: 'Base.Log', count: 4 }],

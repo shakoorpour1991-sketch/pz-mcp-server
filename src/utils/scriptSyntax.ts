@@ -11,9 +11,12 @@
 export type PropertySeparator = "=" | ":" | "[:=]";
 
 const PROPERTY_LINE_RE: Record<PropertySeparator, RegExp> = {
-  "=": /^\s*(\w+)\s*=\s*([^,]+),?\s*$/,
-  ":": /^\s*(\w+)\s*:\s*([^,]+),?\s*$/,
-  "[:=]": /^\s*(\w+)\s*[:=]\s*([^,]+),?\s*$/,
+  // Value may be a comma-separated list ("Base.Potato, Base.Cabbage,"), so
+  // allow repeated comma-free runs inside the capture group (audit M3: the old
+  // [^,]+ never matched multi-ingredient evolved recipe lines).
+  "=": /^\s*(\w+)\s*=\s*([^,]+(?:,[^,]+)*),?\s*$/,
+  ":": /^\s*(\w+)\s*:\s*([^,]+(?:,[^,]+)*),?\s*$/,
+  "[:=]": /^\s*(\w+)\s*[:=]\s*([^,]+(?:,[^,]+)*),?\s*$/,
 };
 
 /**
@@ -59,11 +62,17 @@ export function parseScriptValue(value: string): any {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
   }
-  // Parse numbers
-  if (/^\d+$/.test(value)) {
+  // Parse numbers (optional leading minus — negative stats like
+  // HungerChange = -10 must parse as numbers, not strings)
+  if (/^-?\d+$/.test(value)) {
+    // Precision guard: integers with >15 digits can lose precision via
+    // parseInt; PZ uses small numbers, so return the original string instead
+    if (value.replace(/^-/, "").length > 15) {
+      return value;
+    }
     return parseInt(value, 10);
   }
-  if (/^\d*\.\d+$/.test(value)) {
+  if (/^-?\d*\.\d+$/.test(value)) {
     return parseFloat(value);
   }
   // Parse booleans

@@ -90,6 +90,7 @@ interface ItemRow {
 export class DatabaseManager {
   private db!: DatabaseSync;
   private dbPath: string;
+  private inTransaction = false;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || databasePath();
@@ -119,30 +120,29 @@ export class DatabaseManager {
     // re-inserts shift rowids without changing COUNT) — the full rebuild is
     // skipped on every healthy boot (freebuff L1).
     try {
-      const itemCount = (
-        this.db.prepare("SELECT COUNT(*) as c FROM items").get() as {
-          c: number;
-        }
-      ).c;
-      const ftsCount = (
-        this.db.prepare("SELECT COUNT(*) as c FROM items_fts").get() as {
-          c: number;
-        }
-      ).c;
-      const itemMaxRowid = (
-        this.db
-          .prepare("SELECT IFNULL(MAX(rowid), 0) as m FROM items")
-          .get() as { m: number }
-      ).m;
-      const ftsMaxRowid = (
-        this.db
-          .prepare("SELECT IFNULL(MAX(rowid), 0) as m FROM items_fts")
-          .get() as { m: number }
-      ).m;
-      if (itemCount !== ftsCount || itemMaxRowid !== ftsMaxRowid) {
+      // Single atomic statement: SQLite reads one statement in a snapshot,
+      // so the four signals cannot race a concurrent writer (audit D3b).
+      const row = this.db
+        .prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM items) AS item_count,
+        (SELECT COUNT(*) FROM items_fts) AS fts_count,
+        (SELECT IFNULL(MAX(rowid), 0) FROM items) AS item_max_rowid,
+        (SELECT IFNULL(MAX(rowid), 0) FROM items_fts) AS fts_max_rowid
+    `)
+        .get() as {
+        item_count: number;
+        fts_count: number;
+        item_max_rowid: number;
+        fts_max_rowid: number;
+      };
+      if (
+        row.item_count !== row.fts_count ||
+        row.item_max_rowid !== row.fts_max_rowid
+      ) {
         this.db.exec(`INSERT INTO items_fts(items_fts) VALUES('rebuild')`);
         logger.info(
-          `FTS index rebuilt (items=${itemCount}/${itemMaxRowid}, fts=${ftsCount}/${ftsMaxRowid})`,
+          `FTS index rebuilt (items=${row.item_count}/${row.item_max_rowid}, fts=${row.fts_count}/${row.fts_max_rowid})`,
         );
       }
     } catch (err) {
@@ -290,6 +290,15 @@ export class DatabaseManager {
   }
 
   private async createIndexes(): Promise<void> {
+    // Audit M5: INSERT OR IGNORE only ignores with a uniqueness constraint;
+    // dedupe must run before the index so pre-existing duplicates don't fail creation.
+    this.db.exec(
+      `DELETE FROM "references" WHERE id NOT IN (SELECT MIN(id) FROM "references" GROUP BY item_id, reference_id, reference_type, context)`,
+    );
+    this.db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_references_unique ON "references" (item_id, reference_id, reference_type, context)`,
+    );
+
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_items_type ON items (type)`);
     this.db.exec(
       `CREATE INDEX IF NOT EXISTS idx_items_module ON items (module)`,
@@ -529,6 +538,43 @@ export class DatabaseManager {
     return item;
   }
 
+  async upsertMod(mod: {
+    id: string;
+    name: string;
+    author?: string | undefined;
+    version?: string | undefined;
+    description?: string | undefined;
+    path?: string | undefined;
+  }): Promise<void> {
+    // Audit M4: the mods table was schema-only (dead). analyzeMod now records
+    // the analyzed mod so mod.info require= lists can resolve against mod IDs.
+    this.db
+      .prepare(
+        `INSERT INTO mods (id, name, author, version, description, path) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           author = excluded.author,
+           version = excluded.version,
+           description = excluded.description,
+           path = excluded.path`,
+      )
+      .run(
+        mod.id,
+        mod.name,
+        mod.author || null,
+        mod.version || null,
+        mod.description || null,
+        mod.path || null,
+      );
+  }
+
+  async modExists(id: string): Promise<boolean> {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as count FROM mods WHERE id = ?`)
+      .get(id) as unknown as { count: number };
+    return row.count > 0;
+  }
+
   async getItemById(id: string): Promise<GameItem | null> {
     const row = this.db
       .prepare(
@@ -609,6 +655,12 @@ export class DatabaseManager {
    * single-row autocommit inserts.
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.inTransaction) {
+      // Nested call – reuse the outer transaction (SQLite has no nesting).
+      return fn();
+    }
+
+    this.inTransaction = true;
     this.db.exec("BEGIN");
     try {
       const result = await fn();
@@ -617,6 +669,8 @@ export class DatabaseManager {
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
+    } finally {
+      this.inTransaction = false;
     }
   }
 
@@ -729,6 +783,47 @@ export class DatabaseManager {
     }));
   }
 
+  /**
+   * Batched getReferencesTo — one IN query for many reference ids (audit D2,
+   * kills the N+1 in RecipeAnalyzer.detectConflicts). Every requested id is
+   * present in the returned Map (empty array when it has no rows).
+   */
+  async getReferencesToMany(
+    referenceIds: string[],
+  ): Promise<Map<string, Array<{ itemId: string; type: string; context: string }>>> {
+    const map = new Map<
+      string,
+      Array<{ itemId: string; type: string; context: string }>
+    >();
+    if (referenceIds.length === 0) {
+      return map;
+    }
+    for (const id of referenceIds) {
+      map.set(id, []);
+    }
+
+    const placeholders = referenceIds.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(
+        `SELECT reference_id, item_id, reference_type, context FROM "references" WHERE reference_id IN (${placeholders})`,
+      )
+      .all(...referenceIds) as unknown as Array<{
+      reference_id: string;
+      item_id: string;
+      reference_type: string;
+      context: string;
+    }>;
+
+    for (const r of rows) {
+      map.get(r.reference_id)?.push({
+        itemId: r.item_id,
+        type: r.reference_type,
+        context: r.context,
+      });
+    }
+    return map;
+  }
+
   async checkReference(
     referenceId: string,
     referenceType?: string,
@@ -778,17 +873,21 @@ export class DatabaseManager {
   }
 
   async getSimilarItems(query: string, limit: number = 5): Promise<string[]> {
+    // Escape LIKE wildcards so user input matches literally (audit M7).
+    const escapeLike = (q: string): string => q.replace(/[\\%_]/g, "\\$&");
+    const escapedQuery = escapeLike(query);
+
     const rows = this.db
       .prepare(
         `
       SELECT name
       FROM items
-      WHERE name LIKE ? OR display_name LIKE ?
+      WHERE name LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\'
       ORDER BY 
         CASE 
           WHEN name = ? THEN 1
-          WHEN name LIKE ? THEN 2
-          WHEN display_name LIKE ? THEN 3
+          WHEN name LIKE ? ESCAPE '\\' THEN 2
+          WHEN display_name LIKE ? ESCAPE '\\' THEN 3
           ELSE 4
         END,
         name ASC
@@ -796,11 +895,11 @@ export class DatabaseManager {
     `,
       )
       .all(
-        `%${query}%`,
-        `%${query}%`,
+        `%${escapedQuery}%`,
+        `%${escapedQuery}%`,
         query,
-        `${query}%`,
-        `${query}%`,
+        `${escapedQuery}%`,
+        `${escapedQuery}%`,
         limit,
       ) as unknown as Array<{ name: string }>;
 

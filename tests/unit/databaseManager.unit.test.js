@@ -250,6 +250,18 @@ describe('DatabaseManager', () => {
     });
   });
 
+  describe('Audit M5: references uniqueness', () => {
+    test('references dedupe: INSERT OR IGNORE keeps a single row per logical key (M5)', async () => {
+      await db.addReference('Base.TestSword', 'Base.Potato', 'item', 'ingredient');
+      await db.addReference('Base.TestSword', 'Base.Potato', 'item', 'ingredient');
+      // Note: the C1 describe above also added a sprite ref for this item, so
+      // filter to the key under test rather than asserting the total count.
+      const refs = await db.getReferencesFrom('Base.TestSword');
+      const potato = refs.filter((r) => r.referenceId === 'Base.Potato');
+      assert.equal(potato.length, 1);
+    });
+  });
+
   describe('FTS rowid stability (upsert vs INSERT OR REPLACE)', () => {
     test('re-inserting the same id keeps it FTS-searchable (no rowid drift)', async () => {
       const item = {
@@ -341,5 +353,175 @@ describe('DatabaseManager', () => {
       const stats = await db.getStats();
       assert.equal(stats.total, 0);
     });
+  });
+
+  describe('getSimilarItems LIKE escaping (audit M7)', () => {
+    before(async () => {
+      await db.insertItem({
+        id: 'Base.CottonPct',
+        name: '100% Cotton',
+        displayName: '100% Cotton',
+        type: 'item',
+        module: 'Base',
+        category: 'Clothing',
+        properties: {},
+        rawContent: 'item CottonPct {}',
+        filePath: 'test.txt',
+      });
+      await db.insertItem({
+        id: 'Base.Cotton',
+        name: 'Cotton',
+        displayName: 'Cotton',
+        type: 'item',
+        module: 'Base',
+        category: 'Clothing',
+        properties: {},
+        rawContent: 'item Cotton {}',
+        filePath: 'test.txt',
+      });
+    });
+
+    test('query with % returns only literal matches', async () => {
+      const results = await db.getSimilarItems('%');
+      assert.equal(results.length, 1);
+      assert.equal(results[0], '100% Cotton');
+    });
+
+    test('query with Cotton returns both items', async () => {
+      const results = await db.getSimilarItems('Cotton');
+      assert.equal(results.length, 2);
+      assert.ok(results.includes('100% Cotton'));
+      assert.ok(results.includes('Cotton'));
+    });
+  });
+});
+
+describe('DatabaseManager D2/D3 fixes', () => {
+  let tmpDir;
+  let db;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-d23-'));
+    db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
+    await db.initialize();
+  });
+
+  after(() => {
+    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('getReferencesToMany batches lookups for multiple ids', async () => {
+    await db.insertItem({
+      id: 'item1', name: 'Item 1', displayName: 'Item 1', type: 'item',
+      module: 'Base', properties: {}, rawContent: 'item Item1 {}', filePath: 'x.txt',
+    });
+    await db.insertItem({
+      id: 'item2', name: 'Item 2', displayName: 'Item 2', type: 'item',
+      module: 'Base', properties: {}, rawContent: 'item Item2 {}', filePath: 'x.txt',
+    });
+    await db.insertItem({
+      id: 'item3', name: 'Item 3', displayName: 'Item 3', type: 'item',
+      module: 'Base', properties: {}, rawContent: 'item Item3 {}', filePath: 'x.txt',
+    });
+    // FK (freebuff M6): references.item_id must exist as an item row — the
+    // recipes are that item_id, so insert them first.
+    const mkRecipe = (id) => ({
+      id, name: id, displayName: id, type: 'recipe',
+      module: 'Base', properties: {}, rawContent: `recipe ${id} {}`, filePath: 'x.txt',
+    });
+    await db.insertItems([mkRecipe('recipeA'), mkRecipe('recipeB'), mkRecipe('recipeC')]);
+    await db.addReference('recipeA', 'item1', 'item', 'result');
+    await db.addReference('recipeB', 'item2', 'item', 'result');
+    await db.addReference('recipeC', 'item2', 'item', 'ingredient');
+
+    const map = await db.getReferencesToMany(['item1', 'item2', 'item3']);
+    assert.strictEqual(map.size, 3);
+    assert.ok(map.has('item1'));
+    assert.ok(map.has('item2'));
+    assert.ok(map.has('item3'));
+
+    const refs1 = map.get('item1');
+    assert.strictEqual(refs1.length, 1);
+    assert.deepEqual(refs1[0], { itemId: 'recipeA', type: 'item', context: 'result' });
+
+    const refs2 = map.get('item2');
+    assert.strictEqual(refs2.length, 2);
+    assert.ok(refs2.some((r) => r.itemId === 'recipeB' && r.context === 'result'));
+    assert.ok(refs2.some((r) => r.itemId === 'recipeC' && r.context === 'ingredient'));
+
+    assert.deepEqual(map.get('item3'), []);
+
+    const emptyMap = await db.getReferencesToMany([]);
+    assert.strictEqual(emptyMap.size, 0);
+  });
+
+  test('transaction allows nested calls and commits all', async () => {
+    await db.transaction(async () => {
+      await db.insertItem({
+        id: 'outer', name: 'Outer', displayName: 'Outer', type: 'item',
+        module: 'Base', properties: {}, rawContent: 'item Outer {}', filePath: 'x.txt',
+      });
+      await db.transaction(async () => {
+        await db.insertItem({
+          id: 'inner', name: 'Inner', displayName: 'Inner', type: 'item',
+          module: 'Base', properties: {}, rawContent: 'item Inner {}', filePath: 'x.txt',
+        });
+      });
+    });
+    assert.ok(await db.getItemById('outer'));
+    assert.ok(await db.getItemById('inner'));
+  });
+
+  test('transaction clears the nesting flag after an error', async () => {
+    await assert.rejects(
+      db.transaction(async () => {
+        await db.insertItem({
+          id: 'fail', name: 'Fail', displayName: 'Fail', type: 'item',
+          module: 'Base', properties: {}, rawContent: 'item Fail {}', filePath: 'x.txt',
+        });
+        throw new Error('Simulated failure');
+      })
+    );
+    // Subsequent transaction must work (flag cleared).
+    await db.transaction(async () => {
+      await db.insertItem({
+        id: 'after', name: 'After', displayName: 'After', type: 'item',
+        module: 'Base', properties: {}, rawContent: 'item After {}', filePath: 'x.txt',
+      });
+    });
+    assert.ok(await db.getItemById('after'));
+  });
+
+  test('FTS health check runs on a fresh database without throwing', async () => {
+    const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-fresh-'));
+    const freshDb = new DatabaseManager(path.join(freshDir, 'data', 'pz_database.db'));
+    await freshDb.initialize();
+    freshDb.close();
+    fs.rmSync(freshDir, { recursive: true, force: true });
+  });
+
+  test('FTS index rebuilds when counts drift (atomic health check)', async () => {
+    const driftDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-drift-'));
+    const driftDb = new DatabaseManager(path.join(driftDir, 'data', 'pz_database.db'));
+    await driftDb.initialize();
+    await driftDb.insertItem({
+      id: 'Base.Drift', name: 'Drift', displayName: 'Drift', type: 'item',
+      module: 'Base', properties: {}, rawContent: 'item Drift {}', filePath: 'x.txt',
+    });
+    // Manually delete FTS rows behind the index's back to create drift,
+    // then close before re-initializing (Windows keeps the file handle
+    // locked while the first connection is open).
+    driftDb.db.exec('DELETE FROM items_fts');
+    driftDb.close();
+    const healedDb = new DatabaseManager(path.join(driftDir, 'data', 'pz_database.db'));
+    await healedDb.initialize();
+    const counts = healedDb.db
+      .prepare('SELECT (SELECT COUNT(*) FROM items) AS item_count, (SELECT COUNT(*) FROM items_fts) AS fts_count')
+      .get();
+    assert.strictEqual(counts.item_count, counts.fts_count);
+    assert.strictEqual(counts.item_count, 1);
+    healedDb.close();
+    fs.rmSync(driftDir, { recursive: true, force: true });
   });
 });

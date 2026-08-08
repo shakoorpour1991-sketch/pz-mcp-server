@@ -132,6 +132,19 @@ export class ModAnalyzer {
       if (modInfo) result.modInfo = modInfo;
       result.modName = modInfo?.name || basename(modPath);
 
+      // Audit M4: record the analyzed mod in the DB so mod.info require= lists
+      // of other mods can resolve against mod IDs (the mods table was dead).
+      if (modInfo?.id) {
+        await this.db.upsertMod({
+          id: modInfo.id,
+          name: modInfo.name || basename(modPath),
+          author: modInfo.author,
+          version: modInfo.version,
+          description: modInfo.description,
+          path: modPath,
+        });
+      }
+
       // Analyze scripts
       await this.analyzeScripts(modPath, result, strictValidation);
 
@@ -456,14 +469,21 @@ export class ModAnalyzer {
         return;
       }
 
+      // Strip Lua comments ONCE (audit D5), then run every check on the clean
+      // text: strings are preserved by the state machine, so `--` inside quotes
+      // never skews syntax/semantic checks and deprecated patterns inside
+      // comments are no longer false positives. Newlines survive stripping, so
+      // all line numbers below stay aligned with the original file.
+      const stripped = this.stripLuaComments(content);
+
       // Check for common Lua syntax issues
-      this.checkLuaSyntax(content, filePath, result);
+      this.checkLuaSyntax(stripped, filePath, result);
 
       // Check for deprecated API usage
-      this.checkDeprecatedAPI(content, filePath, result);
+      this.checkDeprecatedAPI(stripped, filePath, result);
 
       // Check for semantic issues
-      this.checkSemanticIssues(content, filePath, result);
+      this.checkSemanticIssues(stripped, filePath, result);
     } catch (error) {
       result.issues.push({
         file: filePath,
@@ -476,24 +496,188 @@ export class ModAnalyzer {
 
   /**
    * Strip Lua comments so balance/semantic analysis is not skewed by text
-   * inside comments (freebuff L2): removes `--[[ ]]` block comments (which can
-   * span lines) and `--` line comments. A heuristic — strings containing `--`
-   * are still misread, but block comments no longer cause false positives.
+   * inside comments (freebuff L2, audit D5): a small state machine tracks
+   * string literals (single/double/long), line comments and block comments
+   * (`--[[ ]]`, `--[==[ ]==]`), so `--` inside strings is never treated as a
+   * comment and comments are replaced with spaces (newlines preserved, so
+   * line numbers stay aligned).
    */
   private stripLuaComments(content: string): string {
-    return (
-      content
-        // Long-bracket comments (--[[ ]] and --[==[ ... ]==]) can span lines and
-        // contain code-like text; strip them whole before per-line handling
-        // (freebuff L2). `=*` permits any `=` count, matching Lua's spec.
-        .replace(/--\[=*\[[\s\S]*?\]=*\]/g, " ")
-        .split("\n")
-        .map((line) => {
-          const idx = line.indexOf("--");
-          return idx === -1 ? line : line.substring(0, idx);
-        })
-        .join("\n")
-    );
+    const result: string[] = [];
+    const n = content.length;
+    let i = 0;
+
+    enum State {
+      Normal,
+      SingleString,
+      DoubleString,
+      LongString,
+      LineComment,
+      BlockComment,
+    }
+
+    let state = State.Normal;
+    let equalsCount = 0; // For long strings and block comments
+
+    while (i < n) {
+      const ch = content[i];
+      const next = i + 1 < n ? content[i + 1] : "";
+      const next2 = i + 2 < n ? content[i + 2] : "";
+
+      switch (state) {
+        case State.Normal: {
+          // String literals
+          if (ch === "'") {
+            state = State.SingleString;
+            result.push(ch);
+            i++;
+            break;
+          }
+          if (ch === '"') {
+            state = State.DoubleString;
+            result.push(ch);
+            i++;
+            break;
+          }
+
+          // Long string: [[ or [=*[ (NOT a comment — no preceding --)
+          if (ch === "[" && (next === "[" || next === "=")) {
+            let eq = 0;
+            let j = i + 1;
+            while (j < n && content[j] === "=") {
+              eq++;
+              j++;
+            }
+            if (j < n && content[j] === "[") {
+              state = State.LongString;
+              equalsCount = eq;
+              for (let k = i; k <= j; k++) result.push(content[k]);
+              i = j + 1;
+              break;
+            }
+          }
+
+          // Comments
+          if (ch === "-" && next === "-") {
+            // Block comment: --[[ or --[=*[ (eq counted AFTER the first '[')
+            if (next2 === "[") {
+              let eq = 0;
+              let j = i + 3;
+              while (j < n && content[j] === "=") {
+                eq++;
+                j++;
+              }
+              if (j < n && content[j] === "[") {
+                state = State.BlockComment;
+                equalsCount = eq;
+                result.push(" ", " ");
+                for (let k = 0; k < 1 + eq + 1; k++) result.push(" ");
+                i = j + 1;
+                break;
+              }
+            }
+            // Line comment
+            state = State.LineComment;
+            result.push(" ", " ");
+            i += 2;
+            break;
+          }
+
+          result.push(ch);
+          i++;
+          break;
+        }
+
+        case State.SingleString: {
+          result.push(ch);
+          if (ch === "\\" && next) {
+            result.push(next);
+            i += 2;
+            break;
+          }
+          if (ch === "'") {
+            state = State.Normal;
+          }
+          i++;
+          break;
+        }
+
+        case State.DoubleString: {
+          result.push(ch);
+          if (ch === "\\" && next) {
+            result.push(next);
+            i += 2;
+            break;
+          }
+          if (ch === '"') {
+            state = State.Normal;
+          }
+          i++;
+          break;
+        }
+
+        case State.LongString: {
+          result.push(ch);
+          if (ch === "]") {
+            let eq = 0;
+            let j = i + 1;
+            while (j < n && content[j] === "=") {
+              eq++;
+              j++;
+            }
+            if (j < n && content[j] === "]" && eq === equalsCount) {
+              // First ] already pushed above; add =* and final ]
+              for (let k = 0; k < eq; k++) result.push("=");
+              result.push("]");
+              state = State.Normal;
+              i = j + 1;
+              break;
+            }
+          }
+          i++;
+          break;
+        }
+
+        case State.LineComment: {
+          if (ch === "\n") {
+            result.push("\n");
+            state = State.Normal;
+          } else {
+            result.push(" ");
+          }
+          i++;
+          break;
+        }
+
+        case State.BlockComment: {
+          if (ch === "\n") {
+            result.push("\n");
+          } else {
+            result.push(" ");
+          }
+          if (ch === "]") {
+            let eq = 0;
+            let j = i + 1;
+            while (j < n && content[j] === "=") {
+              eq++;
+              j++;
+            }
+            if (j < n && content[j] === "]" && eq === equalsCount) {
+              // First ] already spaced above; add =* and final ]
+              for (let k = 0; k < eq; k++) result.push(" ");
+              result.push(" ");
+              state = State.Normal;
+              i = j + 1;
+              break;
+            }
+          }
+          i++;
+          break;
+        }
+      }
+    }
+
+    return result.join("");
   }
 
   private checkLuaSyntax(
@@ -501,7 +685,9 @@ export class ModAnalyzer {
     filePath: string,
     result: ModAnalysisResult,
   ): void {
-    const lines = this.stripLuaComments(content).split("\n");
+    // content is already stripped of comments (audit D5 — single strip at the
+    // analyzeLuaFile call site, so line numbers stay aligned).
+    const lines = content.split("\n");
     let openParens = 0,
       closeParens = 0;
     let openBrackets = 0,
@@ -603,13 +789,17 @@ export class ModAnalyzer {
       },
     ];
 
+    // content is already stripped of comments (audit D5). Quoted segments are
+    // blanked before matching so a pattern inside a string literal is not a
+    // false positive either (only real calls are flagged).
     const lines = content.split("\n");
+    const stringLiteralRe = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
       const lineNumber = i + 1;
+      const unquoted = lines[i].replace(stringLiteralRe, (m) => " ".repeat(m.length));
 
       for (const pattern of deprecatedPatterns) {
-        if (line.includes(pattern.pattern)) {
+        if (unquoted.includes(pattern.pattern)) {
           result.issues.push({
             file: filePath,
             line: lineNumber,
@@ -628,18 +818,20 @@ export class ModAnalyzer {
     filePath: string,
     result: ModAnalysisResult,
   ): void {
-    // Analyze comment-free code so comments never trigger GLOBAL_VAR or skew
-    // if/end counting (freebuff L2).
-    const clean = this.stripLuaComments(content);
-    const lines = clean.split("\n");
-    const ifKeywordCount = (clean.match(/\bif\b/g) || []).length;
-    const endKeywordCount = (clean.match(/\bend\b/g) || []).length;
+    // content is already stripped of comments (audit D5) so comments never
+    // trigger GLOBAL_VAR or skew if/end counting (freebuff L2).
+    const lines = content.split("\n");
 
-    if (ifKeywordCount !== endKeywordCount) {
+    // Note: standalone `do ... end` blocks and keywords inside string literals
+    // are not tracked here (do appears together with for/while; strings are handled separately).
+    const blockOpenerCount = ((content.match(/\bif\b/g) || []).length + (content.match(/\bfor\b/g) || []).length + (content.match(/\bwhile\b/g) || []).length + (content.match(/\bfunction\b/g) || []).length);
+    const endKeywordCount = (content.match(/\bend\b/g) || []).length;
+
+    if (blockOpenerCount !== endKeywordCount) {
       result.issues.push({
         file: filePath,
         severity: "error",
-        message: `Unbalanced if/end: ${ifKeywordCount} 'if' statements but ${endKeywordCount} 'end' keywords`,
+        message: `Unbalanced block keywords: ${blockOpenerCount} openers (if/for/while/function) but ${endKeywordCount} 'end' keywords`,
         code: "SEMANTIC_ERROR",
       });
     }
@@ -651,12 +843,16 @@ export class ModAnalyzer {
       const line = lines[i].trim();
       const lineNumber = i + 1;
 
-      // Always register local declarations (not just in strict context)
+      // Register ALL local variable names declared on this line, including
+      // multi-name declarations (`local a, b = 1, 2`) so later reassignments
+      // of b are not flagged as global leaks (audit D5).
       if (line.includes("local ")) {
-        const localMatch = line.match(/local\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
-        if (localMatch) {
-          const varName = localMatch[1];
-          globalVars.add(varName);
+        const localPart = line.substring(line.indexOf("local ") + 6).trim();
+        for (const part of localPart.split(",")) {
+          const match = part.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+          if (match) {
+            globalVars.add(match[1]);
+          }
         }
       }
 
@@ -901,8 +1097,9 @@ export class ModAnalyzer {
     // Check mod.info dependencies
     if (result.modInfo?.require) {
       for (const dep of result.modInfo.require) {
-        // Check if dependency is available (simplified check)
-        const exists = await this.db.checkReference(dep, "item");
+        // Check if dependency is available (mod IDs — audit M4: require lists
+        // name other MODS, not items; checkReference(dep, "item") was wrong)
+        const exists = await this.db.modExists(dep);
         if (!exists) {
           compatibility.missingDependencies.push(dep);
         }
@@ -929,6 +1126,17 @@ export class ModAnalyzer {
         if (
           curMajor > maxMajor ||
           (curMajor === maxMajor && curMinor > maxMinor)
+        ) {
+          compatibility.gameVersionCompatibility.compatible = false;
+        }
+      }
+      // versionMin was recorded but never enforced (audit M4) — symmetric
+      // numeric check: game build below the declared minimum is incompatible.
+      if (minVersion !== undefined) {
+        const [minMajor, minMinor] = minVersion.split(".").map(Number);
+        if (
+          curMajor < minMajor ||
+          (curMajor === minMajor && curMinor < minMinor)
         ) {
           compatibility.gameVersionCompatibility.compatible = false;
         }

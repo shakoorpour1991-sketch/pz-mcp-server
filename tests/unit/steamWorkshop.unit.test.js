@@ -90,6 +90,35 @@ describe('parseWorkshopInput', () => {
     assert.throws(() => parseWorkshopInput('not-a-workshop-id'), /Could not parse/);
     assert.throws(() => parseWorkshopInput(''), /Could not parse/);
   });
+
+  test('accepts https://www.steamcommunity.com URL', () => {
+    assert.equal(
+      parseWorkshopInput('https://www.steamcommunity.com/sharedfiles/filedetails/?id=2696145877'),
+      '2696145877'
+    );
+  });
+
+  test('accepts http://steamcommunity.com URL', () => {
+    assert.equal(
+      parseWorkshopInput('http://steamcommunity.com/sharedfiles/filedetails/?id=2696145877'),
+      '2696145877'
+    );
+  });
+
+  test('rejects wrong-host URL', () => {
+    assert.throws(
+      () => parseWorkshopInput('https://evil.example.com/sharedfiles/filedetails/?id=2696145877'),
+      /Could not parse/
+    );
+  });
+
+  test('rejects URL with non-numeric id', () => {
+    assert.throws(() => parseWorkshopInput('https://steamcommunity.com/sharedfiles/filedetails/?id=abc'), /Could not parse/);
+  });
+
+  test('rejects random workshop URL', () => {
+    assert.throws(() => parseWorkshopInput('https://steamcommunity.com/workshop/browse/?appid=108600'), /Could not parse/);
+  });
 });
 
 describe('SteamWorkshopClient', () => {

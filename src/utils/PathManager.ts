@@ -1,6 +1,7 @@
 import { execFile } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
+import { constants, existsSync, readFileSync, realpathSync } from "fs";
+import { access } from "fs/promises";
+import { isAbsolute, join, parse, resolve } from "path";
 import { homedir } from "os";
 import logger from "./logger.js";
 import { pzInstallEnvPath } from "./config.js";
@@ -87,7 +88,13 @@ export class PathManager {
   }
 
   async detectProjectZomboidPath(): Promise<string | null> {
-    // First try to detect from Steam registry/config
+    // First check environment variable override
+    const envPath = pzInstallEnvPath();
+    if (envPath && this.isValidProjectZomboidInstallation(envPath)) {
+      return envPath;
+    }
+
+    // Then try to detect from Steam registry/config
     const steamPath = await this.detectSteamInstallation();
     if (steamPath) {
       return steamPath;
@@ -98,12 +105,6 @@ export class PathManager {
       if (this.isValidProjectZomboidInstallation(path)) {
         return path;
       }
-    }
-
-    // Try to find from environment variables
-    const envPath = pzInstallEnvPath();
-    if (envPath && this.isValidProjectZomboidInstallation(envPath)) {
-      return envPath;
     }
 
     return null;
@@ -430,7 +431,12 @@ export class PathManager {
       throw new Error(`Path must be absolute: ${input}`);
     }
 
-    const resolved = resolve(input);
+    let resolved: string;
+    try {
+      resolved = realpathSync(input);
+    } catch {
+      resolved = resolve(input);
+    }
 
     if (kind === "dir" && !existsSync(resolved)) {
       throw new Error(`Directory does not exist: ${resolved}`);
@@ -440,5 +446,37 @@ export class PathManager {
     }
 
     return resolved;
+  }
+
+  /**
+   * Walk up from `target` to the first existing ancestor directory and check
+   * whether it is writable (W_OK via fs.access). Returns a verdict object
+   * with `writable` boolean and, when not writable, an `error` message.
+   * Used by export_mod_script dry-run to warn early (audit D6).
+   */
+  async isAncestorWritable(target: string): Promise<{ writable: boolean; error?: string }> {
+    let current = target;
+    for (;;) {
+      try {
+        await access(current, constants.W_OK);
+        return { writable: true };
+      } catch {
+        // not writable or doesn't exist — walk up
+      }
+      const parent = join(current, "..");
+      if (parent === current) break;
+      current = parent;
+    }
+    // Fallback: check filesystem root explicitly
+    try {
+      const root = parse(target).root;
+      if (root) {
+        await access(root, constants.W_OK);
+        return { writable: true };
+      }
+    } catch (err) {
+      return { writable: false, error: (err as Error).message };
+    }
+    return { writable: false, error: "No writable ancestor found" };
   }
 }

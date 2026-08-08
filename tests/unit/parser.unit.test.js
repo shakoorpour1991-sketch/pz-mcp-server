@@ -297,6 +297,45 @@ describe('ProjectZomboidParser', () => {
       assert.equal(item.thirst_change, undefined);
     });
   });
+
+  // Audit M3: fixing dotted material prefix + evolvedrecipe references
+test('fixing block with dotted material keeps prefix', async () => {
+    const scriptsDir = path.join(tmpDir, 'media', 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(scriptsDir, 'test_fixing.txt'),
+      'fixing Base.GlueRepair\n{\n\tRequire : Base.Hammer,\n\tFixer : Base.Glue=1;Metalworking=5,\n}\n'
+    );
+
+    await parser.parseGameFiles(tmpDir, true);
+    const item = await db.getItemById('Base.GlueRepair');
+    assert.ok(item, 'Item should be parsed');
+    assert.equal(item.properties.Fixers[0].material, 'Base.Glue');
+    assert.equal(item.properties.Fixers[0].quantity, 1);
+  });
+
+  test('evolvedrecipe creates item + ingredient references', async () => {
+    const scriptsDir = path.join(tmpDir, 'media', 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(scriptsDir, 'test_recipe.txt'),
+      'evolvedrecipe Soup\n{\n\tBaseItem : Base.Soup,\n\tIngredients : Base.Potato, Base.Cabbage,\n}\n'
+    );
+
+    await parser.parseGameFiles(tmpDir, true);
+    const item = await db.getItemById('Soup');
+    assert.ok(item, 'Soup item should be parsed');
+
+    const refs = await db.getReferencesFrom('Soup');
+    assert.ok(
+      refs.some(r => r.referenceId === 'Base.Potato' && r.context === 'ingredient'),
+      'Should have Base.Potato ingredient reference'
+    );
+    assert.ok(
+      refs.some(r => r.referenceId === 'Base.Soup' && r.context === 'baseItem'),
+      'Should have Base.Soup baseItem reference'
+    );
+  });
 });
 
 // ===========================================================================
@@ -440,5 +479,54 @@ describe('M1 F6/F9: B42 craftRecipe parsing', () => {
     assert.notEqual(item, undefined);
     assert.equal(item.properties.module, 'Base.Something');
     assert.equal(item.properties.Weight, 2);
+  });
+});
+
+// Audit D6: parseModDirectory must handle Build 42 versioned folders (42.20/…)
+describe('ProjectZomboidParser versioned folders (audit D6)', () => {
+  let tmpDir;
+  let db;
+  let parser;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-parse-ver-'));
+    db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
+    await db.initialize();
+    parser = new ProjectZomboidParser(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('parses scripts from a versioned folder (42.20/media/scripts)', async () => {
+    const modRoot = path.join(tmpDir, 'TestMod');
+    fs.mkdirSync(path.join(modRoot, '42.20', 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, '42.20', 'media', 'scripts', 'ver.txt'),
+      'module Base {\n    item VersionedPickaxe {\n        Type = Weapon\n        DisplayName = VPickaxe\n    }\n}'
+    );
+
+    const res = await parser.parseModDirectory(modRoot);
+    assert.ok(res.itemCount >= 1, 'should have parsed the versioned item');
+    const item = await db.getItemById('VersionedPickaxe');
+    assert.ok(item, 'versioned item row should exist in the DB');
+    assert.equal(
+      res.errors.some((e) => e.message.includes('No scripts directory found')),
+      false
+    );
+  });
+
+  test('still parses a common/media/scripts structure', async () => {
+    const modRoot = path.join(tmpDir, 'CommonMod');
+    fs.mkdirSync(path.join(modRoot, 'common', 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, 'common', 'media', 'scripts', 'c.txt'),
+      'module Base {\n    item CommonHoe {\n        { DisplayName = Hoe }\n    }\n}'
+    );
+
+    const res = await parser.parseModDirectory(modRoot);
+    assert.ok(res.itemCount >= 1, 'should have parsed the common item');
   });
 });

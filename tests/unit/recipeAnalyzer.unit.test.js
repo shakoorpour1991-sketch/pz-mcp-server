@@ -112,3 +112,140 @@ describe('RecipeAnalyzer', () => {
     assert.equal(one.conflicts.length, 1);
   });
 });
+
+describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
+  // Minimal stub implementing the required database methods.
+  function createStubDb(data) {
+    return {
+      getItemById: async (id) => data.items[id] || null,
+      getReferencesFrom: async (id) => data.refsFrom[id] || [],
+      getReferencesTo: async (id) => data.refsTo[id] || [],
+    };
+  }
+
+  test('handles cycles without duplicate nodes', async () => {
+    // Cycle: R1 produces A, A is ingredient for R2, R2 produces B, B is ingredient for R1
+    const items = {
+      R1: { displayName: 'Recipe1', type: 'recipe' },
+      R2: { displayName: 'Recipe2', type: 'recipe' },
+      A: { displayName: 'Item A', type: 'item' },
+      B: { displayName: 'Item B', type: 'item' },
+    };
+    const refsFrom = {
+      R1: [{ type: 'item', context: 'result', referenceId: 'A' }],
+      R2: [
+        { type: 'item', context: 'ingredient', referenceId: 'A' },
+        { type: 'item', context: 'result', referenceId: 'B' },
+      ],
+    };
+    const refsTo = {
+      A: [
+        { type: 'item', context: 'result', itemId: 'R1' },
+        { type: 'item', context: 'ingredient', itemId: 'R2' },
+      ],
+      B: [
+        { type: 'item', context: 'result', itemId: 'R2' },
+        { type: 'item', context: 'ingredient', itemId: 'R1' },
+      ],
+    };
+    const db = createStubDb({ items, refsFrom, refsTo });
+    const analyzer = new RecipeAnalyzer(db);
+
+    const result = await analyzer.analyzeChain('R1', 'both', 10);
+    const ids = result.nodes.map(n => n.id);
+    const unique = new Set(ids);
+    assert.strictEqual(ids.length, unique.size, 'duplicate node IDs found');
+    assert.strictEqual(ids.length, 4, 'all four nodes should appear');
+    assert.strictEqual(result.truncated, false);
+  });
+
+  test('sets truncated=false when maxDepth reached with no further edges', async () => {
+    // Chain: X (item) -> R1 (recipe) -> Y (item), with Y's only edge back to visited R1
+    const items = {
+      X: { displayName: 'X', type: 'item' },
+      R1: { displayName: 'R1', type: 'recipe' },
+      Y: { displayName: 'Y', type: 'item' },
+    };
+    const refsFrom = {
+      R1: [
+        { type: 'item', context: 'ingredient', referenceId: 'X' },
+        { type: 'item', context: 'result', referenceId: 'Y' },
+      ],
+    };
+    const refsTo = {
+      X: [{ type: 'item', context: 'ingredient', itemId: 'R1' }],
+      Y: [{ type: 'item', context: 'result', itemId: 'R1' }],
+    };
+    const db = createStubDb({ items, refsFrom, refsTo });
+    const analyzer = new RecipeAnalyzer(db);
+
+    const result = await analyzer.analyzeChain('X', 'both', 2);
+    assert.strictEqual(result.truncated, false);
+    assert.deepStrictEqual(
+      result.nodes.map(n => n.id),
+      ['X', 'R1', 'Y']
+    );
+  });
+
+  test('sets truncated=true when a node at maxDepth still has expandable edges', async () => {
+    // R1 produces Y; R2 also produces Y and consumes W. Starting at R1 with
+    // maxDepth=2: R2 is reached at depth 2 and its ingredient W would need
+    // depth 3 — a genuinely cut edge (W is never enqueued by BFS).
+    const items = {
+      R1: { displayName: 'R1', type: 'recipe' },
+      R2: { displayName: 'R2', type: 'recipe' },
+      Y: { displayName: 'Y', type: 'item' },
+      W: { displayName: 'W', type: 'item' },
+    };
+    const refsFrom = {
+      R1: [{ type: 'item', context: 'result', referenceId: 'Y' }],
+      R2: [
+        { type: 'item', context: 'ingredient', referenceId: 'W' },
+        { type: 'item', context: 'result', referenceId: 'Y' },
+      ],
+    };
+    const refsTo = {
+      Y: [
+        { type: 'item', context: 'result', itemId: 'R1' },
+        { type: 'item', context: 'result', itemId: 'R2' },
+      ],
+      W: [{ type: 'item', context: 'ingredient', itemId: 'R2' }],
+    };
+    const db = createStubDb({ items, refsFrom, refsTo });
+    const analyzer = new RecipeAnalyzer(db);
+
+    const result = await analyzer.analyzeChain('R1', 'both', 2);
+    assert.strictEqual(result.truncated, true);
+    assert.deepStrictEqual(
+      result.nodes.map(n => n.id),
+      ['R1', 'Y', 'R2']
+    );
+  });
+
+  test('maintains behavior for a simple linear chain', async () => {
+    const items = {
+      I: { displayName: 'I', type: 'item' },
+      R: { displayName: 'R', type: 'recipe' },
+      O: { displayName: 'O', type: 'item' },
+    };
+    const refsFrom = {
+      R: [
+        { type: 'item', context: 'ingredient', referenceId: 'I' },
+        { type: 'item', context: 'result', referenceId: 'O' },
+      ],
+    };
+    const refsTo = {
+      I: [{ type: 'item', context: 'ingredient', itemId: 'R' }],
+      O: [{ type: 'item', context: 'result', itemId: 'R' }],
+    };
+    const db = createStubDb({ items, refsFrom, refsTo });
+    const analyzer = new RecipeAnalyzer(db);
+
+    const result = await analyzer.analyzeChain('I', 'both', 3);
+    assert.deepStrictEqual(
+      result.nodes.map(n => n.id),
+      ['I', 'R', 'O']
+    );
+    assert.strictEqual(result.truncated, false);
+  });
+});

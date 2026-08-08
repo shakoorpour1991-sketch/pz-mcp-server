@@ -60,6 +60,49 @@ describe('PathManager.validateInputPath', () => {
   });
 });
 
+describe('PathManager env override and validation', () => {
+  let tempDir;
+  let originalEnv;
+
+  before(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-test-'));
+    // isValidProjectZomboidInstallation requires media/scripts + an executable
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'ProjectZomboid64.exe'), '');
+    originalEnv = process.env.PROJECTZOMBOID_PATH;
+  });
+
+  after(() => {
+    if (originalEnv !== undefined) {
+      process.env.PROJECTZOMBOID_PATH = originalEnv;
+    } else {
+      delete process.env.PROJECTZOMBOID_PATH;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('env override wins over Steam and common paths', async () => {
+    process.env.PROJECTZOMBOID_PATH = tempDir;
+    const pathManager = new PathManager();
+    const detected = await pathManager.detectProjectZomboidPath();
+    assert.strictEqual(detected, tempDir);
+  });
+
+  test('validateInputPath accepts existing directory', () => {
+    const pathManager = new PathManager();
+    const result = pathManager.validateInputPath(tempDir, 'dir');
+    assert.ok(result);
+  });
+
+  test('validateInputPath rejects nonexistent directory', () => {
+    const pathManager = new PathManager();
+    const fakePath = path.join(os.tmpdir(), 'nonexistent-' + Date.now());
+    assert.throws(() => {
+      pathManager.validateInputPath(fakePath, 'dir');
+    }, /Directory does not exist/);
+  });
+});
+
 describe('PathManager.detectSteamWindows registry detection', () => {
   let pm;
 
@@ -111,5 +154,32 @@ describe('PathManager.detectSteamWindows registry detection', () => {
 
     const result = await pm.detectSteamWindows();
     assert.equal(result, null);
+  });
+});
+
+// Audit D6: isAncestorWritable walk-up helper
+describe('PathManager.isAncestorWritable (audit D6)', () => {
+  let pm;
+
+  before(() => {
+    pm = new PathManager();
+  });
+
+  test('returns writable=true for an existing, writable directory', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-writable-'));
+    try {
+      const verdict = await pm.isAncestorWritable(dir);
+      assert.equal(verdict.writable, true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('walks up to a writable ancestor for a non-existent deep path', async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-parent-'));
+    const child = path.join(parent, 'nonexistent', 'deep');
+    const verdict = await pm.isAncestorWritable(child);
+    assert.equal(verdict.writable, true);
+    fs.rmSync(parent, { recursive: true, force: true });
   });
 });

@@ -22,10 +22,11 @@ import {
   rmSync,
   renameSync,
   readdirSync,
-  statSync,
+  lstatSync,
   statfsSync,
+  mkdtempSync,
 } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, resolve, sep } from "path";
 import { homedir } from "os";
 import { PZ_APPID } from "./SteamWorkshopClient.js";
 import { PathManager } from "../utils/PathManager.js";
@@ -101,15 +102,33 @@ export class SteamCmdDownloader {
             stdio: ["ignore", "pipe", "pipe"],
           });
           let output = "";
+          let truncated = false;
           const sink = (d: Buffer) => {
-            output += d.toString();
+            if (truncated) return;
+            const str = d.toString();
+            if (output.length + str.length >= 1_000_000) {
+              output += str.slice(0, 1_000_000 - output.length);
+              truncated = true;
+              return;
+            }
+            output += str;
           };
           child.stdout.on("data", sink);
           child.stderr.on("data", sink);
-          child.on("error", (err) => reject(err));
-          child.on("close", (code) =>
-            resolveRun({ code: code ?? -1, output }),
-          );
+          
+          const timeout = setTimeout(() => {
+            child.kill();
+            resolveRun({ code: -1, output: output + "\n[Timed out after 10 minutes]" });
+          }, 10 * 60 * 1000);
+
+          child.on("error", (err) => {
+            clearTimeout(timeout);
+            reject(err);
+          });
+          child.on("close", (code) => {
+            clearTimeout(timeout);
+            resolveRun({ code: code ?? -1, output });
+          });
         }));
     this.pathManager = opts.pathManager ?? new PathManager();
     this.now = opts.now ?? Date.now;
@@ -143,9 +162,10 @@ export class SteamCmdDownloader {
     const gamePath = await this.pathManager.detectProjectZomboidPath();
     if (gamePath) {
       // <lib>/steamapps/common/ProjectZomboid → <lib>/steamapps/workshop/content/108600
-      const idx = gamePath.indexOf("steamapps");
-      if (idx > 0) {
-        const lib = gamePath.slice(0, idx).replace(/[\\/]+$/, "");
+      const segments = gamePath.split(/[\\/]/);
+      const idx = segments.indexOf("steamapps");
+      if (idx !== -1) {
+        const lib = segments.slice(0, idx).join(sep);
         return join(lib, "steamapps", "workshop", "content", PZ_APPID);
       }
     }
@@ -163,6 +183,10 @@ export class SteamCmdDownloader {
     onPhase?: (phase: string) => void,
     opts: { expectedBytes?: number } = {},
   ): Promise<DownloadResult> {
+    if (!/^\d{6,15}$/.test(id)) {
+      throw new Error(`Invalid workshop item id "${id}": must be 6-15 digits.`);
+    }
+
     const t0 = this.now();
     const workshopDir = await this.resolveWorkshopDir();
     mkdirSync(workshopDir, { recursive: true });
@@ -184,6 +208,13 @@ export class SteamCmdDownloader {
         tempDir: "",
         note: "already present locally — download skipped",
       };
+    }
+
+    const dest = join(workshopDir, id);
+    const resolvedWorkshopDir = resolve(workshopDir);
+    const resolvedDest = resolve(dest);
+    if (!resolvedDest.startsWith(resolvedWorkshopDir + sep) && resolvedDest !== resolvedWorkshopDir) {
+      throw new Error(`Path traversal detected: id "${id}" escapes workshop directory.`);
     }
 
     // Disk-space guard: refuse before downloading if the known item size
@@ -215,25 +246,23 @@ export class SteamCmdDownloader {
     const steamCmd = await this.resolveSteamCmdPath();
 
     // Temp dir beside the output: same filesystem for the final rename.
-    const tempDir = join(
-      dirname(workshopDir),
-      `.steamcmd-tmp-${id}-${this.now()}`,
-    );
-
-    const loginArgs = this.loginArgs();
-    const baseArgs = [
-      "+force_install_dir",
-      tempDir,
-      ...loginArgs,
-      "+workshop_download_item",
-      PZ_APPID,
-      id,
-      "+quit",
-    ];
-
+    let tempDir = "";
+    
     const maxAttempts = 3;
     let attempts = 0;
     try {
+      tempDir = mkdtempSync(join(dirname(workshopDir), ".steamcmd-tmp-"));
+      const loginArgs = this.loginArgs();
+      const baseArgs = [
+        "+force_install_dir",
+        tempDir,
+        ...loginArgs,
+        "+workshop_download_item",
+        PZ_APPID,
+        id,
+        "+quit",
+      ];
+
       for (;;) {
         attempts++;
         if (attempts > maxAttempts) {
@@ -267,7 +296,6 @@ export class SteamCmdDownloader {
               `SteamCMD reported success but content was not found at ${src}.`,
             );
           }
-          const dest = join(workshopDir, id);
           rmSync(dest, { recursive: true, force: true });
           renameSync(src, dest);
           const bytes = parsed.bytes || this.dirSize(dest);
@@ -290,7 +318,16 @@ export class SteamCmdDownloader {
         throw new Error(`SteamCMD exited with code ${code}${this.tail(output)}`);
       }
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      if (tempDir) {
+        try {
+          rmSync(tempDir, { recursive: true, force: true });
+        } catch (cleanupErr) {
+          logger.warn(
+            { tempDir, err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) },
+            "Failed to clean up steamcmd temp directory"
+          );
+        }
+      }
     }
   }
 
@@ -298,10 +335,19 @@ export class SteamCmdDownloader {
   private loginArgs(): string[] {
     const user = process.env.STEAMCMD_USER;
     const pass = process.env.STEAMCMD_PASS;
+    const useCreds = process.env.STEAMCMD_USE_CREDENTIALS === "1" || process.env.STEAMCMD_USE_CREDENTIALS === "true";
+
     if (user) {
+      if (!useCreds) {
+        throw new Error(
+          "STEAMCMD_USER is set but STEAMCMD_USE_CREDENTIALS is not enabled. " +
+          "Passing credentials as process arguments exposes them in process listings. " +
+          "To accept this risk, set STEAMCMD_USE_CREDENTIALS=1. Otherwise, unset STEAMCMD_USER to use anonymous login."
+        );
+      }
       if (!pass) {
         throw new Error(
-          "STEAMCMD_USER is set but STEAMCMD_PASS is empty — +login would fail with an empty password. Set both, or unset STEAMCMD_USER to use anonymous.",
+          "STEAMCMD_USER is set but STEAMCMD_PASS is empty — +login would fail with an empty password. Set both, or unset STEAMCMD_USER to use anonymous."
         );
       }
       return ["+login", user, pass];
@@ -355,13 +401,21 @@ export class SteamCmdDownloader {
     return tail ? ` — ${tail.slice(0, n)}` : "";
   }
 
-  private dirSize(dir: string): number {
+  private dirSize(dir: string, depth = 0): number {
+    if (depth > 8) return 0;
     try {
       let total = 0;
+      const MAX_BYTES = 1024 * 1024 * 1024; // 1 GB
       for (const name of readdirSync(dir)) {
         const p = join(dir, name);
-        const st = statSync(p);
-        total += st.isDirectory() ? this.dirSize(p) : st.size;
+        const st = lstatSync(p);
+        if (st.isSymbolicLink()) continue;
+        if (st.isDirectory()) {
+          total += this.dirSize(p, depth + 1);
+        } else {
+          total += st.size;
+        }
+        if (total >= MAX_BYTES) return MAX_BYTES;
       }
       return total;
     } catch {

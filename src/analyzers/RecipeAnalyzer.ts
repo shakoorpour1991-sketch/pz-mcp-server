@@ -78,11 +78,12 @@ export class RecipeAnalyzer {
     const visited = new Set<string>();
     const queue: Array<{ id: string; kind: ChainNode["kind"]; depth: number }> =
       [{ id: seed, kind: seedKind, depth: 0 }];
-    visited.add(seed);
+    visited.add(`${seed}::${seedKind}`);
     let truncated = false;
+    let head = 0;
 
-    while (queue.length > 0) {
-      const { id, kind, depth } = queue.shift()!;
+    while (head < queue.length) {
+      const { id, kind, depth } = queue[head++];
       const node: ChainNode = {
         id,
         kind,
@@ -124,8 +125,47 @@ export class RecipeAnalyzer {
 
       nodes.push(node);
 
+      // Depth limit check — mark truncated only if the boundary node still has
+      // edges leading to UNVISITED nodes (edges to already-visited nodes would
+      // not expand anything, so they are not "cut").
       if (depth >= maxDepth) {
-        truncated = true;
+        let hasCutEdges = false;
+        if (kind === "recipe") {
+          if (direction !== "downstream") {
+            for (const ing of node.ingredients) {
+              if (!visited.has(`${ing.id}::item`)) {
+                hasCutEdges = true;
+                break;
+              }
+            }
+          }
+          if (!hasCutEdges && direction !== "upstream") {
+            for (const res of node.results) {
+              if (!visited.has(`${res.id}::item`)) {
+                hasCutEdges = true;
+                break;
+              }
+            }
+          }
+        } else if (kind === "item") {
+          if (direction !== "downstream") {
+            for (const pid of node.producedBy) {
+              if (!visited.has(`${pid}::recipe`)) {
+                hasCutEdges = true;
+                break;
+              }
+            }
+          }
+          if (!hasCutEdges && direction !== "upstream") {
+            for (const cid of node.consumedBy) {
+              if (!visited.has(`${cid}::recipe`)) {
+                hasCutEdges = true;
+                break;
+              }
+            }
+          }
+        }
+        if (hasCutEdges) truncated = true;
         continue;
       }
 
@@ -140,16 +180,19 @@ export class RecipeAnalyzer {
             for (const p of producers) {
               if (
                 p.type === "item" &&
-                RESULT_CONTEXTS.has(p.context) &&
-                !visited.has(p.itemId)
+                RESULT_CONTEXTS.has(p.context)
               ) {
-                neighbors.push({ id: p.itemId, kind: "recipe" });
-                visited.add(p.itemId);
+                const key = `${p.itemId}::recipe`;
+                if (!visited.has(key)) {
+                  neighbors.push({ id: p.itemId, kind: "recipe" });
+                  visited.add(key);
+                }
               }
             }
-            if (!visited.has(ing.id)) {
+            const keyItem = `${ing.id}::item`;
+            if (!visited.has(keyItem)) {
               neighbors.push({ id: ing.id, kind: "item" });
-              visited.add(ing.id);
+              visited.add(keyItem);
             }
           }
         }
@@ -160,33 +203,38 @@ export class RecipeAnalyzer {
             for (const c of consumers) {
               if (
                 c.type === "item" &&
-                c.context === "ingredient" &&
-                !visited.has(c.itemId)
+                c.context === "ingredient"
               ) {
-                neighbors.push({ id: c.itemId, kind: "recipe" });
-                visited.add(c.itemId);
+                const key = `${c.itemId}::recipe`;
+                if (!visited.has(key)) {
+                  neighbors.push({ id: c.itemId, kind: "recipe" });
+                  visited.add(key);
+                }
               }
             }
-            if (!visited.has(res.id)) {
+            const keyItem = `${res.id}::item`;
+            if (!visited.has(keyItem)) {
               neighbors.push({ id: res.id, kind: "item" });
-              visited.add(res.id);
+              visited.add(keyItem);
             }
           }
         }
       } else if (kind === "item") {
         if (direction !== "downstream") {
           for (const pid of node.producedBy) {
-            if (!visited.has(pid)) {
+            const key = `${pid}::recipe`;
+            if (!visited.has(key)) {
               neighbors.push({ id: pid, kind: "recipe" });
-              visited.add(pid);
+              visited.add(key);
             }
           }
         }
         if (direction !== "upstream") {
           for (const cid of node.consumedBy) {
-            if (!visited.has(cid)) {
+            const key = `${cid}::recipe`;
+            if (!visited.has(key)) {
               neighbors.push({ id: cid, kind: "recipe" });
-              visited.add(cid);
+              visited.add(key);
             }
           }
         }
@@ -212,11 +260,18 @@ export class RecipeAnalyzer {
     const totalRecipes = stats.recipe ?? 0;
 
     const rows = await this.db.findDuplicateRecipeOutputs(limit);
+    if (rows.length === 0) {
+      return { conflicts: [], totalRecipes };
+    }
+
+    // Batch the per-conflict producer lookups into one IN query (audit D2).
+    const itemIds = rows.map((row) => row.item);
+    const refsMap = await this.db.getReferencesToMany(itemIds);
 
     const conflicts: RecipeConflict[] = [];
     for (const row of rows) {
-      const producers = await this.db.getReferencesTo(row.item);
-      const recipes = producers
+      const refs = refsMap.get(row.item) ?? [];
+      const recipes = refs
         .filter((p) => p.type === "item" && RESULT_CONTEXTS.has(p.context))
         .map((p) => ({ id: p.itemId, context: p.context }));
       conflicts.push({ item: row.item, recipes });

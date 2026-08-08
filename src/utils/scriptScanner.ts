@@ -39,6 +39,44 @@ export interface ScanBlock {
   rawContent: string;
 }
 
+/** Strip line comments and inline block comments, tracking block-comment state. */
+export function stripLineComments(
+  line: string,
+  inBlockComment: boolean,
+): { code: string; inBlockComment: boolean } {
+  let code = "";
+  let i = 0;
+  while (i < line.length) {
+    if (inBlockComment) {
+      if (line[i] === "*" && line[i + 1] === "/") {
+        inBlockComment = false;
+        i += 2;
+      } else {
+        i++;
+      }
+    } else {
+      if (line[i] === "/" && line[i + 1] === "*") {
+        inBlockComment = true;
+        i += 2;
+      } else if (line[i] === "/" && line[i + 1] === "/") {
+        break;
+      } else {
+        code += line[i];
+        i++;
+      }
+    }
+  }
+  return { code, inBlockComment };
+}
+
+/** Count { and } in a comment-stripped line. Shared by the scanner and ValidationEngine. */
+export function countBraces(code: string): { open: number; close: number } {
+  return {
+    open: (code.match(/\{/g) || []).length,
+    close: (code.match(/\}/g) || []).length,
+  };
+}
+
 export function scanScriptBlocks(
   content: string,
   defaultModule = "Base",
@@ -52,18 +90,21 @@ export function scanScriptBlocks(
   let braceLevel = 0;
   let inModule = false;
   let pastModuleHeader = false;
+  let inBlockComment = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const rawLine = lines[i];
+    const { code: stripped, inBlockComment: newState } = stripLineComments(
+      rawLine,
+      inBlockComment,
+    );
+    inBlockComment = newState;
+
+    const line = stripped.trim();
     const lineNumber = i + 1;
 
-    // Skip empty lines and comments
-    if (
-      !line ||
-      line.startsWith("//") ||
-      line.startsWith("/*") ||
-      line.startsWith("*")
-    ) {
+    // Skip empty lines and comments (already stripped above)
+    if (!line) {
       continue;
     }
 
@@ -83,8 +124,7 @@ export function scanScriptBlocks(
     }
 
     // Count braces to track module/block scope
-    const openBraces = (line.match(/\{/g) || []).length;
-    const closeBraces = (line.match(/\}/g) || []).length;
+    const { open: openBraces, close: closeBraces } = countBraces(line);
     braceLevel += openBraces - closeBraces;
 
     // Inside a module whose opening brace has been counted, block headers are
@@ -114,8 +154,8 @@ export function scanScriptBlocks(
         module: currentModule,
         startLine: lineNumber,
         endLine: lineNumber,
-        content: [line],
-        rawContent: line,
+        content: [rawLine.trim()],
+        rawContent: rawLine.trim(),
       };
       currentBlockStartLevel = braceLevel;
 
@@ -133,7 +173,7 @@ export function scanScriptBlocks(
 
     // Collect block content
     if (currentBlock) {
-      currentBlock.content.push(line);
+      currentBlock.content.push(rawLine.trim());
 
       // A block closes when brace depth returns to the level it started at
       // (after the header line's own braces were counted above).

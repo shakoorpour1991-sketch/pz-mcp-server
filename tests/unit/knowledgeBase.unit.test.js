@@ -134,3 +134,56 @@ describe('KnowledgeBaseManager', () => {
     });
   });
 });
+
+describe('KnowledgeBaseManager async fs (audit D4)', () => {
+  let tmpDir;
+  let docsDir;
+  let kb;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-d4-'));
+    docsDir = path.join(tmpDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    kb = new KnowledgeBaseManager(path.join(tmpDir, 'data'));
+    await kb.initialize();
+  });
+
+  after(() => {
+    kb.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('indexDirectory indexes markdown files via async fs (frontmatter + plain)', async () => {
+    fs.writeFileSync(
+      path.join(docsDir, 'doc1.md'),
+      '---\ntitle: Test Doc\nsource: manual\n---\nThis is the body of test doc.\n'
+    );
+    fs.writeFileSync(
+      path.join(docsDir, 'doc2.md'),
+      '# Simple Doc\nNo frontmatter, just content.\n'
+    );
+
+    await kb.indexDirectory(docsDir, { overwrite: true });
+
+    const byBody = await kb.search('body');
+    assert.deepStrictEqual(byBody.map((r) => r.topic).sort(), ['doc1']);
+    const byContent = await kb.search('content');
+    assert.deepStrictEqual(byContent.map((r) => r.topic).sort(), ['doc2']);
+  });
+
+  test('re-indexing prunes docs whose file disappeared (await exists path)', async () => {
+    const file3 = path.join(docsDir, 'doc3.md');
+    fs.writeFileSync(file3, 'Content to be pruned\n');
+    await kb.indexDirectory(docsDir, { overwrite: true });
+
+    let results = await kb.search('pruned');
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].topic, 'doc3');
+
+    fs.unlinkSync(file3);
+    await kb.indexDirectory(docsDir, { overwrite: false });
+
+    results = await kb.search('pruned');
+    assert.strictEqual(results.length, 0);
+  });
+});

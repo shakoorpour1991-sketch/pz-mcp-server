@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { join, dirname, sep } from "path";
-import { readdirSync, readFileSync, mkdirSync, statSync, existsSync } from "fs";
+import { mkdirSync } from "fs";
+import { readFile, stat, readdir, access } from "fs/promises";
 import logger from "../utils/logger.js";
 import { knowledgeDbPath } from "../utils/config.js";
 import { sanitizeFtsTerms } from "../utils/fts.js";
@@ -8,8 +9,17 @@ import { sanitizeFtsTerms } from "../utils/fts.js";
 export class KnowledgeBaseManager {
   private db!: DatabaseSync;
   private dbPath: string;
+  private readonly skipDirs: string[];
+  private readonly skipFiles: string[];
 
-  constructor(dataDir?: string) {
+  constructor(
+    dataDir?: string,
+    options?: { skipDirs?: string[]; skipFiles?: string[] },
+  ) {
+    // Directories/files skipped by collectMdFiles (qwen audit G5: were
+    // hard-coded to ["wiki", "AdvancedGenerators"] + "README.md").
+    this.skipDirs = options?.skipDirs ?? ["wiki", "AdvancedGenerators"];
+    this.skipFiles = options?.skipFiles ?? ["README.md"];
     if (dataDir) {
       this.dbPath = join(dataDir, "pz_knowledge.db");
       mkdirSync(dataDir, { recursive: true });
@@ -73,7 +83,7 @@ export class KnowledgeBaseManager {
     // crude "skip existing topics entirely"; mtime diffing is what makes the
     // incremental mode actually useful.
     const overwrite = opts?.overwrite ?? true;
-    const files = this.collectMdFiles(dirPath);
+    const files = await this.collectMdFiles(dirPath);
     let topics = 0;
     let totalChars = 0;
     let skipped = 0;
@@ -99,8 +109,8 @@ export class KnowledgeBaseManager {
     for (const filePath of files) {
       try {
         // mtime is the change signal for incremental sync (N5).
-        const mtime = String(statSync(filePath).mtimeMs);
-        const rawContent = readFileSync(filePath, "utf-8");
+        const mtime = String((await stat(filePath)).mtimeMs);
+        const rawContent = await readFile(filePath, "utf-8");
         // Strip any YAML frontmatter block: its title/source keys are used
         // as metadata below, and it must not be indexed as body text.
         const { meta, body } = this.parseFrontmatter(rawContent);
@@ -185,7 +195,7 @@ export class KnowledgeBaseManager {
         if (
           doc.file_path &&
           doc.file_path.startsWith(dirPrefix) &&
-          !existsSync(doc.file_path)
+          !(await this.pathExists(doc.file_path))
         ) {
           this.db.exec("BEGIN");
           try {
@@ -335,19 +345,28 @@ export class KnowledgeBaseManager {
     }
   }
 
-  private collectMdFiles(dirPath: string): string[] {
+  private async pathExists(filePath: string): Promise<boolean> {
+    try {
+      await access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async collectMdFiles(dirPath: string): Promise<string[]> {
     const results: string[] = [];
-    const entries = readdirSync(dirPath, { withFileTypes: true });
+    const entries = await readdir(dirPath, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = join(dirPath, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === "wiki" || entry.name === "AdvancedGenerators") {
+        if (this.skipDirs.includes(entry.name)) {
           continue;
         }
-        results.push(...this.collectMdFiles(fullPath));
+        results.push(...(await this.collectMdFiles(fullPath)));
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        if (entry.name === "README.md") {
+        if (this.skipFiles.includes(entry.name)) {
           continue;
         }
         results.push(fullPath);
