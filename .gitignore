@@ -1,29 +1,4 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-
-# Runtime data (SQLite DBs, workspace state)
-data/
-*.db
-*.db-shm
-*.db-wal
-
-# Agent workspace
-.hermes/
-
-# Logs
-*.log
-
-# Env
-.env
-.env.local
-
-# Editor / OS
-.vscode/
-.idea/
-*.swp
-*.swo
-Thumbs.db
-.DS_Store
+```
+# Temporary markdown files
+qwen_process/deepseek_markdown_*.md
+```
