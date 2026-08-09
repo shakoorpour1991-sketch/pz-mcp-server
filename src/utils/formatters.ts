@@ -622,3 +622,188 @@ export function formatBytes(n: number): string {
   }
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+/** Format mod structure for workspace_inspect_mod */
+export function formatModStructure(structure: {
+  modPath: string;
+  modInfo?: { id?: string; name?: string; version?: string };
+  hasModInfo: boolean;
+  hasCommonFolder: boolean;
+  hasCorrectStructure: boolean;
+  buildVersions: string[];
+  files: Array<{ relativePath: string; type: string; size: number }>;
+  scriptCount: number;
+  luaCount: number;
+  assetCount: number;
+  detectedContentTypes: string[];
+}): string {
+  let out = `## Mod Structure: ${structure.modPath}\\n\\n`;
+
+  // Metadata
+  if (structure.modInfo) {
+    out += `**Name**: ${structure.modInfo.name || "Unknown"}\\n`;
+    out += `**ID**: ${structure.modInfo.id || "Unknown"}\\n`;
+    if (structure.modInfo.version) {
+      out += `**Version**: ${structure.modInfo.version}\\n`;
+    }
+    out += `\\n`;
+  }
+
+  // Structure validation
+  out += `## Structure\\n`;
+  out += `- **mod.info**: ${structure.hasModInfo ? "✅ Found" : "❌ Missing"}\\n`;
+  out += `- **common/ folder**: ${structure.hasCommonFolder ? "✅ Present (B42)" : "ℹ️ Not found"}\\n`;
+  out += `- **Build versions**: ${structure.buildVersions.length > 0 ? structure.buildVersions.join(", ") : "None detected"}\\n`;
+  out += `- **Valid B42 structure**: ${structure.hasCorrectStructure ? "✅ Yes" : "⚠️ No"}\\n\\n`;
+
+  // File counts
+  out += `## Content\\n`;
+  out += `- **Scripts (.txt)**: ${structure.scriptCount}\\n`;
+  out += `- **Lua files (.lua)**: ${structure.luaCount}\\n`;
+  out += `- **Assets**: ${structure.assetCount}\\n`;
+  out += `- **Detected types**: ${structure.detectedContentTypes.join(", ") || "none"}\\n\\n`;
+
+  // Files list
+  if (structure.files.length > 0) {
+    out += `## Files (${structure.files.length})\\n`;
+    const byType = new Map<string, typeof structure.files>();
+    for (const f of structure.files) {
+      if (!byType.has(f.type)) byType.set(f.type, []);
+      byType.get(f.type)!.push(f);
+    }
+    for (const [type, files] of byType.entries()) {
+      out += `### ${type.toUpperCase()} (${files.length})\\n`;
+      files.slice(0, 20).forEach((f) => {
+        out += `- \`${f.relativePath}\` (${formatBytes(f.size)})\\n`;
+      });
+      if (files.length > 20) {
+        out += `- ... and ${files.length - 20} more\\n`;
+      }
+      out += `\\n`;
+    }
+  }
+
+  return out;
+}
+
+/** Format validation result for workspace_validate_mod */
+export function formatValidationResult(validation: {
+  isValid: boolean;
+  errors: Array<{ code: string; message: string; path: string; suggestion?: string }>;
+  warnings: Array<{ code: string; message: string; path: string; suggestion?: string }>;
+  missingRequired: string[];
+  unexpectedFiles: string[];
+}): string {
+  let out = `## Mod Validation Results\\n\\n`;
+
+  out += validation.isValid ? "✅ **Valid** - Mod passes all validation checks\\n\\n" : "❌ **Invalid** - Found issues\\n\\n";
+
+  if (validation.missingRequired.length > 0) {
+    out += `### Missing Required Files\\n`;
+    validation.missingRequired.forEach((f) => {
+      out += `- ❌ \`${f}\`\\n`;
+    });
+    out += `\\n`;
+  }
+
+  if (validation.errors.length > 0) {
+    out += `### Errors (${validation.errors.length})\\n`;
+    validation.errors.forEach((err, i) => {
+      out += `${i + 1}. **${err.code}**: ${err.message}\\n`;
+      if (err.suggestion) {
+        out += `   💡 ${err.suggestion}\\n`;
+      }
+    });
+    out += `\\n`;
+  }
+
+  if (validation.warnings.length > 0) {
+    out += `### Warnings (${validation.warnings.length})\\n`;
+    validation.warnings.forEach((warn, i) => {
+      out += `${i + 1}. **${warn.code}**: ${warn.message}\\n`;
+      if (warn.suggestion) {
+        out += `   💡 ${warn.suggestion}\\n`;
+      }
+    });
+    out += `\\n`;
+  }
+
+  if (validation.unexpectedFiles.length > 0) {
+    out += `### Unexpected Top-Level Entries\\n`;
+    validation.unexpectedFiles.forEach((f) => {
+      out += `- ⚠️ \`${f}\`\\n`;
+    });
+    out += `\\n`;
+  }
+
+  return out;
+}
+
+/** Format project status for workspace_get_status */
+export function formatProjectStatus(status: {
+  modPath: string;
+  metadata: { id?: string; name?: string; version?: string; author?: string } | null;
+  structure: { hasModInfo: boolean; hasCorrectStructure: boolean; buildVersions: string[]; scriptCount: number; luaCount: number; assetCount: number };
+  validation: { isValid: boolean; errors: any[]; warnings: any[] };
+  dependencies: Array<{ modId: string; required: boolean; incompatible: boolean }>;
+  issues: Array<{ severity: "error" | "warning" | "info"; message: string }>;
+  lastModified: Date | null;
+}): string {
+  let out = `# Project Status: ${status.modPath}\\n\\n`;
+
+  // Metadata
+  if (status.metadata) {
+    out += `## Metadata\\n`;
+    out += `- **Name**: ${status.metadata.name || "Unknown"}\\n`;
+    out += `- **ID**: ${status.metadata.id || "Unknown"}\\n`;
+    if (status.metadata.version) out += `- **Version**: ${status.metadata.version}\\n`;
+    if (status.metadata.author) out += `- **Author**: ${status.metadata.author}\\n`;
+    out += `\\n`;
+  }
+
+  // Structure summary
+  out += `## Structure\\n`;
+  out += `- **mod.info**: ${status.structure.hasModInfo ? "✅" : "❌"}\\n`;
+  out += `- **B42 structure**: ${status.structure.hasCorrectStructure ? "✅" : "⚠️"}\\n`;
+  out += `- **Builds**: ${status.structure.buildVersions.join(", ") || "none"}\\n`;
+  out += `- **Content**: ${status.structure.scriptCount} scripts, ${status.structure.luaCount} lua, ${status.structure.assetCount} assets\\n\\n`;
+
+  // Validation
+  out += `## Validation\\n`;
+  out += status.validation.isValid ? "- ✅ Valid\\n" : `- ❌ Invalid (${status.validation.errors.length} errors, ${status.validation.warnings.length} warnings)\\n`;
+  out += `\\n`;
+
+  // Dependencies
+  const reqDeps = status.dependencies.filter((d) => d.required && !d.incompatible);
+  const incMods = status.dependencies.filter((d) => d.incompatible);
+  if (reqDeps.length > 0 || incMods.length > 0) {
+    out += `## Dependencies\\n`;
+    if (reqDeps.length > 0) {
+      out += `- **Requires**: ${reqDeps.map((d) => d.modId).join(", ")}\\n`;
+    }
+    if (incMods.length > 0) {
+      out += `- **Incompatible**: ${incMods.map((d) => d.modId).join(", ")}\\n`;
+    }
+    out += `\\n`;
+  }
+
+  // Issues
+  if (status.issues.length > 0) {
+    out += `## Issues\\n`;
+    status.issues.slice(0, 15).forEach((issue) => {
+      const icon = issue.severity === "error" ? "❌" : issue.severity === "warning" ? "⚠️" : "ℹ️";
+      out += `${icon} ${issue.message}\\n`;
+    });
+    if (status.issues.length > 15) {
+      out += `... and ${status.issues.length - 15} more\\n`;
+    }
+    out += `\\n`;
+  }
+
+  // Last modified
+  if (status.lastModified) {
+    out += `**Last Modified**: ${status.lastModified.toISOString()}\\n`;
+  }
+
+  return out;
+}

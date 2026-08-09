@@ -1,0 +1,847 @@
+import { readFileSync, existsSync } from "fs";
+import { readFile, readdir, stat } from "fs/promises";
+import { join, extname } from "path";
+import { discoverModLayouts } from "../utils/modDiscovery.js";
+import { matchPropertyLine, parseScriptValue } from "../utils/scriptSyntax.js";
+import { scanScriptBlocks } from "../utils/scriptScanner.js";
+import { isBlockType } from "../utils/blockTypes.js";
+import logger from "../utils/logger.js";
+export class ProjectZomboidParser {
+    db;
+    scriptExtensions = [".txt"];
+    constructor(db) {
+        this.db = db;
+    }
+    async parseGameFiles(gamePath, forceReparse = false) {
+        const startTime = Date.now();
+        const results = {
+            itemCount: 0,
+            recipeCount: 0,
+            soundCount: 0,
+            vehicleCount: 0,
+            evolvedRecipeCount: 0,
+            fixingCount: 0,
+            filesProcessed: 0,
+            parseTime: 0,
+            errors: [],
+        };
+        try {
+            // Check if we need to parse
+            if (!forceReparse) {
+                const stats = await this.db.getStats();
+                if (stats.total > 0) {
+                    logger.warn("Database already contains data. Use forceReparse=true to re-parse.");
+                    results.parseTime = Date.now() - startTime;
+                    return results;
+                }
+            }
+            // Clear database if force reparsing
+            if (forceReparse) {
+                await this.db.clearDatabase();
+            }
+            // Parse vanilla game scripts
+            const scriptsPath = join(gamePath, "media", "scripts");
+            if (existsSync(scriptsPath)) {
+                await this.parseDirectory(scriptsPath, results, "Base");
+            }
+            else {
+                results.errors.push({
+                    file: scriptsPath,
+                    message: "Scripts directory not found in game installation",
+                });
+            }
+            results.parseTime = Date.now() - startTime;
+            logger.info(`Parsing completed in ${results.parseTime}ms`);
+        }
+        catch (error) {
+            results.errors.push({
+                file: "parser",
+                message: `Parse error: ${error instanceof Error ? error.message : String(error)}`,
+            });
+        }
+        return results;
+    }
+    async parseModDirectory(modPath) {
+        const startTime = Date.now();
+        const results = {
+            itemCount: 0,
+            recipeCount: 0,
+            soundCount: 0,
+            vehicleCount: 0,
+            evolvedRecipeCount: 0,
+            fixingCount: 0,
+            filesProcessed: 0,
+            parseTime: 0,
+            errors: [],
+        };
+        try {
+            // Dynamic layout discovery (mod-analyzer review): PZ mods ship in many
+            // shapes — direct media/scripts, B42 versioned (42/42.20), common/, and
+            // Steam workshop packs (mods/<Name>/<version>/media/scripts). A fixed
+            // path list missed all pack layouts, so content is discovered by walking
+            // the tree and grouped by the mod root (nearest mod.info) — each group
+            // parses under its own module name (mod.info id, else root folder).
+            const layouts = await discoverModLayouts(modPath);
+            let foundScripts = false;
+            for (const layout of layouts) {
+                for (const scriptsPath of layout.scriptsDirs) {
+                    await this.parseDirectory(scriptsPath, results, layout.moduleName);
+                    foundScripts = true;
+                }
+            }
+            if (!foundScripts) {
+                results.errors.push({
+                    file: modPath,
+                    message: "No scripts directory found in mod structure",
+                });
+            }
+            results.parseTime = Date.now() - startTime;
+        }
+        catch (error) {
+            results.errors.push({
+                file: "mod_parser",
+                message: `Mod parse error: ${error instanceof Error ? error.message : String(error)}`,
+            });
+        }
+        return results;
+    }
+    async parseDirectory(dirPath, results, modulePrefix) {
+        try {
+            // Async fs (freebuff M5): parsing must not block the event loop.
+            const entries = await readdir(dirPath);
+            for (const entry of entries) {
+                const fullPath = join(dirPath, entry);
+                const entryStat = await stat(fullPath);
+                if (entryStat.isDirectory()) {
+                    // Recursively parse subdirectories
+                    await this.parseDirectory(fullPath, results, modulePrefix);
+                }
+                else if (entryStat.isFile() &&
+                    this.scriptExtensions.includes(extname(entry).toLowerCase())) {
+                    try {
+                        await this.parseScriptFile(fullPath, results, modulePrefix);
+                        results.filesProcessed++;
+                    }
+                    catch (error) {
+                        results.errors.push({
+                            file: fullPath,
+                            message: `Failed to parse file: ${error instanceof Error ? error.message : String(error)}`,
+                        });
+                    }
+                }
+            }
+        }
+        catch (error) {
+            results.errors.push({
+                file: dirPath,
+                message: `Failed to read directory: ${error instanceof Error ? error.message : String(error)}`,
+            });
+        }
+    }
+    async parseScriptFile(filePath, results, defaultModule) {
+        const content = await readFile(filePath, "utf-8");
+        const accumulatedItems = [];
+        // Structured recipe mirror rows (freebuff deeper indexing): recipes stay
+        // items rows too, but each craftRecipe additionally lands a structured row
+        // in `recipes` + `recipe_ingredients` for search_recipes.
+        const accumulatedRecipes = [];
+        // Split the file into blocks with the shared scanner (freebuff M1) — the
+        // same algorithm the validation engine uses, so the two consumers can
+        // never drift apart again.
+        const blocks = scanScriptBlocks(content, defaultModule);
+        for (const block of blocks) {
+            await this.finalizeBlock(block, filePath, accumulatedItems, accumulatedRecipes, results);
+        }
+        // Flush accumulated items to database
+        if (accumulatedItems.length > 0) {
+            await this.db.insertItems(accumulatedItems);
+            // Structured recipe rows: recipes must be inserted before their
+            // ingredients (recipe_ingredients.recipe_id has a FK to recipes.id).
+            if (accumulatedRecipes.length > 0) {
+                await this.db.insertRecipes(accumulatedRecipes.map((r) => r.recipe));
+                await this.db.insertRecipeIngredients(accumulatedRecipes.flatMap((r) => r.ingredients));
+            }
+            // Populate cross-item references (recipe ingredients/results, fixing
+            // requirements). Must run AFTER the flush: "references".item_id has a
+            // FOREIGN KEY to items(id), so the item row must exist first. Non-fatal:
+            // a reference failure must not abort parsing of the rest of the file.
+            // The whole per-file batch runs in one transaction (freebuff M2) instead
+            // of one autocommit INSERT per reference.
+            await this.db.transaction(async () => {
+                // Mirror → references (chain-graph completeness): extractReferences'
+                // ingredient-line regex excludes B42 bracket lists and tag lines, so
+                // those edges only ever exist in recipe_ingredients. Emit them as
+                // references rows too — the chain graph reads both sources, so
+                // consumers/offspring resolve for every item regardless of the input
+                // form the script used. Tools stay mirror-only (they are not graph
+                // edges); INSERT OR IGNORE dedupes against extractReferences rows.
+                for (const record of accumulatedRecipes) {
+                    // Non-fatal per recipe, mirroring extractReferences' per-item catch:
+                    // one bad row must not roll back the whole file's transaction.
+                    try {
+                        for (const row of record.ingredients) {
+                            if (row.role === "tool")
+                                continue;
+                            await this.db.addReference(record.recipe.id, row.ref, row.refType, row.role);
+                        }
+                    }
+                    catch (refError) {
+                        logger.warn(`Reference extraction failed for ${record.recipe.id}: ${refError instanceof Error ? refError.message : String(refError)}`);
+                    }
+                }
+                for (const item of accumulatedItems) {
+                    try {
+                        await this.extractReferences(item);
+                    }
+                    catch (refError) {
+                        logger.warn(`Reference extraction failed for ${item.id}: ${refError instanceof Error ? refError.message : String(refError)}`);
+                    }
+                }
+            });
+        }
+    }
+    async finalizeBlock(block, filePath, accumulatedItems, accumulatedRecipes, results) {
+        // Per-line property parse problems are collected here and surfaced once
+        // per file instead of a logger.warn per malformed line (freebuff review
+        // §3 code smell #4).
+        const parseErrors = [];
+        try {
+            // The scanner normalized B42 "craftRecipe" blocks to type 'recipe';
+            // block.rawType keeps the original keyword so parseBlock can
+            // distinguish B42 craftRecipe ("key = value" properties, F6) from
+            // legacy B41 recipe blocks ("key:value" properties, "Key=Count"
+            // ingredients).
+            const storedType = block.type;
+            const item = this.parseBlock({
+                ...block,
+                type: storedType,
+                b42Recipe: block.rawType === "craftRecipe" || block.rawType === "craftrecipe",
+            }, block.content, filePath, block.startLine, parseErrors);
+            if (item) {
+                // Only the six primary block types are stored (shared BLOCK_TYPES).
+                // Container types (entity, model, event, ...) are consumed as blocks
+                // so their inner lines never leak as fake items.
+                if (isBlockType(storedType)) {
+                    accumulatedItems.push(item);
+                    // Structured recipe mirror: build rows for search_recipes. Non-fatal
+                    // — a malformed recipe body must not abort the file's item flush.
+                    if (item.type === "recipe") {
+                        try {
+                            const record = this.buildRecipeRecord(block, item);
+                            if (record)
+                                accumulatedRecipes.push(record);
+                        }
+                        catch (err) {
+                            logger.warn(`Structured recipe extraction failed for ${item.id}: ${err instanceof Error ? err.message : String(err)}`);
+                        }
+                    }
+                    // Update counters
+                    switch (item.type) {
+                        case "item":
+                            results.itemCount++;
+                            break;
+                        case "recipe":
+                            results.recipeCount++;
+                            break;
+                        case "sound":
+                            results.soundCount++;
+                            break;
+                        case "vehicle":
+                            results.vehicleCount++;
+                            break;
+                        case "evolvedrecipe":
+                            results.evolvedRecipeCount++;
+                            break;
+                        case "fixing":
+                            results.fixingCount++;
+                            break;
+                    }
+                }
+            }
+            // Aggregate per-line property issues into a single warn + one error
+            // entry each (with real line numbers), instead of warn-per-line.
+            if (parseErrors.length > 0) {
+                logger.warn(`Property parse issues in ${filePath}: ${parseErrors.length} issue(s)`);
+                results.errors.push(...parseErrors);
+            }
+        }
+        catch (error) {
+            results.errors.push({
+                file: filePath,
+                line: block.startLine,
+                message: `Failed to parse ${block.type} block: ${error instanceof Error ? error.message : String(error)}`,
+            });
+        }
+    }
+    parseBlock(blockInfo, content, filePath, startLine, parseErrors) {
+        const properties = {};
+        const rawContent = content.join("\n");
+        // B42 craftRecipe blocks group their item lines into "inputs" and
+        // "outputs" sub-blocks; track the active section so the lines land in
+        // the right bucket (audit F9).
+        let recipeSection = null;
+        // B42 style: "key = value" properties (F6). Real B42.20 craftRecipe
+        // blocks always carry an inputs/outputs section, so detect it from the
+        // content as well as from the original keyword.
+        const b42Style = blockInfo.b42Recipe === true ||
+            content.some((l) => {
+                const bare = l
+                    .trim()
+                    .replace(/[{}]+\s*$/, "")
+                    .trim();
+                return bare === "inputs" || bare === "outputs";
+            });
+        // Parse properties based on block type. Skip index 0 (the block header
+        // line like "item Name" or "craftRecipe Name") — it is not a property.
+        for (let i = 1; i < content.length; i++) {
+            const line = content[i];
+            const trimmed = line.trim();
+            // Track craftRecipe inputs/outputs sections (F9). Section headers may
+            // carry their opening brace ("inputs {"); any closing brace ends the
+            // current section.
+            if (blockInfo.type === "recipe") {
+                const bare = trimmed.replace(/[{}]+\s*$/, "").trim();
+                if (bare === "inputs" || bare === "outputs") {
+                    recipeSection = bare;
+                    continue;
+                }
+                if (trimmed.includes("}")) {
+                    recipeSection = null;
+                }
+            }
+            if (!trimmed || trimmed.includes("{") || trimmed.includes("}"))
+                continue;
+            try {
+                if (blockInfo.type === "item") {
+                    this.parseItemProperty(trimmed, properties);
+                }
+                else if (blockInfo.type === "recipe") {
+                    this.parseRecipeProperty(trimmed, properties, recipeSection, b42Style);
+                }
+                else if (blockInfo.type === "fixing") {
+                    this.parseFixingProperty(trimmed, properties);
+                }
+                else if (blockInfo.type === "sound") {
+                    this.parseSoundProperty(trimmed, properties);
+                }
+                else if (blockInfo.type === "evolvedrecipe") {
+                    this.parseEvolvedRecipeProperty(trimmed, properties);
+                }
+                else if (blockInfo.type === "vehicle") {
+                    this.parseVehicleProperty(trimmed, properties);
+                }
+            }
+            catch (error) {
+                // Collect property parse errors (aggregated per file in finalizeBlock)
+                parseErrors.push({
+                    file: filePath,
+                    line: startLine + i,
+                    message: `Failed to parse property: ${error instanceof Error ? error.message : String(error)}`,
+                });
+            }
+        }
+        // Extract rich metadata fields into top-level columns
+        const tags = properties.Tags;
+        const metalValue = properties.MetalValue;
+        const weight = properties.Weight;
+        const conditionMax = properties.ConditionMax;
+        const attachmentTypeRaw = properties.AttachmentType;
+        const runSpeedModifier = properties.RunSpeedModifier;
+        const hungerChange = properties.HungerChange;
+        const thirstChange = properties.ThirstChange;
+        const icon = properties.Icon;
+        const calories = properties.Calories;
+        // Generate item ID
+        const itemId = blockInfo.module === "Base"
+            ? blockInfo.name
+            : `${blockInfo.module}.${blockInfo.name}`;
+        return {
+            id: itemId,
+            name: blockInfo.name,
+            displayName: properties.DisplayName || properties.Name || blockInfo.name,
+            type: blockInfo.type,
+            module: blockInfo.module,
+            category: properties.DisplayCategory || properties.Category,
+            properties,
+            tags: tags
+                ? Array.isArray(tags)
+                    ? tags
+                    : [tags]
+                : undefined,
+            metal_value: typeof metalValue === "number" ? metalValue : undefined,
+            weight: typeof weight === "number" ? weight : undefined,
+            condition_max: typeof conditionMax === "number" ? conditionMax : undefined,
+            attachment_type: attachmentTypeRaw
+                ? Array.isArray(attachmentTypeRaw)
+                    ? attachmentTypeRaw[0]
+                    : attachmentTypeRaw
+                : undefined,
+            run_speed_modifier: typeof runSpeedModifier === "number" ? runSpeedModifier : undefined,
+            hunger_change: typeof hungerChange === "number" ? hungerChange : undefined,
+            thirst_change: typeof thirstChange === "number" ? thirstChange : undefined,
+            icon: typeof icon === "string" ? icon : undefined,
+            calories: typeof calories === "number" ? calories : undefined,
+            rawContent,
+            filePath,
+        };
+    }
+    /**
+     * Build the structured recipe mirror row + ingredient/tool/output rows for
+     * one recipe block (freebuff deeper indexing). Scans the block's raw lines
+     * directly so it can capture what the generic property parser skips:
+     *   - B42 `item N [A;B] flags[...]` alternatives (each alternative becomes
+     *     its own ingredient row so "recipes using Base.Nails" finds recipes
+     *     where Nails appears as `[Base.Nails;...]`)
+     *   - B42 `item N tags[base:x;base:y] mode:keep` → tool rows by tag
+     *   - B42 outputs section → role 'output' rows
+     *   - legacy `keep [Base.Saw]` → tool rows; `Result:Base.X=2` → result
+     * Uses the same inputs/outputs section tracking as parseBlock (F9).
+     */
+    buildRecipeRecord(block, item) {
+        const ingredients = [];
+        const b42Style = block.rawType === "craftRecipe" || block.rawType === "craftrecipe";
+        let section = null;
+        let sortOrder = 0;
+        for (let i = 1; i < block.content.length; i++) {
+            const line = block.content[i];
+            const trimmed = line.trim();
+            // Track inputs/outputs sections (same logic as parseBlock F9).
+            const bare = trimmed.replace(/[{}]+\s*$/, "").trim();
+            if (bare === "inputs" || bare === "outputs") {
+                section = bare;
+                continue;
+            }
+            if (trimmed.includes("}")) {
+                section = null;
+            }
+            if (!trimmed || trimmed.includes("{") || trimmed.includes("}"))
+                continue;
+            // B42 item lines: `item <count> <ref-or-alternatives-or-tags>`
+            const itemMatch = trimmed.match(/^item\s+(\d+)\s+(.+)$/);
+            if (itemMatch) {
+                const count = parseInt(itemMatch[1], 10);
+                const spec = itemMatch[2].trim();
+                const keep = /mode:keep/.test(spec);
+                const role = section === "outputs" ? "output" : keep ? "tool" : "ingredient";
+                // Tag-based inputs: `tags[base:saw;base:crudesaw] ...`
+                const tagsMatch = spec.match(/^tags\[([^\]]*)\]/);
+                if (tagsMatch) {
+                    for (const rawTag of tagsMatch[1].split(";")) {
+                        const tag = rawTag.trim();
+                        if (tag) {
+                            ingredients.push({
+                                recipeId: item.id,
+                                ref: tag,
+                                refType: "tag",
+                                count,
+                                role,
+                                sortOrder: sortOrder++,
+                            });
+                        }
+                    }
+                    continue;
+                }
+                // Mapper outputs (`item 2 mapper:StickMapper,`) — record the mapper
+                // name as an output ref so the row exists, flagged by refType.
+                // Trailing comma stripped like the plain/bracket paths.
+                const mapperMatch = spec.match(/^mapper:(.+)$/);
+                if (mapperMatch) {
+                    const mapperRef = mapperMatch[1].trim().replace(/,$/, "");
+                    ingredients.push({
+                        recipeId: item.id,
+                        ref: `mapper:${mapperRef}`,
+                        refType: "mapper",
+                        count,
+                        role,
+                        sortOrder: sortOrder++,
+                    });
+                    continue;
+                }
+                // Bracket alternatives: `[Base.Log;Base.WoodenStick]` — each becomes
+                // its own row (a recipe "uses" every alternative). Percentage-prefixed
+                // alternatives (`25:Base.Thread_Sinew`) have the chance stripped.
+                const bracketMatch = spec.match(/^\[([^\]]*)\]/);
+                // Strip the trailing comma (`item 1 Base.HandSaw,`) and any flags.
+                const plainRef = spec.split(/\s+/)[0].replace(/,$/, "");
+                const alternatives = bracketMatch
+                    ? bracketMatch[1].split(";")
+                    : [plainRef];
+                for (const rawAlt of alternatives) {
+                    const ref = rawAlt.trim().replace(/^\d+:/, "").replace(/,$/, "");
+                    if (ref) {
+                        ingredients.push({
+                            recipeId: item.id,
+                            ref,
+                            refType: "item",
+                            count,
+                            role,
+                            sortOrder: sortOrder++,
+                        });
+                    }
+                }
+                continue;
+            }
+            // Legacy B41: `keep [Base.Saw],` → tool row
+            const keepMatch = trimmed.match(/^keep\s+\[([^\]]+)\]/);
+            if (keepMatch) {
+                for (const rawRef of keepMatch[1].split(";")) {
+                    const ref = rawRef.trim();
+                    if (ref) {
+                        ingredients.push({
+                            recipeId: item.id,
+                            ref,
+                            refType: "item",
+                            count: 1,
+                            role: "tool",
+                            sortOrder: sortOrder++,
+                        });
+                    }
+                }
+                continue;
+            }
+            // Legacy B41 ingredient: `Base.Log=4,`
+            const legacyIngredient = trimmed.match(/^([\w.]+)=(\d+),?\s*$/);
+            if (legacyIngredient && !b42Style) {
+                ingredients.push({
+                    recipeId: item.id,
+                    ref: legacyIngredient[1],
+                    refType: "item",
+                    count: parseInt(legacyIngredient[2], 10),
+                    role: "ingredient",
+                    sortOrder: sortOrder++,
+                });
+            }
+        }
+        // Result: B42 outputs section (first item output) or legacy Result property.
+        const outputs = ingredients.filter((i) => i.role === "output");
+        const firstItemOutput = outputs.find((o) => o.refType === "item");
+        let result;
+        let resultCount;
+        if (firstItemOutput) {
+            result = firstItemOutput.ref;
+            resultCount = firstItemOutput.count;
+        }
+        else if (typeof item.properties.Result === "string") {
+            const resultMatch = item.properties.Result.match(/^([\w.]+)(?:=(\d+))?/);
+            if (resultMatch) {
+                result = resultMatch[1];
+                resultCount = resultMatch[2] ? parseInt(resultMatch[2], 10) : 1;
+                // Legacy recipes declare their result in the Result property — surface
+                // it as an output row too so search_recipes result queries and the
+                // formatter see it like a B42 outputs section.
+                ingredients.push({
+                    recipeId: item.id,
+                    ref: result,
+                    refType: "item",
+                    count: resultCount,
+                    role: "output",
+                    sortOrder: sortOrder++,
+                });
+            }
+        }
+        // Skill requirement: B42 `SkillRequired = Woodwork:2`, legacy
+        // `SkillRequired: Carpentry=2`. Both separators accepted.
+        const skillRaw = item.properties.SkillRequired;
+        let skill;
+        let skillLevel;
+        if (typeof skillRaw === "string") {
+            const skillMatch = skillRaw.trim().match(/^([\w.]+)\s*[:=]\s*(\d+)$/);
+            if (skillMatch) {
+                skill = skillMatch[1];
+                skillLevel = parseInt(skillMatch[2], 10);
+            }
+        }
+        const recipe = {
+            id: item.id,
+            name: item.name,
+            module: item.module,
+            properties: item.properties,
+            filePath: item.filePath,
+        };
+        // exactOptionalPropertyTypes: only assign when actually present.
+        const category = item.properties.category ?? item.properties.Category;
+        if (typeof category === "string" && category) {
+            recipe.category = category;
+        }
+        const time = item.properties.time ?? item.properties.Time;
+        if (typeof time === "number") {
+            recipe.time = time;
+        }
+        if (skill !== undefined) {
+            recipe.skill = skill;
+            if (skillLevel !== undefined) {
+                recipe.skillLevel = skillLevel;
+            }
+        }
+        if (result !== undefined) {
+            recipe.result = result;
+            if (resultCount !== undefined)
+                recipe.resultCount = resultCount;
+        }
+        return { recipe, ingredients };
+    }
+    parseItemProperty(line, properties) {
+        // Item properties use "property = value," format
+        const matched = matchPropertyLine(line, "=");
+        if (matched) {
+            properties[matched.key] = parseScriptValue(matched.value);
+        }
+    }
+    parseRecipeProperty(line, properties, section = null, b42Style = false) {
+        // Recipe properties: B42 craftRecipe uses "property = value," (F6);
+        // legacy B41 recipes use "property:value,". Accept both separators for
+        // B42 blocks only — in legacy blocks "Key=Count," lines are ingredients
+        // with a count, not properties (keeps `Water=2,` legacy mods intact).
+        const matched = matchPropertyLine(line, b42Style ? "[:=]" : ":");
+        if (matched) {
+            properties[matched.key] = parseScriptValue(matched.value);
+            return;
+        }
+        // Ingredient/output lines (no separator). Exclude bracket-lists
+        // ("item 2 [Base.A;Base.B] flags[...]" — B42) and the bare-word
+        // "inputs"/"outputs" sub-block headers so no junk is captured.
+        const ingredientMatch = line.match(/^\s*([^,=\]!]+)(?:=(\d+))?,?\s*$/);
+        const trimmedIngredient = ingredientMatch ? ingredientMatch[1].trim() : "";
+        if (ingredientMatch && !["inputs", "outputs"].includes(trimmedIngredient)) {
+            let item = trimmedIngredient;
+            let count = ingredientMatch[2] ? parseInt(ingredientMatch[2], 10) : 1;
+            // B42 craftRecipe lines are "item <count> <ref>"
+            const b42 = item.match(/^item\s+(\d+)\s+(.+)$/);
+            if (b42) {
+                item = b42[2].trim();
+                count = parseInt(b42[1], 10);
+            }
+            // Lines inside the "outputs" section are results, not ingredients (F9).
+            const bucket = section === "outputs" ? "outputs" : "ingredients";
+            if (!properties[bucket])
+                properties[bucket] = [];
+            properties[bucket].push({ item, count });
+        }
+    }
+    parseFixingProperty(line, properties) {
+        // Fixing properties: B41 used "Require : X", B42 uses "Require = X".
+        const requireMatch = line.match(/^Require\s*[:=]\s*(.+?),?\s*$/);
+        if (requireMatch) {
+            properties.RequiredItem = requireMatch[1].trim();
+        }
+        const fixerMatch = line.match(/^Fixer\s*[:=]\s*(.+?),?\s*$/);
+        if (fixerMatch) {
+            if (!properties.Fixers)
+                properties.Fixers = [];
+            const fixerData = fixerMatch[1].trim();
+            const parts = fixerData.split(";").map((p) => p.trim());
+            const fixer = {};
+            // Parse material and quantity
+            const materialMatch = parts[0].match(/([\w.]+)=(\d+)/);
+            if (materialMatch) {
+                fixer.material = materialMatch[1];
+                fixer.quantity = parseInt(materialMatch[2], 10);
+            }
+            else {
+                // B42: the first part is a plain item id ("Base.Pistol"), no =N form.
+                fixer.material = parts[0];
+            }
+            // Parse skill requirement if present
+            if (parts.length > 1) {
+                const skillMatch = parts[1].match(/(\w+)=(\d+)/);
+                if (skillMatch) {
+                    fixer.skill = skillMatch[1];
+                    fixer.skillLevel = parseInt(skillMatch[2], 10);
+                }
+            }
+            properties.Fixers.push(fixer);
+        }
+    }
+    parseSoundProperty(line, properties) {
+        // Sound properties use "property = value," format
+        const matched = matchPropertyLine(line, "=");
+        if (matched) {
+            properties[matched.key] = parseScriptValue(matched.value);
+        }
+    }
+    parseEvolvedRecipeProperty(line, properties) {
+        // Evolved recipe properties use "property:value," format
+        const matched = matchPropertyLine(line, ":");
+        if (matched) {
+            properties[matched.key] = parseScriptValue(matched.value);
+        }
+    }
+    parseVehicleProperty(line, properties) {
+        // Vehicle properties can vary, accept both "=" and ":" formats
+        const matched = matchPropertyLine(line, "[:=]");
+        if (matched) {
+            properties[matched.key] = parseScriptValue(matched.value);
+        }
+    }
+    parseModInfo(filePath) {
+        const content = readFileSync(filePath, "utf-8");
+        const lines = content.split("\n");
+        const modInfo = {};
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//"))
+                continue;
+            const match = trimmed.match(/^(\w+)\s*=\s*(.*)$/);
+            if (match) {
+                const [, key, value] = match;
+                const cleanValue = value.trim();
+                switch (key.toLowerCase()) {
+                    case "name":
+                        modInfo.name = cleanValue;
+                        break;
+                    case "id":
+                        modInfo.id = cleanValue;
+                        break;
+                    case "author":
+                        modInfo.author = cleanValue;
+                        break;
+                    case "description":
+                        modInfo.description = cleanValue;
+                        break;
+                    case "modversion":
+                    case "version":
+                        modInfo.version = cleanValue;
+                        break;
+                    case "url":
+                        modInfo.url = cleanValue;
+                        break;
+                    case "poster":
+                        modInfo.poster = cleanValue;
+                        break;
+                    case "icon":
+                        modInfo.icon = cleanValue;
+                        break;
+                    case "require":
+                        modInfo.require = cleanValue
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter((s) => s);
+                        break;
+                    case "incompatible":
+                        modInfo.incompatible = cleanValue
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter((s) => s);
+                        break;
+                    case "versionmin":
+                        modInfo.versionMin = cleanValue;
+                        break;
+                    case "versionmax":
+                        modInfo.versionMax = cleanValue;
+                        break;
+                }
+            }
+        }
+        return modInfo;
+    }
+    async extractReferences(item) {
+        const refs = [];
+        // Extract item references from properties
+        const itemProps = [
+            "WeaponSprite",
+            "Icon",
+            "AlternativeSwingAnim",
+            "AttachmentType",
+        ];
+        for (const prop of itemProps) {
+            if (item.properties[prop]) {
+                refs.push({
+                    ref: String(item.properties[prop]),
+                    type: "sprite",
+                    context: prop,
+                });
+            }
+        }
+        // Extract sound references
+        const soundProps = ["BreakSound", "HitSound", "SwingSound", "ImpactSound"];
+        for (const prop of soundProps) {
+            if (item.properties[prop]) {
+                refs.push({
+                    ref: String(item.properties[prop]),
+                    type: "sound",
+                    context: prop,
+                });
+            }
+        }
+        // Extract recipe ingredient references
+        if (item.type === "recipe" && item.properties.ingredients) {
+            for (const ingredient of item.properties.ingredients) {
+                refs.push({
+                    ref: ingredient.item,
+                    type: "item",
+                    context: "ingredient",
+                });
+            }
+        }
+        // Extract recipe result reference (may carry a count suffix: "Base.Sword=2")
+        if (item.type === "recipe" && typeof item.properties.Result === "string") {
+            const resultId = item.properties.Result.split("=")[0].trim();
+            if (resultId) {
+                refs.push({
+                    ref: resultId,
+                    type: "item",
+                    context: "result",
+                });
+            }
+        }
+        // Extract B42 craftRecipe output references (outputs section, audit F9)
+        if (item.type === "recipe" && Array.isArray(item.properties.outputs)) {
+            for (const output of item.properties.outputs) {
+                if (output && typeof output.item === "string" && output.item) {
+                    refs.push({
+                        ref: output.item,
+                        type: "item",
+                        context: "output",
+                    });
+                }
+            }
+        }
+        // Extract fixing requirement reference
+        if (item.type === "fixing" &&
+            typeof item.properties.RequiredItem === "string") {
+            const required = item.properties.RequiredItem.trim();
+            if (required) {
+                refs.push({
+                    ref: required,
+                    type: "item",
+                    context: "required_item",
+                });
+            }
+        }
+        // Extract evolvedrecipe references (audit M3): BaseItem + Ingredients
+        if (item.type === "evolvedrecipe") {
+            if (typeof item.properties.BaseItem === "string" &&
+                item.properties.BaseItem.trim()) {
+                refs.push({
+                    ref: item.properties.BaseItem.trim(),
+                    type: "item",
+                    context: "baseItem",
+                });
+            }
+            const ingredients = item.properties.Ingredients;
+            if (Array.isArray(ingredients)) {
+                for (const ing of ingredients) {
+                    const id = String(ing).split("=")[0].trim();
+                    if (id) {
+                        refs.push({ ref: id, type: "item", context: "ingredient" });
+                    }
+                }
+            }
+            else if (typeof ingredients === "string" && ingredients.trim()) {
+                // Generator emits comma-separated ("Base.Potato, Base.Cabbage,");
+                // game files may use semicolons. Split on both.
+                for (const part of ingredients.split(/[;,]/)) {
+                    const id = part.split("=")[0].trim();
+                    if (id) {
+                        refs.push({ ref: id, type: "item", context: "ingredient" });
+                    }
+                }
+            }
+        }
+        // Store references in database
+        for (const ref of refs) {
+            await this.db.addReference(item.id, ref.ref, ref.type, ref.context);
+        }
+    }
+}
+//# sourceMappingURL=ProjectZomboidParser.js.map

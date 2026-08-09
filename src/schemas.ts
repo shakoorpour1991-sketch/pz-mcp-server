@@ -322,6 +322,122 @@ export const WorkshopAnalyzeSchema = z.object({
 // 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
 export const ListKnowledgeTopicsSchema = z.object({});
 
+/** Workspace / mod project management tools */
+export const CreateModSchema = z.object({
+  name: z.string().min(1).max(256).describe("Human-readable mod name"),
+  id: z
+    .string()
+    .min(1)
+    .max(128)
+    .optional()
+    .describe("Mod ID (defaults to sanitized name if not provided)"),
+  author: z.string().max(256).optional().describe("Mod author name"),
+  description: z.string().max(1000).optional().describe("Mod description"),
+  version: z
+    .string()
+    .max(32)
+    .optional()
+    .describe("Mod version (defaults to 1.0.0)"),
+  template: z
+    .enum(["B42", "B41"])
+    .optional()
+    .describe("Mod structure template (defaults to B42)"),
+  targetDir: z
+    .string()
+    .max(4096)
+    .describe("Target directory where the mod will be created (must be absolute path within workspace roots)"),
+  createLuaFolder: z
+    .boolean()
+    .default(false)
+    .describe("Create media/lua folder for Lua scripts"),
+  createSoundFolder: z
+    .boolean()
+    .default(false)
+    .describe("Create media/sound folder for audio assets"),
+  createTexturesFolder: z
+    .boolean()
+    .default(false)
+    .describe("Create media/textures folder for texture assets"),
+});
+
+export const InspectModSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+});
+
+export const ListModFilesSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+  type: z
+    .enum(["all", "script", "lua", "asset", "data", "doc", "config", "other"])
+    .default("all")
+    .describe("Filter by file type"),
+  pattern: z
+    .string()
+    .max(512)
+    .optional()
+    .describe("Regex pattern to filter files by relative path"),
+});
+
+export const ReadModFileSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+  filePath: z
+    .string()
+    .max(2048)
+    .describe("Relative path to file within mod directory"),
+});
+
+export const WriteModFileSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+  filePath: z
+    .string()
+    .max(2048)
+    .describe("Relative path to file within mod directory"),
+  content: z.string().max(1_000_000).describe("File content to write"),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe("Overwrite existing file (required if file exists)"),
+  createBackup: z
+    .boolean()
+    .default(false)
+    .describe("Create backup of existing file before overwriting"),
+});
+
+export const DeleteModFileSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+  filePath: z
+    .string()
+    .max(2048)
+    .describe("Relative path to file within mod directory"),
+  createBackup: z
+    .boolean()
+    .default(false)
+    .describe("Create backup before deleting"),
+});
+
+export const RenameModFileSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+  oldPath: z
+    .string()
+    .max(2048)
+    .describe("Current relative path to file within mod directory"),
+  newPath: z
+    .string()
+    .max(2048)
+    .describe("New relative path to file within mod directory"),
+});
+
+export const ValidateModSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+});
+
+export const GetModDependenciesSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+});
+
+export const GetProjectStatusSchema = z.object({
+  modPath: z.string().max(4096).describe("Absolute path to mod directory"),
+});
+
 /**
  * Tool name → input schema. Imported by admin/bridge.mjs so the dashboard can
  * (1) normalize every tools/list reply into proper JSON Schema from the live
@@ -345,4 +461,14 @@ export const TOOL_SCHEMAS = {
   workshop_download: WorkshopDownloadSchema,
   workshop_analyze: WorkshopAnalyzeSchema,
   list_knowledge_topics: ListKnowledgeTopicsSchema,
+  workspace_create_mod: CreateModSchema,
+  workspace_inspect_mod: InspectModSchema,
+  workspace_list_files: ListModFilesSchema,
+  workspace_read_file: ReadModFileSchema,
+  workspace_write_file: WriteModFileSchema,
+  workspace_delete_file: DeleteModFileSchema,
+  workspace_rename_file: RenameModFileSchema,
+  workspace_validate_mod: ValidateModSchema,
+  workspace_get_dependencies: GetModDependenciesSchema,
+  workspace_get_status: GetProjectStatusSchema,
 };
