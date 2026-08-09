@@ -507,6 +507,13 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-ghost rect:hover{stroke:rgb(var(--accent-rgb))}
 .chain-count{font-size:10px;font-family:var(--font-mono);font-weight:700;fill:var(--muted);paint-order:stroke;stroke:rgba(4,8,16,.85);stroke-width:3px}
 .chain-edge{fill:none}
+.chain-edge,.chain-count{transition:opacity .14s ease}
+.chain-node{transition:opacity .14s ease}
+.chain-svg.hover .chain-edge,.chain-svg.hover .chain-count{opacity:.14}
+.chain-svg.hover .chain-edge.hl{opacity:1;stroke-width:2.8}
+.chain-svg.hover .chain-count.hl{opacity:1}
+.chain-svg.hover .chain-node{opacity:.35}
+.chain-svg.hover .chain-node.ho,.chain-svg.hover .chain-node.sel{opacity:1}
 .chain-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);align-items:center}
 .chain-legend i{display:inline-block;width:16px;height:2px;border-radius:2px;vertical-align:middle;margin-right:5px;background:#34D399}
 .lg-dot{display:inline-block;width:10px;height:10px;border-radius:3px;border:1px solid;vertical-align:middle;margin-right:5px}
@@ -2533,7 +2540,7 @@ function chainPaint(){
     const xA = l.x + CHAIN_NODE_W, yA = l.y + CHAIN_NODE_H / 2, xB = r2.x, yB = r2.y + CHAIN_NODE_H / 2;
     const mx = (xA + xB) / 2;
     edges.push({ d: 'M'+xA+' '+yA+' C'+mx+' '+yA+' '+mx+' '+yB+' '+xB+' '+yB,
-      color, count, lx: mx, ly: (yA + yB) / 2 - 7 });
+      color, count, lx: mx, ly: (yA + yB) / 2 - 7, a: pn.id, b: cn.id });
   }
   function layerEdges(side, cols, prevIds){
     for (const pid of prevIds){
@@ -2546,8 +2553,8 @@ function chainPaint(){
   if (up0) layerEdges('up', up0.show, [L.seed.id]);
   if (dn0) layerEdges('dn', dn0.show, [L.seed.id]);
   shown.forEach(s => { if (s.d === 0) return; const prev = shown.find(x => x.side === s.side && x.d === s.d - 1); if (prev) layerEdges(s.side, s.show, prev.show); });
-  const edgeHTML = edges.map(e => '<path class="chain-edge" d="'+e.d+'" stroke="'+e.color+'" stroke-width="1.6" marker-end="url(#mk'+(e.color === '#34D399' ? 'G' : 'A')+')"/>' +
-    (e.count ? '<text class="chain-count" x="'+e.lx+'" y="'+e.ly+'" text-anchor="middle">'+e.count+'×</text>' : '')).join('');
+  const edgeHTML = edges.map(e => '<path class="chain-edge" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+e.d+'" stroke="'+e.color+'" stroke-width="1.6" marker-end="url(#mk'+(e.color === '#34D399' ? 'G' : 'A')+')"/>' +
+    (e.count ? '<text class="chain-count" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" x="'+e.lx+'" y="'+e.ly+'" text-anchor="middle">'+e.count+'×</text>' : '')).join('');
   let nodeHTML = chainNodeHTML(L.seed, seedPos.x, seedPos.y, 'seed');
   shown.forEach(s => {
     nodeHTML += '<text class="chain-lvl" x="'+(s.xs + CHAIN_NODE_W / 2)+'" y="30" text-anchor="middle">level '+(s.d + 1)+'</text>';
@@ -2561,6 +2568,7 @@ function chainPaint(){
   });
   g.innerHTML = edgeHTML + nodeHTML;
   chainApplyTransform();
+  chainHover(null); // repaints wipe .ho/.hl — reset the dim state so it never sticks
   const zv = $('#chainZoomVal'); if (zv) zv.textContent = Math.round(S.chain.zoom * 100) + '%';
 }
 function chainNodeHTML(n, x, y, extra){
@@ -2616,6 +2624,20 @@ function chainInspPaint(){
 }
 function chainMarkSel(id){
   $$('#chainG [data-act="chain-node"]').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+}
+function chainHover(id){
+  const svg = $('#chainSvg'); if (!svg) return;
+  if (id === S.chain._hoverId) return; // same node (rect→text→glyph moves) — nothing to change
+  S.chain._hoverId = id;
+  if (id){
+    svg.classList.add('hover');
+    $$('#chainG .chain-node').forEach(el => el.classList.toggle('ho', el.dataset.id === id));
+    $$('#chainG .chain-edge, #chainG .chain-count').forEach(el => el.classList.toggle('hl', el.dataset.a === id || el.dataset.b === id));
+  } else {
+    svg.classList.remove('hover');
+    $$('#chainG .ho').forEach(el => el.classList.remove('ho'));
+    $$('#chainG .hl').forEach(el => el.classList.remove('hl'));
+  }
 }
 function chainTransformStr(){
   return 'translate('+S.chain.pan.x+','+S.chain.pan.y+') scale('+S.chain.zoom+')';
@@ -2683,6 +2705,7 @@ function bindChainSvg(){
     svg.setPointerCapture(e.pointerId);
     svg.classList.add('dragging');
     document.body.classList.add('panning');
+    chainHover(null);
   });
   svg.addEventListener('pointermove', e => {
     if (!drag) return;
@@ -2695,6 +2718,11 @@ function bindChainSvg(){
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
   svg.addEventListener('dblclick', e => { if (!e.target.closest('[data-act]')) chainFit(); });
+  svg.addEventListener('pointerover', e => {
+    if (svg.classList.contains('dragging')) return;
+    const n = e.target.closest('.chain-node');
+    chainHover(n ? n.dataset.id : null);
+  });
   svg.addEventListener('wheel', e => {
     const wrap = $('#chainSvgWrap');
     const cw = wrap ? wrap.clientWidth : 600, ch = wrap ? wrap.clientHeight : chainViewH();
