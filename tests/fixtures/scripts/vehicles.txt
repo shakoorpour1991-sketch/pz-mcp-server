@@ -1,0 +1,7 @@
+vehicle FixtureCar
+{
+	Name = FixtureCar,
+	DisplayName = Fixture Car,
+	Type = NormalCar,
+	Weight = 1200,
+}

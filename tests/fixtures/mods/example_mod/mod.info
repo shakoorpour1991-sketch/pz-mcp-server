@@ -1,0 +1,4 @@
+name=Example Fixture Mod
+id=FixtureMod
+description=Fixture mod for the shared test corpus
+versionMin=42.20

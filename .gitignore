@@ -1,3 +1,14 @@
-# Images are not ignored as per requirements
-# No build artifacts, dependencies, or temp files detected in changes
-# Only source/config files were modified (README.md, SVG assets)
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Runtime SQLite databases (parse_game_files / index_knowledge_base output)
+data/
+
+# Logs
+*.log
+
+# Hermes agent workspace
+.hermes/

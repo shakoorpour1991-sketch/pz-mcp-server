@@ -139,6 +139,32 @@ Run the compiled server with:
 npm start
 ```
 
+## Compatibility
+
+| Layer | Support |
+|---|---|
+| Node.js | **≥ 22.5** — required for the built-in `node:sqlite`; earlier versions fail at runtime |
+| OS | Windows 10/11 (primary), Linux, macOS; WSL is supported for game-path detection |
+| Project Zomboid | **Build 42.20 verified** (`PZ_GAME_VERSION`) — B42 grammar: items, `craftRecipe` (inputs/outputs), evolvedrecipe, fixing, sound, vehicle |
+
+## Example workflows
+
+**Core loop** (local/offline):
+
+```text
+parse_game_files        # index the vanilla game into the SQLite DB
+  → search_vanilla      # find the source material (item, recipe, sound, vehicle)
+  → generate_script     # create a balanced script from a template
+  → validate_script     # syntax + reference check
+  → export_mod_script   # dry-run, then write into a mod's media/scripts
+```
+
+**Knowledge base**: `index_knowledge_base` once, then `search_knowledge_base` / `list_knowledge_topics` for every lookup.
+
+**Mod/recipe analysis**: `analyze_mod` for structure/Lua/balance, `analyze_recipe_chain` to walk what makes/consumes an item, `detect_recipe_conflicts` for duplicate crafting paths.
+
+**Workshop (external)**: `workshop_search` → `workshop_get_details` → `workshop_download` (dry-run first) → `workshop_analyze` for a full Mod Report.
+
 ## Internal map
 
 ```mermaid
@@ -163,13 +189,40 @@ The server is therefore not only a search index: the same MCP surface also reach
 | Variable | Default | Purpose |
 |---|---|---|
 | `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
-| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Knowledge-base documentation path |
-| `PZ_MCP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `PZ_MCP_KB_PATH` | `knowledge-base/` (shipped docs) | Knowledge-base documentation path |
+| `PZ_MCP_LOG_LEVEL` | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent` |
 | `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
 | `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override Project Zomboid installation detection |
 | `PZ_DECK_PORT` | `8787` | Admin dashboard port |
+| `PZ_WORKSHOP_DIR` | Steam install | Workshop download target (else `<Steam>/steamapps/workshop/content/108600`) |
+| `PZ_MCP_MAX_DOWNLOAD_BYTES` | `4294967296` (4 GiB) | Workshop download size cap — larger items are refused before downloading |
+| `STEAMCMD_PATH` | common paths | Path to the `steamcmd` binary (auto-probed if unset) |
+| `STEAMCMD_USER` / `STEAMCMD_PASS` | — | Credentials for non-anonymous workshop downloads (see SteamCMD setup) |
+| `STEAMCMD_USE_CREDENTIALS` | `0` | Set to `1` to allow passing credentials to steamcmd |
 
 The documented game-path detection covers standard Windows locations and WSL; set `PROJECTZOMBOID_PATH` when automatic detection misses the installation.
+
+All variables are validated at startup through a single Zod schema — invalid values (e.g. a bad log level) fail fast with a per-variable error instead of surfacing as confusing runtime behavior.
+
+### Database lifecycle & reset
+
+The SQLite databases live in `PZ_MCP_DATA_DIR` (default `./data`):
+
+- `pz_database.db` — parsed game/mod content (items, recipes, references)
+- `pz_knowledge.db` — indexed knowledge-base docs
+- `workshop_metadata.json` — 24h Workshop metadata cache
+
+The databases are a **disposable cache**, not persistent user state: they are rebuilt by `parse_game_files` / `index_knowledge_base`. To reset everything, stop the server and delete the `data/` directory (or pass `forceReparse: true` to `parse_game_files` to re-parse in place). The schema is versioned internally (`PRAGMA user_version`) and migrated automatically on boot.
+
+### SteamCMD setup (workshop download / analyze)
+
+`workshop_download` and `workshop_analyze` need Valve's [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD):
+
+1. Install SteamCMD and make sure the binary is discoverable — set `STEAMCMD_PATH`, or drop `steamcmd.exe` into `C:\steamcmd` / a common Steam folder.
+2. Downloads land in `PZ_WORKSHOP_DIR` (default: `<Steam>/steamapps/workshop/content/108600`).
+3. Anonymous downloads cover public items. For items requiring a subscription, set `STEAMCMD_USER` + `STEAMCMD_PASS` **and** `STEAMCMD_USE_CREDENTIALS=1` — credentials are never passed on the command line unless you explicitly opt in, because argv is visible in process listings.
+
+Downloaded mods are read/analyzed only — they are never executed and never auto-installed into the live game.
 
 ## Development
 
@@ -179,13 +232,49 @@ The documented game-path detection covers standard Windows locations and WSL; se
 | `npm run dev` | Run with `tsx` in development mode |
 | `npm start` | Run the compiled server |
 | `npm run lint` | Run ESLint |
-| `npm test` | Run the test suite |
+| `npm test` | Build + run the full test suite (299 tests / 70 suites) |
+| `npm run coverage` | Test coverage report (after `npm test` has built) |
+| `npm run benchmark` | Hermetic DB/FTS performance baselines |
+| `npm run verify:deck` | Admin dashboard smoke check |
 
 ## Current boundaries
 
 This README does **not** claim that the server can automatically create, launch, or play-test a Project Zomboid mod. That is not established by the supplied repository documentation.
 
 It also avoids unsupported performance claims and compatibility promises.
+
+## Security & side-effect model
+
+MCP clients can drive tools autonomously, so the server separates capabilities into three trust tiers:
+
+| Tier | Tools | Side effects |
+|---|---|---|
+| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script` | None — pure inspection |
+| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script` | Writes only to the DB under `PZ_MCP_DATA_DIR` or the explicitly provided mod path (path-validated, dry-run default for export) |
+| **EXTERNAL SIDE EFFECTS** | `workshop_download`, `workshop_analyze` | SteamCMD subprocess + downloads into `PZ_WORKSHOP_DIR`; `dryRun` preview available |
+
+Hardening already in place:
+
+- **Path safety** — user-supplied paths go through `validateInputPath` (absolute-only, no `..` traversal, existence check); export writes only under the validated mod's `media/scripts`; downloader output is contained in the workshop dir and item ids are validated.
+- **External commands** — SteamCMD runs with a timeout, output is captured (never streamed to the wire), exit codes are checked, and downloads are app-verified (`108600`) with a size cap (`PZ_MCP_MAX_DOWNLOAD_BYTES`) before touching disk.
+- **No execution of mod content** — downloaded mods are parsed/analyzed in a throwaway DB and never executed.
+- **Error hygiene** — tool errors are mapped to structured MCP errors; internal error messages are sanitized (no stack traces, no absolute local paths leaked to the client).
+- **Startup validation** — invalid environment configuration fails fast at boot.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Node.js >= 22.5 is required` / server exits at boot | Update Node — `node:sqlite` is built-in from 22.5 |
+| `Invalid environment configuration: PZ_MCP_LOG_LEVEL …` | Check the listed variable — values are validated at startup |
+| `SteamCMD not found` | Install SteamCMD or set `STEAMCMD_PATH` (see SteamCMD setup) |
+| `Could not determine the workshop content directory` | Set `PZ_WORKSHOP_DIR` to a writable folder |
+| `Item … is … which exceeds the configured download limit` | Raise `PZ_MCP_MAX_DOWNLOAD_BYTES` if the item is legitimately large |
+| `search_vanilla` returns nothing | Run `parse_game_files` first (the DB starts empty); use `forceReparse: true` after game updates |
+| `Could not detect Project Zomboid installation` | Set `PROJECTZOMBOID_PATH` to the install dir |
+| `Index … Database already contains data` | Pass `forceReparse: true` (or delete `data/` to reset) |
+| Stale or missing knowledge results | Re-run `index_knowledge_base` (or `overwrite: true` for a full re-index) |
+| SQLite lock errors with the dashboard open | Both processes share the DB in WAL mode; wait a moment and retry |
 
 <p align="center">
   <img src="assets/divider.svg" width="100%" height="34" alt="">

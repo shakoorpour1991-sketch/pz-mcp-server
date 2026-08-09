@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MCP entrypoint decomposed into a typed tool registry** (chatgpt audit P0) — `src/index.ts` shrank from ~1100 to ~390 lines; all 17 tool definitions moved to `src/tools/` (registry, discovery, scripts, analysis, localData, workshop). Each tool is one object (name, description, zod `inputSchema`, handler); `index.ts` is composition-only and both `tools/list` and `tools/call` derive from the registry
+- **Standardized MCP error handling** (audit P1) — new `src/utils/mcpErrors.ts`: one `toMcpError` funnel maps zod rejections → InvalidParams, deliberate McpErrors pass through, and everything else → sanitized InternalError (no stack traces; absolute local paths redacted)
+- **Centralized env validation** (audit P1) — `src/utils/config.ts` validates every `PZ_*`/`STEAMCMD_*` variable through one Zod schema, fail-fast at startup, including the new `PZ_MCP_MAX_DOWNLOAD_BYTES`
+- **Versioned database migrations** (audit P0) — `PRAGMA user_version` + `SCHEMA_VERSION = 2`; the additive column ALTERs are now a numbered v1→v2 migration that also repairs a pre-v2 `items_fts` shape (missing plain-text mirror) and rebuilds only when the shape actually changed; `PRAGMA busy_timeout = 5000` added
+- **Workshop download hardening** (audit P0) — `workshop_download` gained a `dryRun` option (app verification + target resolution, no SteamCMD/disk writes) and a size cap (`PZ_MCP_MAX_DOWNLOAD_BYTES`, default 4 GiB) enforced before download in both `workshop_download` and `workshop_analyze`
+- Test suite now **299 tests / 70 suites** (was 263 / 65)
+- **Machine-specific paths removed** (portability pass) — the knowledge-base default is no longer `D:\PZ-Modding\Documentation`: `index_knowledge_base` now defaults to the `knowledge-base/` folder shipped with the repository (env override unchanged), so it works out of the box on any machine; the dashboard's `analyze_mod` example no longer carries a real username, the verify scripts take the game path from `PROJECTZOMBOID_PATH`/`PZ_PATH` or auto-detect instead of a hardcoded install, and `dashboard.bat` + the `_verify_*.mjs` scripts honor `PZ_DECK_PORT` instead of assuming 8787
+
+### Added
+- **FTS/database lifecycle integration tests** (audit P0) — `tests/database.fts.integration.test.js`: insert→search, update→search, delete→search via the trigger path, rowid churn under bulk upsert, 1000-row import, empty DB, and v1→v2 migration
+- **Shared PZ fixture corpus** (audit P1) — `tests/fixtures/` with representative B42 scripts for all six block types, a B42 `craftRecipe`, malformed input, a container-leak check, and an example mod pack, exercised by `tests/fixtures.unit.test.js`
+- **Tool-registry snapshot tests** (audit P2) — `tests/unit/toolRegistry.unit.test.js`: all 17 tools registered with full definitions, unique names, and schema invalid-input rejections
+- **Workshop tool guard tests** (audit P0) — `tests/unit/workshopTool.unit.test.js`: dry-run, size limit, app verification, concurrent-download dedupe (mocked context, no network)
+- **Config validation tests** (audit P1) — `tests/unit/config.unit.test.js`
+- **CI polish** (audit P1/P2) — coverage step (`npm run coverage`), CodeQL workflow (`.github/workflows/codeql.yml`), dependency-review workflow (`.github/workflows/dependency-review.yml`)
+- **Performance benchmark script** (audit P2) — `npm run benchmark` (`scripts/_benchmark.mjs`): hermetic import rate, FTS query latency, stats/lookup timings on synthetic data
+- **README**: compatibility matrix, example workflows, database lifecycle/reset, SteamCMD setup, security & side-effect trust tiers, troubleshooting; new env vars documented
+
+### Fixed
+- **`node:sqlite` `exec()` parameter gotcha** — tests that delete rows through a raw connection now use prepared statements: `exec('DELETE … WHERE id = ?', id)` silently ignores bound parameters and deletes nothing
+
 ### Fixed
 - **Search-as-you-type (autocomplete / `search_vanilla`)** — `prepareFTSQuery` built exact-token FTS5 matches (`"flou"`), so partial prefixes like `flo`/`flou` returned nothing while typing and autocomplete felt dead. Terms are now prefix-matched (`flou*` → Flour2/Cornflour2), quoted for safety when a term still carries FTS punctuation (e.g. `Base.Burger`), multi-term input becomes an AND of prefixes, and operator/empty input still yields the match-nothing query. Works for the Chain seed autocomplete, the DB tab search, and any `search_vanilla` caller.
 - **Recipe Chain fullscreen graph: inspector no longer blocks the toolbar / panning, and panning works at every zoom** — the empty-state "click a node" panel was a 320px overlay at the top-right that covered the fit/zoom/export buttons and ate drags in that region; it is now a tiny non-interactive hint pill at the bottom-center (`pointer-events: none`), and the real inspector anchors below the toolbar. The pan clamp previously hard-locked `pan = 0` whenever the graph fit the viewport (i.e. at the default fit zoom nothing could be dragged); it now uses soft bounds — the graph can slide ~40% of a viewport past each edge and settles on release, and overflowed graphs keep the viewport covered with a little overscroll. A manual drag also opts the view out of auto-refit on resize.

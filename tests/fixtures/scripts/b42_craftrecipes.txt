@@ -1,0 +1,15 @@
+module FixtureB42 {
+	craftRecipe FixtureB42Bread
+	{
+		SkillRequired = Cooking:2,
+		Time = 30,
+		inputs {
+			item 2 Base.Flour,
+			item 1 Base.Water,
+			item 1 tags[base:spatula] mode:keep,
+		}
+		outputs {
+			item 1 Base.Bread,
+		}
+	}
+}

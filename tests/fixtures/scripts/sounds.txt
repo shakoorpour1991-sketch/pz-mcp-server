@@ -1,0 +1,5 @@
+sound FixtureSwing
+{
+	category = Ambient,
+	file = swing.ogg,
+}

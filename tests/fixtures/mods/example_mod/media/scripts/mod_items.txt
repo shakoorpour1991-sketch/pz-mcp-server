@@ -1,0 +1,13 @@
+module FixtureMod {
+	item FixtureDagger
+	{
+		Type = Weapon,
+		DisplayName = Fixture Dagger,
+		Icon = FixtureDagger,
+	}
+	recipe FixtureModRepair
+	{
+		Result: FixtureDagger=1,
+		Base.Glue=1,
+	}
+}

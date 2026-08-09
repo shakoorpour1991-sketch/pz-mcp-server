@@ -1,0 +1,19 @@
+module FixtureBase {
+	item FixtureSword
+	{
+		Type = Weapon,
+		DisplayName = Fixture Sword,
+		Weight = 2.0,
+		MaxDamage = 10,
+		Tags = Sword;Metal,
+		MetalValue = 10,
+		Icon = FixtureSword,
+		BreakSound = FixtureSwordBreak,
+	}
+	item FixtureArmor
+	{
+		Type = Clothing,
+		DisplayName = Fixture Armor,
+		Weight = 1.5,
+	}
+}

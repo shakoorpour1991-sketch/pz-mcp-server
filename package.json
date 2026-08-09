@@ -10,6 +10,8 @@
     "start": "node dist/index.js",
     "dashboard": "node admin/bridge.mjs",
     "test": "npm run build && node --test \"tests/**/*.test.js\"",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-functions=80 --test-coverage-branches=70 \"tests/**/*.test.js\"",
+    "benchmark": "node scripts/_benchmark.mjs",
     "lint": "eslint src/**/*.ts tests/**/*.js admin/*.mjs scripts/*.mjs",
     "format": "prettier --write src/**/*.ts",
     "format:check": "prettier --check src/**/*.ts",

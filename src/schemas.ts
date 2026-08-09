@@ -157,7 +157,7 @@ export const IndexKnowledgeBaseSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or D:\\PZ-Modding\\Documentation)",
+      "Path to the knowledge base docs directory (defaults to PZ_MCP_KB_PATH env or the repository's knowledge-base/ folder)",
     ),
   overwrite: z
     .boolean()
@@ -300,6 +300,12 @@ export const WorkshopDownloadSchema = z.object({
     .max(300)
     .describe(
       "Workshop item id or URL to download via SteamCMD (verified to be a Project Zomboid item first)",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Preview the download — resolve the item, verify it is a Project Zomboid item, and report the target path — without invoking SteamCMD or touching disk",
     ),
 });
 

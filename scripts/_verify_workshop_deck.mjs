@@ -1,6 +1,7 @@
 // Verify (M1 dashboard): exercise the Workshop tab's exact data path against the
 // running Control Deck bridge — /rpc tools/list + workshop_search + workshop_get_details.
-const BASE = 'http://localhost:8787';
+const PORT = process.env.PZ_DECK_PORT || 8787;
+const BASE = `http://localhost:${PORT}`;
 const results = [];
 let pass = true;
 function check(name, ok, detail) {

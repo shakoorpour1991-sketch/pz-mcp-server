@@ -1,0 +1,5 @@
+fixing FixtureFixBat
+{
+	Require : Base.Bat,
+	Fixer : Base.Glue=1;Fixing=2,
+}

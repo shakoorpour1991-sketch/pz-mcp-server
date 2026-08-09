@@ -1,0 +1,7 @@
+evolvedrecipe FixtureSoup
+{
+	BaseItem: Base.TinPot,
+	Ingredients: Base.Water,Base.Cabbage,
+	ResultItem: Base.Soup,
+	Time: 60,
+}

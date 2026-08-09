@@ -3,7 +3,8 @@
 // step must be skipped (already present) and the parse + analyze suite must
 // produce a Mod Report. Requires the bridge started with:
 //   PZ_WORKSHOP_DIR=<dir with a fake mod at <dir>/<workshopId>>
-const BASE = 'http://localhost:8787';
+const PORT = process.env.PZ_DECK_PORT || 8787;
+const BASE = `http://localhost:${PORT}`;
 const ID = process.argv[2] || '3777544219';
 const results = [];
 let pass = true;

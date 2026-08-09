@@ -1,0 +1,8 @@
+recipe FixtureNailBat
+{
+	Result: Base.Bat=1,
+	Base.Nails=6,
+	keep [Base.Hammer],
+	SkillRequired: Woodwork=4,
+	Time: 120,
+}

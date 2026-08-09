@@ -1,0 +1,11 @@
+module FixtureNested {
+	item FixtureContainerItem
+	{
+		Type = Container,
+		DisplayName = Fixture Container,
+	}
+	model FixtureModel
+	{
+		textures = FixtureA;FixtureB,
+	}
+}

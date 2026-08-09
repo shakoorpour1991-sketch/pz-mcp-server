@@ -1,0 +1,8 @@
+item BrokenItem
+{
+	Type = Weapon
+	DisplayName = "unterminated string
+}
+stray garbage line without a block
+
+}

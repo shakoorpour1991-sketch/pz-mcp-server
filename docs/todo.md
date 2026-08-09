@@ -5,4 +5,4 @@ Superseded — see these instead:
 
 - **Canonical project context:** `docs/project-summary.md` (uploaded to online AIs for codegen).
 - **Structure:** `docs/project-structure.md`.
-- **Status (Aug 2026):** 205/205 tests green (node:test runner, 52 suites), lint + build clean, `npm audit` 0 vulnerabilities.
+- **Status (Aug 2026):** 299/299 tests green (node:test runner, 70 suites), lint + build clean, coverage ~92% lines (thresholds 85/80/70), `npm audit` 0 vulnerabilities.

@@ -44,7 +44,7 @@ Always run build + tests + lint before declaring a task done. Tests run on Node'
 
 - **MCP stdio protocol**: stdout is the wire. The pino logger writes **stderr-only (fd 2)** — never print anything to stdout.
 - Game data for `parse_game_files`: Project Zomboid **Build 42.20** install at `D:\Games\ProjectZomboid\`. Path detection: hardcoded Windows paths, WSL paths, or explicit `gamePath` param.
-- Modding knowledge base docs live at `D:\PZ-Modding\Documentation\` (markdown with YAML frontmatter, ~13 research files) — indexed with `index_knowledge_base`.
+- Modding knowledge base docs are indexed with `index_knowledge_base`. The default is the repo-shipped `knowledge-base/` directory (portable — no machine-specific path); override with `PZ_MCP_KB_PATH`. This machine also has a personal docs copy at `D:\PZ-Modding\Documentation\`.
 - Workspace status (Aug 2026): 205/205 tests green (node:test runner, 52 suites), lint+build clean, `npm audit` 0 vulnerabilities.
 
 ## Conventions

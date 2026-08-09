@@ -1,6 +1,6 @@
 # PZ Build 42 Modding Knowledge Base
 
-Project Zomboid Build 42 modding research, organized from analysis of the game files at `D:\Games\ProjectZomboid-42.18`.
+Project Zomboid Build 42 modding research, organized from analysis of a local Project Zomboid Build 42 install (`D:\Games\ProjectZomboid-42.18` on the dev machine).
 
 ## Research Docs (13 files, ~280 KB total)
 
@@ -52,8 +52,8 @@ Project Zomboid Build 42 modding research, organized from analysis of the game f
 
 ## Related Tools
 
-- **pz-mcp-server** at `C:\Users\Administrator\Desktop\mcp\pz-mcp-server` — MCP tools for searching vanilla content, validating & generating scripts, analyzing mods
-- **PZ installation** at `D:\Games\ProjectZomboid-42.18`
+- **pz-mcp-server** — this repository; MCP tools for searching vanilla content, validating & generating scripts, analyzing mods (game path auto-detected or set via `PROJECTZOMBOID_PATH`)
+- **PZ installation** — a local Build 42 install (on the dev machine: `D:\Games\ProjectZomboid-42.18`)
 
 ## Hermes Usage
 

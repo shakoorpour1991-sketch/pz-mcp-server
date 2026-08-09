@@ -7,6 +7,18 @@ import { sanitizeFtsTerms } from "../utils/fts.js";
 import { BlockType } from "../utils/blockTypes.js";
 
 /**
+ * Current database schema version, stored in `PRAGMA user_version`.
+ *
+ * v1 → v2: item search columns (properties_text, tags, metal_value, weight,
+ * condition_max, attachment_type, run_speed_modifier, hunger_change,
+ * thirst_change, icon, calories) and the plain-text properties_text FTS
+ * mirror. Older databases (user_version 0) are migrated in migrateSchema;
+ * the items_fts virtual table shape is repaired in createTables before the
+ * FTS triggers are recreated.
+ */
+export const SCHEMA_VERSION = 2;
+
+/**
  * Candidate spellings of an id that all resolve to the same underlying
  * recipe/item reference (recipe-chain review: naming tolerance). The parser
  * stores vanilla items bare ("Flour2") and mod items qualified
@@ -177,6 +189,8 @@ export class DatabaseManager {
   private db!: DatabaseSync;
   private dbPath: string;
   private inTransaction = false;
+  /** Set when createTables dropped + recreated an old-shaped items_fts. */
+  private ftsTableWasRecreated = false;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || databasePath();
@@ -193,6 +207,9 @@ export class DatabaseManager {
     this.db.exec("PRAGMA journal_mode = WAL");
     // Enforce the FOREIGN KEY declared on "references".item_id (freebuff M6)
     this.db.exec("PRAGMA foreign_keys = ON");
+    // Wait up to 5s for a lock instead of failing instantly on a concurrent
+    // reader/writer (the dashboard bridge and the server share the DB).
+    this.db.exec("PRAGMA busy_timeout = 5000");
 
     await this.createTables();
     await this.createIndexes();
@@ -240,55 +257,91 @@ export class DatabaseManager {
     }
   }
 
+  /** Read the stored schema version (0 for a brand-new/never-migrated DB). */
+  private schemaVersion(): number {
+    const row = this.db.prepare("PRAGMA user_version").get() as {
+      user_version: number;
+    };
+    return row.user_version;
+  }
+
+  /**
+   * Numbered, version-gated migrations (audit: explicit schema versioning).
+   * Each block upgrades one schema version; the PRAGMA is bumped afterwards
+   * so a downgraded binary never re-runs a completed migration. The DB is a
+   * disposable cache (rebuilt by parse_game_files), so migrations stay
+   * additive — this framework exists for safe column/shape evolution, not
+   * long-lived user state.
+   */
   private async migrateSchema(): Promise<void> {
-    const existing = this.db
-      .prepare("PRAGMA table_info(items)")
-      .all() as Array<{ name: string }>;
-    const existingColumns = new Set(existing.map((c) => c.name));
+    const current = this.schemaVersion();
+    if (current >= SCHEMA_VERSION) return;
 
-    const newColumns: Array<{ name: string; sql: string }> = [
-      {
-        name: "properties_text",
-        sql: "ALTER TABLE items ADD COLUMN properties_text TEXT",
-      },
-      { name: "tags", sql: "ALTER TABLE items ADD COLUMN tags TEXT" },
-      {
-        name: "metal_value",
-        sql: "ALTER TABLE items ADD COLUMN metal_value REAL",
-      },
-      { name: "weight", sql: "ALTER TABLE items ADD COLUMN weight REAL" },
-      {
-        name: "condition_max",
-        sql: "ALTER TABLE items ADD COLUMN condition_max INTEGER",
-      },
-      {
-        name: "attachment_type",
-        sql: "ALTER TABLE items ADD COLUMN attachment_type TEXT",
-      },
-      {
-        name: "run_speed_modifier",
-        sql: "ALTER TABLE items ADD COLUMN run_speed_modifier REAL",
-      },
-      {
-        name: "hunger_change",
-        sql: "ALTER TABLE items ADD COLUMN hunger_change REAL",
-      },
-      {
-        name: "thirst_change",
-        sql: "ALTER TABLE items ADD COLUMN thirst_change REAL",
-      },
-      { name: "icon", sql: "ALTER TABLE items ADD COLUMN icon TEXT" },
-      {
-        name: "calories",
-        sql: "ALTER TABLE items ADD COLUMN calories REAL",
-      },
-    ];
+    if (current < 2) {
+      // v1 → v2: item search columns. Column presence is still double-checked
+      // (ALTER TABLE ADD COLUMN fails if the column exists) so brand-new DBs,
+      // which already have the full schema from createTables, skip the ALTERs.
+      const existing = this.db
+        .prepare("PRAGMA table_info(items)")
+        .all() as Array<{ name: string }>;
+      const existingColumns = new Set(existing.map((c) => c.name));
 
-    for (const col of newColumns) {
-      if (!existingColumns.has(col.name)) {
-        this.db.exec(col.sql);
+      const newColumns: Array<{ name: string; sql: string }> = [
+        {
+          name: "properties_text",
+          sql: "ALTER TABLE items ADD COLUMN properties_text TEXT",
+        },
+        { name: "tags", sql: "ALTER TABLE items ADD COLUMN tags TEXT" },
+        {
+          name: "metal_value",
+          sql: "ALTER TABLE items ADD COLUMN metal_value REAL",
+        },
+        { name: "weight", sql: "ALTER TABLE items ADD COLUMN weight REAL" },
+        {
+          name: "condition_max",
+          sql: "ALTER TABLE items ADD COLUMN condition_max INTEGER",
+        },
+        {
+          name: "attachment_type",
+          sql: "ALTER TABLE items ADD COLUMN attachment_type TEXT",
+        },
+        {
+          name: "run_speed_modifier",
+          sql: "ALTER TABLE items ADD COLUMN run_speed_modifier REAL",
+        },
+        {
+          name: "hunger_change",
+          sql: "ALTER TABLE items ADD COLUMN hunger_change REAL",
+        },
+        {
+          name: "thirst_change",
+          sql: "ALTER TABLE items ADD COLUMN thirst_change REAL",
+        },
+        { name: "icon", sql: "ALTER TABLE items ADD COLUMN icon TEXT" },
+        {
+          name: "calories",
+          sql: "ALTER TABLE items ADD COLUMN calories REAL",
+        },
+      ];
+
+      for (const col of newColumns) {
+        if (!existingColumns.has(col.name)) {
+          this.db.exec(col.sql);
+        }
+      }
+
+      // A v1 DB's items_fts was dropped + recreated in createTables (it had
+      // no plain-text properties_text mirror). Rebuild the fresh index from
+      // the content table so pre-existing rows are searchable again. Only
+      // when the shape actually changed — healthy DBs skip this rebuild
+      // (freebuff L1: no rebuild on every healthy boot).
+      if (this.ftsTableWasRecreated) {
+        this.db.exec(`INSERT INTO items_fts(items_fts) VALUES('rebuild')`);
       }
     }
+
+    this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    logger.info(`Database schema migrated to v${SCHEMA_VERSION}`);
   }
 
   private async createTables(): Promise<void> {
@@ -309,7 +362,23 @@ export class DatabaseManager {
       )
     `);
 
-    // Full-text search table using FTS5
+    // Full-text search table using FTS5.
+    // Pre-v2 databases have an items_fts without the plain-text
+    // properties_text mirror; the FTS triggers below reference that column,
+    // so the table must be repaired BEFORE they are (re)created or the
+    // CREATE TRIGGER would fail on an old-shaped table.
+    if (this.schemaVersion() < SCHEMA_VERSION) {
+      const ftsColumns = this.db
+        .prepare("PRAGMA table_info(items_fts)")
+        .all() as Array<{ name: string }>;
+      if (
+        ftsColumns.length > 0 &&
+        !ftsColumns.some((c) => c.name === "properties_text")
+      ) {
+        this.db.exec("DROP TABLE items_fts");
+        this.ftsTableWasRecreated = true;
+      }
+    }
     this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
         id,

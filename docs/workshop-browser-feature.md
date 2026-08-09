@@ -40,7 +40,7 @@ Everything downstream already exists; only the workshop-facing layer is new:
 New pieces (all small):
 - **Workshop metadata client** — Steam Web API `GetPublishedFileDetails` (keyless, POST, batch ≤ 100 ids) for resolution; browse/search needs a source (see §5 decision).
 - **SteamCMD wrapper** — download + temp-dir hygiene + output parsing (patterns already proven in the `workshopdl` project; reuse, don't reinvent).
-- **New MCP tools** — `workshop_search`, `workshop_get_details`, `workshop_download` (zod schemas, registered in `src/index.ts`, `structuredContent` per the N2 convention).
+- **New MCP tools** — `workshop_search`, `workshop_get_details`, `workshop_download` (zod schemas, registered in `src/tools/workshop.ts` behind the typed registry, `structuredContent` per the N2 convention).
 - **Dashboard Workshop view** — new section in `admin/index.html` + bridge endpoints/SSE for progress.
 
 ## 3. The flow (end to end)
@@ -93,7 +93,7 @@ Progress during download shows in the dashboard via SSE (indeterminate while Ste
 ## 6. Constraints & conventions
 
 - Milestones: build → **verify with real tool output** → fix → commit → next. One commit per milestone.
-- `npm run build` && `npm test` && `npm run lint` must stay green (127/127 tests).
+- `npm run build` && `npm test` && `npm run lint` must stay green (299/299 tests).
 - No drive-by refactors, no overengineering, minimal new dependencies.
 - Update `docs/project-summary.md` (canonical AI context), README tool tables, CHANGELOG (Unreleased) when the feature lands.
 - Return unified diffs + LOCAL AGENT INSTRUCTIONS; diffs apply against the current working tree.

@@ -438,7 +438,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/env') {
       return json(res, {
         logLevel: process.env.PZ_MCP_LOG_LEVEL || 'info',
-        kbPath: process.env.PZ_MCP_KB_PATH || 'D:\\PZ-Modding\\Documentation',
+        // Mirrors the server's default (src/utils/config.ts): env override, else
+        // the knowledge-base/ folder shipped with the repository.
+        kbPath: process.env.PZ_MCP_KB_PATH || join(ROOT, 'knowledge-base'),
         workshopDir: readDeckSettings().workshopDir || process.env.PZ_WORKSHOP_DIR || null,
         steamCmdPath: process.env.STEAMCMD_PATH || '(auto-detected)',
       });

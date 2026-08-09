@@ -1,6 +1,7 @@
 // Throwaway verification: replicate the Control Deck dashboard's exact data paths
 // (SSE /events + /rpc) against the running bridge. No UI, no screenshots.
-const BASE = 'http://localhost:8787';
+const PORT = process.env.PZ_DECK_PORT || 8787;
+const BASE = `http://localhost:${PORT}`;
 const results = [];
 let pass = true;
 function check(name, ok, detail) {
@@ -61,8 +62,11 @@ check('initialize', init.result?.serverInfo?.name === 'pz-mcp-server', 'server='
 await rpc('notifications/initialized', {}, true);
 
 // ---- 4. populate DB through the standard tool (runtime artifact; data/ tracked files untouched) ----
-console.log('... parse_game_files D:\\Games\\ProjectZomboid (this takes a while) ...');
-const parse = await rpc('tools/call', { name: 'parse_game_files', arguments: { gamePath: 'D:\\Games\\ProjectZomboid' } });
+// Use the env override if set; otherwise let the server auto-detect the game
+// (never a machine-specific hardcoded path).
+const gameEnv = process.env.PROJECTZOMBOID_PATH || process.env.PZ_PATH;
+console.log(gameEnv ? `... parse_game_files ${gameEnv} (this takes a while) ...` : '... parse_game_files (auto-detect; this takes a while) ...');
+const parse = await rpc('tools/call', { name: 'parse_game_files', arguments: gameEnv ? { gamePath: gameEnv } : {} });
 const parseText = parse.result?.content?.filter(c => c.type === 'text').map(c => c.text).join('\n') || parse.error?.message || 'no content';
 console.log('--- parse result (first 600 chars) ---');
 console.log(parseText.slice(0, 600));

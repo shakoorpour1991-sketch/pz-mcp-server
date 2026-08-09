@@ -25,4 +25,9 @@ jobs:
       # npm test runs `npm run build` itself, so a standalone build step would
       # compile twice (freebuff review L6).
       - run: npm test
+      # Coverage report (Node's built-in --experimental-test-coverage). Runs
+      # after npm test so dist/ is already built. The --test-coverage-* flags
+      # hard-fail the step when line/function/branch coverage drops below the
+      # configured thresholds.
+      - run: npm run coverage
       - run: npm audit --audit-level=high

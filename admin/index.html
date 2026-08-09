@@ -839,12 +839,12 @@ const TOOL_GUIDES = {
   parse_game_files: {
     what:'Parse the installed Project Zomboid game files and index them into the database.',
     how:'Nothing is required — the game path is auto-detected. Set <b>gamePath</b> if detection fails, or <b>forceReparse</b> to rebuild even when data exists.',
-    ex:'gamePath: "D:/Games/ProjectZomboid" (optional)',
+    ex:'gamePath: "C:/Program Files (x86)/Steam/steamapps/common/ProjectZomboid" (optional)',
   },
   index_knowledge_base: {
     what:'Index markdown modding docs so they become searchable.',
     how:'Nothing is required — indexes the default docs folder. Optional: <b>path</b> to a different docs dir, and <b>overwrite</b> (default true; set false for an incremental sync).',
-    ex:'path: "D:/PZ-Modding/Documentation" (optional)',
+    ex:'path: "C:/Users/you/Documents/PZ-Docs" (optional)',
   },
   search_knowledge_base: {
     what:'Search the indexed knowledge-base docs with relevance ranking and topic filters.',
@@ -1318,7 +1318,7 @@ const EXAMPLES = {
   generate_script: { type:'item', name:'Katana_Custom', module:'Base',
     properties:{ category:'Weapon', DisplayName:'Custom Katana', Icon:'Katana', Type:'Weapon', Weight:1.6, MaxDamage:22, MinDamage:12, ConditionMax:30, Categories:'LongBlade', DamageCategory:'Slash', SwingTime:1.2 } },
   check_references: { references:['Axe','HandAxe','Sound_AxeSwing'], type:'all' },
-  analyze_mod: { modPath:'C:/Users/Administrator/Zomboid/mods/MyMod' },
+  analyze_mod: { modPath:'C:/Users/you/Zomboid/mods/MyMod' },
   parse_game_files: {},
   index_knowledge_base: {},
   search_knowledge_base: { query:'loot distribution' },

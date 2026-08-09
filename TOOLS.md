@@ -93,7 +93,7 @@ Index markdown knowledge base docs into a searchable FTS database.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `path` | string | No | Docs directory (default: `PZ_MCP_KB_PATH` env or `D:\PZ-Modding\Documentation`) |
+| `path` | string | No | Docs directory (default: `PZ_MCP_KB_PATH` env or the repository's `knowledge-base/` folder) |
 | `overwrite` | boolean | No | Full re-index (default: `true`); `false` = mtime-based incremental sync |
 
 **Output:** Counts of indexed topics, files found, total characters; any per-file errors.
@@ -189,6 +189,18 @@ Resolve full metadata for a workshop item from its id or Steam Community URL. Ke
 
 ### `workshop_download`
 Download a workshop item via SteamCMD into the workshop workspace directory (`PZ_WORKSHOP_DIR` or `<Steam>/steamapps/workshop/content/108600`). Refuses non-PZ items; disk-space guarded.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Workshop item id or URL (verified to be a Project Zomboid item first) |
+| `dryRun` | boolean | No | Preview the download — resolve the item, verify the app, report the target path — without invoking SteamCMD or touching disk (default: `false`) |
+
+**Size cap:** items larger than `PZ_MCP_MAX_DOWNLOAD_BYTES` (default 4 GiB) are refused before any download, in both `workshop_download` and `workshop_analyze`.
+
+---
+
+### `workshop_analyze`
+Fetch & analyze: downloads the mod (skips if already present), parses its scripts into the database, runs the full analysis suite, and returns a Mod Report.
 
 ---
 
