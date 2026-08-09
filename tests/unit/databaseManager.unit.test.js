@@ -29,18 +29,24 @@ describe('DatabaseManager', () => {
   });
 
   describe('prepareFTSQuery (FTS5 sanitization)', () => {
-    test('a simple term is quoted', () => {
-      const q = db.prepareFTSQuery('sword');
-      assert.ok(q.includes('"sword"'));
+    test('a simple term becomes a safe prefix query', () => {
+      assert.equal(db.prepareFTSQuery('sword'), 'sword*');
+    });
+
+    test('partial input yields a prefix match (autocomplete)', () => {
+      assert.equal(db.prepareFTSQuery('flo'), 'flo*');
+      assert.equal(db.prepareFTSQuery('flour mill'), 'flour* mill*');
+    });
+
+    test('terms with FTS punctuation are quoted, not prefixed', () => {
+      assert.equal(db.prepareFTSQuery('Base.Burger'), '"Base.Burger"');
     });
 
     test('special characters and operator keywords are stripped', () => {
       const q = db.prepareFTSQuery('"sword" OR "axe" -note *wild*');
-      assert.ok(q.includes('"sword"'));
-      assert.ok(q.includes('"axe"'));
-      assert.ok(q.includes('"wild"')); // '*' stripped, term kept
-      assert.ok(!q.includes('"OR"')); // operator keyword removed as a term
-      assert.ok(!q.includes('"-note"'));
+      assert.equal(q, 'sword* axe* note* wild*');
+      assert.ok(!q.includes('OR*')); // operator keyword removed as a term
+      assert.ok(!q.includes('-'));
     });
 
     test('operator-only or empty input yields match-nothing query', () => {
@@ -52,9 +58,10 @@ describe('DatabaseManager', () => {
     test('malformed input never throws and never leaks raw operators', () => {
       const evil = '"; DROP TABLE items; --';
       const q = db.prepareFTSQuery(evil);
-      assert.ok(q.includes('"DROP'));
+      assert.equal(q, 'DROP* TABLE* items*');
       assert.ok(!q.includes(';'));
       assert.ok(!q.includes('--'));
+      assert.ok(!q.includes('"'));
     });
   });
 

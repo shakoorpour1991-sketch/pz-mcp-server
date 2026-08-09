@@ -1590,11 +1590,18 @@ export class DatabaseManager {
       return '""';
     }
 
-    const quotedTerms = terms.map((term) => `"${term}"`);
-    const phraseQuery = `"${terms.join(" ")}"`;
-    const termQueries = quotedTerms.join(" ");
-
-    return `${phraseQuery} OR (${termQueries})`;
+    // Prefix matching (search-as-you-type): each sanitized term gets a
+    // trailing `*` so partial input like "flo" matches Flour2/Cornflour2
+    // instead of only exact tokens. Terms are sanitized (no spaces, quotes
+    // or special chars), so bare `term*` is safe FTS5 syntax — and quoted
+    // prefixes ("flo*") do NOT match in this FTS5 build, only unquoted ones.
+    // Terms that still carry FTS punctuation (e.g. dots in "Base.Burger") are
+    // quoted instead so the MATCH never errors; quoted terms match the exact
+    // token sequence. Multi-term input becomes an implicit AND.
+    const prefixTerms = terms.map((term) =>
+      /^[\p{L}\p{N}_]+$/u.test(term) ? `${term}*` : `"${term}"`,
+    );
+    return prefixTerms.join(" ");
   }
 
   close(): void {

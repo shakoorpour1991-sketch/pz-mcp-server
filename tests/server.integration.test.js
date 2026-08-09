@@ -241,11 +241,13 @@ describe('pz-mcp-server integration', () => {
     const text = result.content[0].text;
     assert.ok(text.includes('TestSword'));
     assert.ok(text.includes('Weapon'));
-    // N2: structured results accompany the human text. The fixture recipe
-    // also matches ('Result: TestSword=1,' is FTS-indexed), so count >= 1 —
-    // but the item row must rank first (name-column match beats a property).
+    // N2: structured results accompany the human text. Search is now
+    // prefix-based (search-as-you-type), so the fixture recipe also matches
+    // via its own id ('TestSwordRecipe') AND its 'Result: TestSword=1,'
+    // property text — ordering is rank-based, so the item row must simply be
+    // present among the results.
     assert.ok(result.structuredContent.count >= 1);
-    assert.equal(result.structuredContent.results[0].id, 'TestSword');
+    assert.ok(result.structuredContent.results.some((r) => r.id === 'TestSword'));
   });
 
   test('search_recipes finds fixture recipes by ingredient and result', async () => {
