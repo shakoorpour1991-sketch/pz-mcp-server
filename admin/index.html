@@ -480,7 +480,7 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-drop-empty{padding:12px 14px;font-size:12.5px;color:var(--muted)}
 .chain-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start;margin-top:14px}
 @media(max-width:980px){.chain-main{grid-template-columns:1fr}}
-.chain-canvas{display:flex;flex-direction:column;gap:10px;min-width:0}
+.chain-canvas{display:flex;flex-direction:column;gap:10px;min-width:0;position:relative}
 .chain-svgwrap{position:relative;height:640px;border-radius:16px;border:1px solid var(--stroke-soft);overflow:hidden;
   background:radial-gradient(1200px 600px at 50% 0%,rgba(var(--accent-rgb),.05),transparent 60%),rgba(4,8,16,.5)}
 .chain-svgwrap.trunc{border-style:dashed;border-color:rgba(251,191,36,.5)}
@@ -529,6 +529,9 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-note{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:8px 12px;border-radius:10px;flex-wrap:wrap;
   background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25)}
 .chain-insp-fs{position:absolute;top:64px;right:16px;width:min(320px,calc(100% - 32px));max-height:calc(100% - 96px);overflow:auto;z-index:2;padding:12px;border-radius:14px}
+/* Empty state: a tiny non-interactive hint pill at the bottom-center so it
+   never covers the toolbar buttons or blocks panning anywhere on the graph. */
+.chain-insp-fs.empty{top:auto;bottom:34px;left:50%;right:auto;transform:translateX(-50%);width:auto;max-width:min(520px,calc(100% - 32px));max-height:none;overflow:visible;padding:7px 16px;border-radius:999px;pointer-events:none;font-size:11.5px;color:var(--muted);background:rgba(8,13,22,.85);border:1px solid var(--stroke-soft);text-align:center}
 .insp-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .chain-rebuild{position:sticky;top:0;z-index:5;margin-top:10px;width:max-content;max-width:100%;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:6px 12px;border-radius:999px;background:rgba(16,20,30,.9);border:1px solid var(--stroke-soft)}
 /* Recipe Chain roadmap: cycles, path, highlight, history */
@@ -2668,7 +2671,10 @@ function chainGraphHTML(){
         '<span style="margin-left:auto">drag to pan (flick for inertia) · ctrl+scroll / pinch to zoom · dbl-click or 0 to fit · arrows nudge</span>' +
       '</div>' +
       (c.graph.truncated ? '<div class="chain-note">'+ICONS.warn+' The server cut off expansion (depth limit or 500-node cap) — the graph may be incomplete.</div>' : '') +
-    (c.fsOpen ? '<div class="glass card panel-card chain-insp-fs" id="chainInspFs">' + (insp ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(insp.name || insp.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node — details appear here.</div>') + '</div>' : '') +
+    (c.fsOpen ? (insp
+      ? '<div class="glass card panel-card chain-insp-fs" id="chainInspFs"><div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(insp.name || insp.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(insp) + '</div>'
+      : '<div class="glass card panel-card chain-insp-fs empty" id="chainInspFs">Click a node to inspect it — ingredients, results, producers &amp; consumers</div>'
+    ) : '') +
     '</div>' +
     '<aside class="glass card panel-card chain-insp" id="chainInsp"'+(c.fsOpen ? ' hidden' : '')+'>' +
       (insp ? chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it — ingredients, results, producers and consumers. Click again to re-root the graph.</div>') +
@@ -2904,9 +2910,12 @@ function chainInspPaint(){
   const box = $('#chainInsp');
   if (box) box.innerHTML = n ? chainInspHTML(n) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it.</div>';
   const fsBox = $('#chainInspFs');
-  if (fsBox) fsBox.innerHTML = n
-    ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(n.name || n.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(n)
-    : '<div style="color:var(--faint);font-size:12.5px">Click any node — details appear here.</div>';
+  if (fsBox){
+    fsBox.classList.toggle('empty', !n);
+    fsBox.innerHTML = n
+      ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(n.name || n.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(n)
+      : 'Click a node to inspect it — ingredients, results, producers &amp; consumers';
+  }
 }
 function chainMarkSel(id){
   $$('#chainG [data-act="chain-node"]').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
@@ -3178,6 +3187,7 @@ function bindChainSvg(){
     if (e.button === 1) e.preventDefault();
     cancelAnimationFrame(inerRaf); inerRaf = 0;
     cancelAnimationFrame(S.chain._zoomAnim); S.chain._zoomAnim = 0;
+    S.chain._fitIdle = false; // a manual drag opts out of auto-refit on resize
     vel = { x: 0, y: 0 };
     drag = { x: e.clientX, y: e.clientY, px: S.chain.pan.x, py: S.chain.pan.y, lx: e.clientX, ly: e.clientY, t: performance.now() };
     svg.setPointerCapture(e.pointerId);
@@ -3283,9 +3293,17 @@ function bindChainSvg(){
 function chainClampPan(){
   const wrap = $('#chainSvgWrap'), L = S.chain.layout; if (!wrap || !L) return;
   const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
-  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || chainViewH();
-  S.chain.pan.x = Math.max(Math.min(0, cw - W * S.chain.zoom), Math.min(0, S.chain.pan.x));
-  S.chain.pan.y = Math.max(Math.min(0, ch - chainViewH() * S.chain.zoom), Math.min(0, S.chain.pan.y));
+  const H = chainViewH();
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || H;
+  // Soft bounds: even when the content fits the viewport (default/fit zoom)
+  // the graph stays grabbable — it can slide ~40% of a viewport past each
+  // edge and gently settles, so panning feels smooth at EVERY zoom level.
+  // When the content overflows, the bounds still keep the viewport covered
+  // (no dead space) while allowing a little overscroll.
+  const mx = (cw - W * S.chain.zoom) / 2 + cw * 0.4;
+  const my = (ch - H * S.chain.zoom) / 2 + ch * 0.4;
+  S.chain.pan.x = clamp(S.chain.pan.x, Math.min(0, cw - W * S.chain.zoom - mx), Math.max(0, mx));
+  S.chain.pan.y = clamp(S.chain.pan.y, Math.min(0, ch - H * S.chain.zoom - my), Math.max(0, my));
 }
 async function chainDropSearch(v, seedId, dropId){
   try {
