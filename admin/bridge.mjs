@@ -14,7 +14,7 @@
  */
 import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,7 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ADMIN_DIR = join(ROOT, 'admin');
 const PORT = Number(process.env.PZ_DECK_PORT || 8787);
 const DB_PATH = join(ROOT, 'data', 'pz_database.db');
+const SETTINGS_PATH = join(ROOT, 'data', 'deck-settings.json');
 const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download', 'workshop_analyze']);
 
 /* ================= MCP child process ================= */
@@ -42,6 +43,16 @@ function serverEntry() {
   return { cmd: npx, args: ['tsx', 'src/index.ts'], label: 'tsx src/index.ts (dev)' };
 }
 
+/* Persisted bridge settings (e.g. the workshop download folder). Survives
+ * bridge restarts; injected into the MCP child's env at spawn time. */
+function readDeckSettings() {
+  try { return JSON.parse(readFileSync(SETTINGS_PATH, 'utf8')); } catch { return {}; }
+}
+function writeDeckSettings(s) {
+  try { mkdirSync(dirname(SETTINGS_PATH), { recursive: true }); } catch { /* */ }
+  writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2));
+}
+
 function pushLog(line) {
   const e = { line, t: Date.now() };
   logs.push(e);
@@ -56,10 +67,15 @@ function spawnChild() {
   // under "C:\Program Files\..." breaks ("'C:\Program' is not recognized").
   // .exe → spawn directly (no shell). .cmd/.bat → build a quoted command line.
   const needsShell = /\.(cmd|bat)$/i.test(cmd);
+  const deckSettings = readDeckSettings();
   const spawnOpts = {
     cwd: ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PZ_MCP_LOG_LEVEL: process.env.PZ_MCP_LOG_LEVEL || 'info' },
+    env: {
+      ...process.env,
+      PZ_MCP_LOG_LEVEL: process.env.PZ_MCP_LOG_LEVEL || 'info',
+      ...(deckSettings.workshopDir ? { PZ_WORKSHOP_DIR: deckSettings.workshopDir } : {}),
+    },
   };
   if (needsShell) {
     const line = '"' + cmd + '" ' + args.map(a => '"' + a.replace(/"/g, '\\"') + '"').join(' ');
@@ -421,6 +437,39 @@ const server = http.createServer(async (req, res) => {
       pushLog('↻ restart requested from Control Deck');
       try { child?.kill('SIGTERM'); } catch { /* */ }
       return json(res, { ok: true });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/workshop-dir') {
+      return json(res, { configured: readDeckSettings().workshopDir || null });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/workshop-dir') {
+      let body;
+      try { body = JSON.parse(await readBody(req)); }
+      catch { return json(res, { ok: false, error: 'Invalid JSON body' }, 400); }
+      const clear = body.clear === true;
+      if (clear) {
+        const s = readDeckSettings();
+        delete s.workshopDir;
+        writeDeckSettings(s);
+        pushLog('↻ workshop download folder reset to default');
+        try { child?.kill('SIGTERM'); } catch { /* */ }
+        return json(res, { ok: true, configured: null });
+      }
+      const p = typeof body.path === 'string' ? body.path.trim() : '';
+      if (!p) return json(res, { ok: false, error: 'Enter a folder path' }, 400);
+      if (!/^[A-Za-z]:[\\/]/.test(p) && !/^\\\\/.test(p)) {
+        return json(res, { ok: false, error: 'Use an absolute path, e.g. D:\\PZ-Mods\\Workshop' }, 400);
+      }
+      // Pre-flight: reject unwritable/nonexistent-drive folders right away
+      // instead of failing later inside workshop_download/workshop_analyze.
+      try { mkdirSync(p, { recursive: true }); } catch { return json(res, { ok: false, error: `Folder not writable: ${p}` }, 400); }
+      const s = readDeckSettings();
+      s.workshopDir = p;
+      writeDeckSettings(s);
+      pushLog(`↻ workshop download folder set to ${p}`);
+      try { child?.kill('SIGTERM'); } catch { /* */ }
+      return json(res, { ok: true, configured: p });
     }
 
     if (req.method === 'POST' && url.pathname === '/rpc') {
