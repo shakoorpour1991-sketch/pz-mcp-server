@@ -1,7 +1,11 @@
 import { existsSync, unlinkSync } from "fs";
 import { readdir, stat, readFile } from "fs/promises";
-import { join, extname, basename } from "path";
+import { join, extname, basename, sep } from "path";
 import { tmpdir } from "os";
+import {
+  DiscoveredModLayout,
+  discoverModLayouts,
+} from "../utils/modDiscovery.js";
 import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
 import {
   ProjectZomboidParser,
@@ -100,6 +104,12 @@ export class ModAnalyzer {
    * this stays valid after the temp DB file is deleted. */
   private parsedItemsCache: { modPath: string; items: GameItem[] } | null =
     null;
+  /** Layout discovery memo, keyed by modPath — structure/scripts/lua/modInfo
+   * share one tree walk per analyzeMod call instead of four (reviewer). */
+  private layoutsCache: {
+    modPath: string;
+    layouts: DiscoveredModLayout[];
+  } | null = null;
 
   constructor(db: DatabaseManager, parser: ProjectZomboidParser) {
     this.db = db;
@@ -118,10 +128,11 @@ export class ModAnalyzer {
       strictValidation = false,
     } = options;
 
-    // Fresh temp-DB parse memo for this invocation — balance and compatibility
-    // share one parse (reviewer: the whole mod was parsed twice with default
-    // options). Reset here so repeated calls re-parse the current mod state.
+    // Fresh memos for this invocation — reset so repeated calls re-read the
+    // current mod state, and so balance/compat (parse) + structure/scripts/lua
+    // (layouts) each share one discovery pass (mod-analyzer review).
     this.parsedItemsCache = null;
+    this.layoutsCache = null;
 
     const result: ModAnalysisResult = {
       modPath,
@@ -139,7 +150,7 @@ export class ModAnalyzer {
 
     try {
       // Parse mod.info if it exists
-      const modInfo = this.parseModInfo(modPath);
+      const modInfo = await this.parseModInfo(modPath);
       if (modInfo) result.modInfo = modInfo;
       result.modName = modInfo?.name || basename(modPath);
 
@@ -194,6 +205,16 @@ export class ModAnalyzer {
     return result;
   }
 
+  /** One layout discovery per analyzeMod call, shared by all consumers. */
+  private async getLayouts(modPath: string): Promise<DiscoveredModLayout[]> {
+    if (this.layoutsCache?.modPath === modPath) {
+      return this.layoutsCache.layouts;
+    }
+    const layouts = await discoverModLayouts(modPath);
+    this.layoutsCache = { modPath, layouts };
+    return layouts;
+  }
+
   private async analyzeStructure(modPath: string): Promise<StructureAnalysis> {
     const structure: StructureAnalysis = {
       hasModInfo: false,
@@ -212,26 +233,33 @@ export class ModAnalyzer {
       return structure;
     }
 
-    // Check for mod.info
-    const modInfoPaths = [
-      join(modPath, "mod.info"),
-      join(modPath, "42", "mod.info"),
-    ];
+    // Dynamic layout discovery: workshop packs nest the real mod (and its
+    // mod.info/version dirs) under mods/<Name>/<version>/ — a root-only check
+    // missed them (mod-analyzer review).
+    const layouts = await this.getLayouts(modPath);
+    const hasRootModInfo =
+      existsSync(join(modPath, "mod.info")) ||
+      existsSync(join(modPath, "42", "mod.info"));
+    structure.hasModInfo = hasRootModInfo || layouts.some((l) => l.modInfoPath);
 
-    for (const modInfoPath of modInfoPaths) {
-      if (existsSync(modInfoPath)) {
-        structure.hasModInfo = true;
-        break;
-      }
-    }
-
-    // Check for proper Build 42 structure
+    // Check for proper Build 42 structure — a root common/ folder, or one
+    // discovered inside a pack layout.
     const commonPath = join(modPath, "common");
-    structure.hasCommonFolder = existsSync(commonPath);
+    structure.hasCommonFolder =
+      existsSync(commonPath) ||
+      layouts.some(
+        (l) =>
+          l.scriptsDirs.some((d) => d.includes(`${sep}common${sep}`)) ||
+          l.luaDirs.some((d) => d.includes(`${sep}common${sep}`)),
+      );
 
     // Find build version folders + unexpected top-level entries (async fs —
     // freebuff M5). Anything that is not a known layout element is reported in
     // unexpectedFiles (mod-analyzer review: the field was always empty).
+    const discoveredVersions = layouts.flatMap((l) => l.versions);
+    if (discoveredVersions.length > 0) {
+      structure.buildVersions.push(...new Set(discoveredVersions));
+    }
     try {
       const entries = await readdir(modPath);
       for (const entry of entries) {
@@ -248,6 +276,7 @@ export class ModAnalyzer {
       // Unreadable mod root — buildVersions stays empty, countFiles will
       // report the read error itself.
     }
+    structure.buildVersions = [...new Set(structure.buildVersions)];
 
     // Check for correct structure (Build 42 style)
     const hasVersionFolder = structure.buildVersions.length > 0;
@@ -279,6 +308,7 @@ export class ModAnalyzer {
     if (entry === "common") return isDir; // B42 common/ folder
     if (isDir && /^\d+(\.\d+)*$/.test(entry)) return true; // 42 / 41.78
     if (entry === "media") return isDir; // legacy root layout
+    if (entry === "mods") return isDir; // workshop pack container
     if (/^(poster|icon|preview)\.(png|jpe?g|webp|bmp)$/i.test(entry)) {
       return true;
     }
@@ -357,7 +387,9 @@ export class ModAnalyzer {
     }
   }
 
-  private parseModInfo(modPath: string): ModInfo | undefined {
+  private async parseModInfo(modPath: string): Promise<ModInfo | undefined> {
+    // Direct layouts first, then discovered mod roots (workshop packs nest the
+    // real mod.info under mods/<Name>/<version>/ — mod-analyzer review).
     const modInfoPaths = [
       join(modPath, "mod.info"),
       join(modPath, "42", "mod.info"),
@@ -373,6 +405,17 @@ export class ModAnalyzer {
       }
     }
 
+    const layouts = await this.getLayouts(modPath);
+    for (const layout of layouts) {
+      if (layout.modInfoPath) {
+        try {
+          return this.parser.parseModInfo(layout.modInfoPath);
+        } catch {
+          // Failed to parse, try next mod root
+        }
+      }
+    }
+
     return undefined;
   }
 
@@ -381,14 +424,15 @@ export class ModAnalyzer {
     result: ModAnalysisResult,
     strict: boolean,
   ): Promise<void> {
-    const scriptPaths = [
-      join(modPath, "media", "scripts"),
-      join(modPath, "42", "media", "scripts"),
-      join(modPath, "common", "media", "scripts"),
-    ];
-
-    for (const scriptsPath of scriptPaths) {
-      if (existsSync(scriptsPath)) {
+    // Dynamic layout discovery (mod-analyzer review): workshop packs and
+    // versioned/common layouts are found by walking the tree, not a fixed
+    // path list — a fixed list silently analyzed nothing for packs.
+    const layouts = await this.getLayouts(modPath);
+    const seen = new Set<string>();
+    for (const layout of layouts) {
+      for (const scriptsPath of layout.scriptsDirs) {
+        if (seen.has(scriptsPath)) continue;
+        seen.add(scriptsPath);
         await this.analyzeScriptDirectory(scriptsPath, result, strict);
       }
     }
@@ -477,14 +521,12 @@ export class ModAnalyzer {
     modPath: string,
     result: ModAnalysisResult,
   ): Promise<void> {
-    const luaPaths = [
-      join(modPath, "media", "lua"),
-      join(modPath, "42", "media", "lua"),
-      join(modPath, "common", "media", "lua"),
-    ];
-
-    for (const luaPath of luaPaths) {
-      if (existsSync(luaPath)) {
+    const layouts = await this.getLayouts(modPath);
+    const seen = new Set<string>();
+    for (const layout of layouts) {
+      for (const luaPath of layout.luaDirs) {
+        if (seen.has(luaPath)) continue;
+        seen.add(luaPath);
         await this.analyzeLuaDirectory(luaPath, result);
       }
     }

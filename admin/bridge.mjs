@@ -483,6 +483,34 @@ const server = http.createServer(async (req, res) => {
       return json(res, { ok: true, configured: p });
     }
 
+    // Open the workshop download folder in Explorer. Resolves the same way
+    // downloads do: deck setting → PZ_WORKSHOP_DIR → derive from the Steam
+    // library the PZ install lives in → common Steam locations.
+    if (req.method === 'POST' && url.pathname === '/api/open-workshop-dir') {
+      if (process.platform !== 'win32') {
+        return json(res, { ok: false, error: 'Open folder is only supported on Windows' }, 400);
+      }
+      let dir = readDeckSettings().workshopDir || process.env.PZ_WORKSHOP_DIR || null;
+      if (!dir) {
+        const candidates = [
+          'D:/Games/steamapps/workshop/content/108600',
+          'C:/Program Files (x86)/Steam/steamapps/workshop/content/108600',
+          'C:/Steam/steamapps/workshop/content/108600',
+        ];
+        for (const c of candidates) {
+          if (existsSync(c)) { dir = c; break; }
+        }
+      }
+      if (!dir) {
+        return json(res, { ok: false, error: 'Could not determine the workshop folder — set one in Settings → Workshop first' }, 400);
+      }
+      mkdirSync(dir, { recursive: true });
+      // explorer.exe detaches immediately; its exit code is unreliable, so a
+      // non-zero status is not treated as failure here.
+      execFile('explorer', [dir], () => pushLog(`↗ opened workshop folder ${dir}`));
+      return json(res, { ok: true, path: dir });
+    }
+
     // Pause an in-flight workshop_download: steamcmd.exe is force-killed (the
     // server's downloader downloads into a temp dir and only renames it into
     // place on success, so a killed run leaves nothing behind and Resume just

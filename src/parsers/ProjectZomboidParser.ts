@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import { readFile, readdir, stat } from "fs/promises";
-import { join, extname, basename } from "path";
+import { join, extname } from "path";
+import { discoverModLayouts } from "../utils/modDiscovery.js";
 import {
   DatabaseManager,
   GameItem,
@@ -43,7 +44,6 @@ export interface ModInfo {
 export class ProjectZomboidParser {
   private db: DatabaseManager;
   private scriptExtensions = [".txt"];
-  private modInfoFile = "mod.info";
 
   constructor(db: DatabaseManager) {
     this.db = db;
@@ -122,47 +122,18 @@ export class ProjectZomboidParser {
     };
 
     try {
-      // Parse mod.info if it exists
-      let modInfo: ModInfo | null = null;
-      const modInfoPath = join(modPath, this.modInfoFile);
-      if (existsSync(modInfoPath)) {
-        modInfo = this.parseModInfo(modInfoPath);
-      }
-
-      // Determine module name from mod info or directory
-      const moduleName = modInfo?.id || basename(modPath);
-
-      // Look for media/scripts directories in both versioned and common folders
-      const possiblePaths = [
-        join(modPath, "media", "scripts"), // Direct structure
-        join(modPath, "42", "media", "scripts"), // Build 42 structure
-        join(modPath, "common", "media", "scripts"), // Common structure
-      ];
-
+      // Dynamic layout discovery (mod-analyzer review): PZ mods ship in many
+      // shapes — direct media/scripts, B42 versioned (42/42.20), common/, and
+      // Steam workshop packs (mods/<Name>/<version>/media/scripts). A fixed
+      // path list missed all pack layouts, so content is discovered by walking
+      // the tree and grouped by the mod root (nearest mod.info) — each group
+      // parses under its own module name (mod.info id, else root folder).
+      const layouts = await discoverModLayouts(modPath);
       let foundScripts = false;
-      for (const scriptsPath of possiblePaths) {
-        if (existsSync(scriptsPath)) {
-          await this.parseDirectory(scriptsPath, results, moduleName);
+      for (const layout of layouts) {
+        for (const scriptsPath of layout.scriptsDirs) {
+          await this.parseDirectory(scriptsPath, results, layout.moduleName);
           foundScripts = true;
-        }
-      }
-
-      // Also scan versioned folders (e.g. 42.20, 42.21) — any top-level dir
-      // that looks like a build version gets its media/scripts parsed too
-      // (audit D6). readdir withFileTypes avoids extra stat calls.
-      const entries = await readdir(modPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && /^\d+(\.\d+)*$/.test(entry.name)) {
-          const versionedScripts = join(
-            modPath,
-            entry.name,
-            "media",
-            "scripts",
-          );
-          if (existsSync(versionedScripts)) {
-            await this.parseDirectory(versionedScripts, results, moduleName);
-            foundScripts = true;
-          }
         }
       }
 

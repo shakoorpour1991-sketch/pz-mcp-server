@@ -699,3 +699,98 @@ describe('ProjectZomboidParser versioned folders (audit D6)', () => {
     assert.ok(res.itemCount >= 1, 'should have parsed the common item');
   });
 });
+
+// Dynamic layout discovery (mod-analyzer review): Steam Workshop items are
+// often PACKS — the real mod lives under mods/<Name>/<version>/media/scripts
+// with its own nested mod.info. A fixed path list missed these entirely.
+describe('ProjectZomboidParser workshop pack layouts (dynamic discovery)', () => {
+  let tmpDir;
+  let db;
+  let parser;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-parse-pack-'));
+    db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
+    await db.initialize();
+    parser = new ProjectZomboidParser(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('parses a versioned workshop pack (mods/Name/42.20/media/scripts)', async () => {
+    // Steam workshop item root: no scripts at the top, the mod is nested.
+    const packRoot = path.join(tmpDir, 'PackRoot');
+    const modRoot = path.join(packRoot, 'mods', 'LongTermPack');
+    fs.mkdirSync(path.join(modRoot, '42.20', 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, '42.20', 'mod.info'),
+      'name=Long Term Pack\nid=SKITTLE_LongTermPack\n'
+    );
+    fs.writeFileSync(
+      path.join(modRoot, '42.20', 'media', 'scripts', 'food.txt'),
+      'item SaltedBeef\n{\n\tType = Food,\n\tDisplayName = Salted Beef,\n\tHungerChange = -5,\n}'
+    );
+
+    const res = await parser.parseModDirectory(packRoot);
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.itemCount, 1);
+    // The pack's inner mod.info id governs the module name.
+    const item = await db.getItemById('SKITTLE_LongTermPack.SaltedBeef');
+    assert.ok(item, 'item should be stored under the inner mod id module');
+  });
+
+  test('parses an unversioned workshop pack (mods/Name/media/scripts)', async () => {
+    const packRoot = path.join(tmpDir, 'PackRoot2');
+    const modRoot = path.join(packRoot, 'mods', 'PlainPack');
+    fs.mkdirSync(path.join(modRoot, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, 'media', 'scripts', 'tool.txt'),
+      'module Base {\n    item PackHammer {\n        Type = Weapon\n        DisplayName = Pack Hammer\n    }\n}'
+    );
+
+    const res = await parser.parseModDirectory(packRoot);
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.itemCount, 1);
+    const item = await db.getItemById('PackHammer');
+    assert.ok(item, 'unversioned pack item should parse');
+  });
+
+  test('parses scripts inside a pack even when no mod.info exists anywhere', async () => {
+    const packRoot = path.join(tmpDir, 'PackRoot3');
+    const modRoot = path.join(packRoot, 'mods', 'BarePack');
+    fs.mkdirSync(path.join(modRoot, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, 'media', 'scripts', 'item.txt'),
+      'module Base {\n    item BarePackChip {\n        Type = Food\n    }\n}'
+    );
+
+    const res = await parser.parseModDirectory(packRoot);
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.itemCount, 1);
+    assert.ok(await db.getItemById('BarePackChip'), 'bare pack item should parse');
+  });
+
+  test('parses both common/ and versioned content in one pack', async () => {
+    const packRoot = path.join(tmpDir, 'PackRoot4');
+    const modRoot = path.join(packRoot, 'mods', 'DualPack');
+    fs.mkdirSync(path.join(modRoot, 'common', 'media', 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(modRoot, '42', 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(modRoot, 'common', 'media', 'scripts', 'shared.txt'),
+      'module Base {\n    item SharedClip {\n        Type = Food\n    }\n}'
+    );
+    fs.writeFileSync(
+      path.join(modRoot, '42', 'media', 'scripts', 'ver.txt'),
+      'module Base {\n    item VerClip {\n        Type = Food\n    }\n}'
+    );
+
+    const res = await parser.parseModDirectory(packRoot);
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.itemCount, 2);
+    assert.ok(await db.getItemById('SharedClip'), 'common content parsed');
+    assert.ok(await db.getItemById('VerClip'), 'versioned content parsed');
+  });
+});

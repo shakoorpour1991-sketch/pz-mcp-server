@@ -682,3 +682,56 @@ describe('ModAnalyzer documentation score (seeded)', () => {
     assert.equal(r.quality.documentation, 100);
   });
 });
+
+// Dynamic layout discovery (mod-analyzer review): Steam Workshop PACKS nest
+// the real mod under mods/<Name>/<version>/. analyze_mod must see the nested
+// mod.info, scripts and version dirs instead of a bare, script-less root.
+describe('ModAnalyzer workshop pack layout (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  before(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-pack-'));
+    const modRoot = path.join(tempDir, 'mods', 'PackMod');
+    fs.mkdirSync(path.join(modRoot, '42.20', 'media', 'scripts'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(modRoot, '42.20', 'mod.info'),
+      'name=Pack Mod\nid=PackMod\n'
+    );
+    fs.writeFileSync(
+      path.join(modRoot, '42.20', 'media', 'scripts', 'items.txt'),
+      'module Base {\n    item PackKnife {\n        Type = Weapon\n        DisplayName = Pack Knife\n    }\n}'
+    );
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'pack.db'));
+    await dbManager.initialize();
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  after(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('finds the nested mod.info, scripts, and version folder of a pack', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    assert.equal(r.modInfo?.name, 'Pack Mod');
+    assert.equal(r.structure.hasModInfo, true);
+    assert.ok(r.structure.buildVersions.includes('42.20'));
+    assert.ok(r.structure.scriptCount >= 1);
+    // mods/ is the workshop pack container, not an unexpected file.
+    assert.ok(!r.structure.unexpectedFiles.includes('mods'));
+    assert.ok(!r.structure.missingFiles.includes('mod.info'));
+    assert.ok(
+      !r.structure.missingFiles.some((m) => m.includes('script')),
+      'should not claim scripts are missing'
+    );
+  });
+});
