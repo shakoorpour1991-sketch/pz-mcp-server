@@ -1,0 +1,5 @@
+ContextMenu_UA = {
+    ContextMenu_TakePropaneFromStorageTank = "Заправити пропановий балон",
+    ContextMenu_TakePropaneFromTank = "Заправка пропаном...",
+    ContextMenu_FillTorchFromStorageTank = "Заправити пальник",
+}

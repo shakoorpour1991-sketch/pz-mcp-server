@@ -1,0 +1,9 @@
+Sandbox_FR = {
+    Sandbox_TanksHavePropane = "Tanks Have Propane",
+    Sandbox_TanksHavePropane_AllowGasPumps = "Autoriser le remplissage aux pompes a essence",
+    Sandbox_TanksHavePropane_AllowGasPumps_tooltip = "Si active, les bonbonnes de propane et chalumeaux peuvent aussi etre remplis aux pompes des stations-service (en plus des citernes de propane).",
+    Sandbox_TanksHavePropane_AllowSmallIndustrialTanks = "Autoriser le remplissage aux petites bonbonnes de propane industrielles",
+    Sandbox_TanksHavePropane_AllowSmallIndustrialTanks_tooltip = "Si active, les bonbonnes de propane et chalumeaux peuvent aussi etre remplis aux petites bonbonnes de propane industrielles trouvees dans les usines et entrepots.",
+    Sandbox_TanksHavePropane_SearchRadius = "Rayon de recherche (cases)",
+    Sandbox_TanksHavePropane_SearchRadius_tooltip = "Distance (en cases) pour chercher une source de propane autour de l'objet pose au sol.",
+}
