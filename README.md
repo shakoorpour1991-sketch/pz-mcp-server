@@ -1,33 +1,41 @@
 <div align="center">
 
-![PZ MCP Server Banner](assets/banner-workflow.svg)
-
-# PZ MCP Server
-
-**Give your AI assistant direct access to Project Zomboid's vanilla data — local, offline, indexed.**
+![PZ MCP Server](assets/banner-workflow.svg)
 
 </div>
 
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  PZ_MCP_SERVER — Local vanilla data interface for AI modding       │
+│  ██████╗ ██╗    ██╗███████╗███████╗     ██╗ ██████╗ ██╗   ██╗███████╗│
+│  ██╔══██╗██║    ██║██╔════╝██╔════╝     ██║██╔═══██╗██║   ██║██╔════╝│
+│  ██████╔╝██║ █╗ ██║█████╗  ███████╗     ██║██║   ██║██║   ██║█████╗  │
+│  ██╔══██╗██║███╗██║██╔══╝  ╚════██║     ██║██║   ██║██║   ██║██╔══╝  │
+│  ██████╔╝╚███╔███╔╝███████╗███████║     ██║╚██████╔╝╚██████╔╝███████╗│
+│  ╚═════╝  ╚══╝╚══╝ ╚══════╝╚══════╝     ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Give your AI assistant direct access to Project Zomboid's vanilla data — local, offline, indexed.**
+
+[Quick Start](#-quick-start) • [Tools](#-tools) • [Workflow](#-workflow) • [Architecture](#-architecture)
+
 ---
 
-## The Problem
+## 🎯 The Problem
 
-Modding Project Zomboid means digging through thousands of vanilla script files, guessing at recipe chains, and hand-writing item definitions. You need to know:
+Modding Project Zomboid means drowning in **thousands of vanilla script files**. You need to know:
 
-- What properties `Base.Axe` actually has
-- Which recipes consume `Base.Plank` (all 36 of them)
-- Whether `KatanaSwing` exists before referencing it
-- How `tags[base:flour]` resolves in B42's bracket syntax
+- What properties `Base.Axe` actually has (and there *are* dozens of axes)
+- Which recipes consume `Base.Plank` (**all 36 of them**)
+- Whether `KatanaSwing` exists before referencing it in your sound script
+- How `tags[base:flour]` resolves in B42's bracket ingredient syntax
 
 This server puts a **local, indexed copy of the game's data** behind an MCP interface. Claude Desktop (or any MCP client) can search, generate, validate, and analyze mods directly in your workflow. No cloud calls. No API keys. Nothing leaves your machine.
 
 ---
 
-## What You Get
-
-![Core Capabilities](assets/capability-cards.svg)
-
-### The Numbers
+## 📊 The Numbers
 
 | Metric | Value |
 |--------|-------|
@@ -40,7 +48,15 @@ This server puts a **local, indexed copy of the game's data** behind an MCP inte
 
 ---
 
-## Quick Start
+<div align="center">
+
+![Capabilities](assets/capability-cards.svg)
+
+</div>
+
+---
+
+## 🔧 Quick Start
 
 ```bash
 git clone https://github.com/shakoorpour1991-sketch/pz-mcp-server.git
@@ -67,13 +83,19 @@ Add to `claude_desktop_config.json`, then restart:
 
 ---
 
-## Typical Workflow
+## 🔄 Workflow
+
+<div align="center">
 
 ![Workflow Diagram](assets/workflow-diagram.svg)
 
+</div>
+
+**Data flow:** `parse_game_files` → populate SQLite → `search_vanilla` / `analyze_recipe_chain` → `generate_script` → `validate_script` → `export_mod_script`
+
 ---
 
-## Tools
+## 🛠️ Tools
 
 Every tool returns human-readable text **and** machine-readable JSON via MCP's `structuredContent` field.
 
@@ -118,7 +140,7 @@ Full parameter reference lives in [`TOOLS.md`](TOOLS.md).
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```mermaid
 graph TD
@@ -140,11 +162,9 @@ graph TD
     J --> D
 ```
 
-**Data flow:** `parse_game_files` → populate SQLite → `search_vanilla` / `analyze_recipe_chain` → `generate_script` → `validate_script` → `export_mod_script`
-
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 All configuration is read from environment variables at startup.
 
@@ -161,7 +181,7 @@ Game path detection covers standard Windows install locations and WSL automatica
 
 ---
 
-## Development
+## 🧪 Development
 
 | Command | Description |
 |---------|-------------|
@@ -178,7 +198,7 @@ Game path detection covers standard Windows install locations and WSL automatica
 
 ---
 
-## What's Inside
+## 📁 What's Inside
 
 ```
 pz-mcp-server/
@@ -202,7 +222,7 @@ pz-mcp-server/
 
 ---
 
-## Why This Exists
+## 💀 Why This Exists
 
 I was tired of:
 
@@ -219,7 +239,7 @@ And get an answer in seconds — no manual grep, no spreadsheet, no tab-hopping.
 
 ---
 
-## Limitations
+## ⚠️ Limitations
 
 - **Windows-first**: Auto-detection targets Steam/Epic/GOG on Windows. WSL works; Linux/Mac may need `PROJECTZOMBOID_PATH` set manually.
 - **Workshop scraping is best-effort**: `workshop_search` parses the community browse page HTML. For guaranteed resolution, use `workshop_get_details` with a URL or id.

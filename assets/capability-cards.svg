@@ -1,154 +1,146 @@
-<svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 700 450" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
-    <linearGradient id="searchGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#22D3EE;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+    <linearGradient id="neonPink" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF2E93;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#FF0055;stop-opacity:1"/>
     </linearGradient>
-    
-    <linearGradient id="genGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00F0FF;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#0080FF;stop-opacity:1"/>
     </linearGradient>
-    
-    <linearGradient id="validGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#34D399;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#10B981;stop-opacity:1" />
+    <linearGradient id="neonGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#39FF14;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#00FF41;stop-opacity:1"/>
     </linearGradient>
-    
-    <linearGradient id="analyzeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#FBBF24;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    <linearGradient id="neonOrange" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF9F43;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#FF6B35;stop-opacity:1"/>
     </linearGradient>
-    
-    <filter id="cardShadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-opacity="0.15"/>
+    <linearGradient id="neonPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#A383FF;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#9D4EDD;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="neonRed" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF6B81;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#FF2E58;stop-opacity:1"/>
+    </linearGradient>
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <pattern id="scanlines" width="100%" height="3" patternUnits="userSpaceOnUse">
+      <rect width="100%" height="1" fill="rgba(0,240,255,0.04)"/>
+      <animate attributeName="y" values="0;3;0" dur="0.15s" repeatCount="indefinite"/>
+    </pattern>
   </defs>
   
-  <!-- Background -->
-  <rect width="600" height="400" fill="none"/>
+  <rect width="700" height="450" fill="#050508"/>
+  <rect width="700" height="450" fill="url(#scanlines)"/>
   
-  <!-- Title -->
-  <text x="300" y="35" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="#F4F5F8">Core Capabilities</text>
-  
-  <!-- Card 1: Search -->
-  <g transform="translate(30, 60)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(34,211,238,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#searchGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(34,211,238,0.15)"/>
-    <path d="M 24 30 L 28 34 L 34 28" stroke="url(#searchGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="30" cy="30" r="6" stroke="url(#searchGrad)" stroke-width="2" fill="none"/>
-    <line x1="34" y1="34" x2="38" y2="38" stroke="url(#searchGrad)" stroke-width="2" stroke-linecap="round"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Deep Search</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Full-text search across</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">vanilla items, recipes,</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">sounds, vehicles</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#22D3EE">search_vanilla()</text>
+  <g stroke="url(#neonCyan)" stroke-width="1" fill="none" opacity="0.6">
+    <path d="M 0 20 L 0 0 L 20 0"/><path d="M 680 0 L 700 0 L 700 20"/>
+    <path d="M 0 430 L 0 450 L 20 450"/><path d="M 680 450 L 700 450 L 700 430"/>
   </g>
   
-  <!-- Card 2: Generate -->
-  <g transform="translate(220, 60)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(167,139,250,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#genGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(167,139,250,0.15)"/>
-    <path d="M 23 26 L 30 33 L 37 26" stroke="url(#genGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <line x1="30" y1="26" x2="30" y2="38" stroke="url(#genGrad)" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="25" y1="38" x2="35" y2="38" stroke="url(#genGrad)" stroke-width="2.5" stroke-linecap="round"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Script Gen</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Generate balanced</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">items, recipes, fixings,</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">sounds, vehicles</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#A78BFA">generate_script()</text>
+  <g transform="translate(350, 40)" text-anchor="middle">
+    <text y="0" font-family="monospace" font-size="18" font-weight="bold" fill="url(#neonPink)" filter="url(#neonGlow)">CORE_CAPABILITIES</text>
   </g>
   
-  <!-- Card 3: Validate -->
-  <g transform="translate(410, 60)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(52,211,153,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#validGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(52,211,153,0.15)"/>
-    <path d="M 25 30 L 29 34 L 37 24" stroke="url(#validGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Validation</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Catch syntax errors and</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">broken references before</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">they hit the game</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#34D399">validate_script()</text>
+  <!-- Card 1 -->
+  <g transform="translate(25, 70)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonCyan)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="25" cy="30" r="10" fill="none" stroke="url(#neonCyan)" stroke-width="2"><animate attributeName="r" values="10;12;10" dur="2s" repeatCount="indefinite"/></circle>
+    <line x1="32" y1="37" x2="40" y2="45" stroke="url(#neonCyan)" stroke-width="2"/>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#00F0FF">DEEP_SEARCH</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Full-text FTS5 search</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">items, recipes, sounds, vehicles</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#39FF14">▸ search_vanilla()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#39FF14">▸ search_recipes()</text>
   </g>
   
-  <!-- Card 4: Analyze -->
-  <g transform="translate(30, 230)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(251,191,36,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#analyzeGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(251,191,36,0.15)"/>
-    <rect x="24" y="22" width="12" height="12" rx="2" stroke="url(#analyzeGrad)" stroke-width="2" fill="none"/>
-    <line x1="27" y1="26" x2="33" y2="32" stroke="url(#analyzeGrad)" stroke-width="2" stroke-linecap="round"/>
-    <line x1="33" y1="26" x2="27" y2="32" stroke="url(#analyzeGrad)" stroke-width="2" stroke-linecap="round"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Mod Analysis</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Structure, balance,</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">compatibility checks in</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">one pass</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#FBBF24">analyze_mod()</text>
+  <!-- Card 2 -->
+  <g transform="translate(240, 70)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonGreen)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+    </rect>
+    <text x="20" y="35" font-family="monospace" font-size="20" fill="#39FF14" font-weight="bold">&lt;/&gt;</text>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#39FF14">SCRIPT_GEN</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Balanced template generation</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">6 script types supported</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#39FF14">▸ generate_script()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#39FF14">▸ export_mod_script()</text>
   </g>
   
-  <!-- Card 5: Recipe Graph -->
-  <g transform="translate(220, 230)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(34,211,238,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#searchGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(34,211,238,0.15)"/>
-    <circle cx="26" cy="26" r="3" fill="url(#searchGrad)"/>
-    <circle cx="34" cy="26" r="3" fill="url(#searchGrad)"/>
-    <circle cx="30" cy="34" r="3" fill="url(#searchGrad)"/>
-    <line x1="26" y1="26" x2="30" y2="34" stroke="url(#searchGrad)" stroke-width="1.5"/>
-    <line x1="34" y1="26" x2="30" y2="34" stroke="url(#searchGrad)" stroke-width="1.5"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Recipe Graphs</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Walk crafting chains</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">upstream/downstream,</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">find conflicts</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#22D3EE">analyze_recipe_chain()</text>
+  <!-- Card 3 -->
+  <g transform="translate(455, 70)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonOrange)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" begin="1s" repeatCount="indefinite"/>
+    </rect>
+    <path d="M 20 20 L 30 15 L 40 20 L 40 35 L 30 42 L 20 35 Z" fill="none" stroke="url(#neonOrange)" stroke-width="1.5"/>
+    <text x="27" y="34" font-family="monospace" font-size="14" fill="#FF9F43" font-weight="bold">✓</text>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#FF9F43">VALIDATION</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Syntax + ref checking</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">Line-level error reports</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#FF9F43">▸ validate_script()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#FF9F43">▸ check_references()</text>
   </g>
   
-  <!-- Card 6: Workshop -->
-  <g transform="translate(410, 230)" filter="url(#cardShadow)">
-    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(167,139,250,0.2)"/>
-    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#genGrad)"/>
-    
-    <!-- Icon -->
-    <circle cx="30" cy="30" r="14" fill="rgba(167,139,250,0.15)"/>
-    <path d="M 23 30 L 37 30" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
-    <path d="M 26 26 L 34 26" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
-    <path d="M 26 34 L 34 34" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="30" cy="30" r="8" stroke="url(#genGrad)" stroke-width="1.5" fill="none"/>
-    
-    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Workshop</text>
-    
-    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Search, fetch, and</text>
-    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">analyze any Steam</text>
-    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">Workshop mod</text>
-    
-    <text x="30" y="132" font-family="monospace" font-size="9" fill="#A78BFA">workshop_analyze()</text>
+  <!-- Card 4 -->
+  <g transform="translate(25, 200)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonPurple)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="20" y="22" width="4" height="18" fill="url(#neonPurple)"><animate attributeName="height" values="18;12;18" dur="2s" repeatCount="indefinite"/></rect>
+    <rect x="28" y="26" width="4" height="14" fill="url(#neonPurple)"><animate attributeName="height" values="14;8;14" dur="2s" begin="0.3s" repeatCount="indefinite"/></rect>
+    <rect x="36" y="20" width="4" height="20" fill="url(#neonPurple)"><animate attributeName="height" values="20;15;20" dur="2s" begin="0.6s" repeatCount="indefinite"/></rect>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#A383FF">MOD_ANALYSIS</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Structure + Lua audit</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">Balance outlier detection</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#A383FF">▸ analyze_mod()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#A383FF">▸ workshop_analyze()</text>
+  </g>
+  
+  <!-- Card 5 -->
+  <g transform="translate(240, 200)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonRed)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" begin="2s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="25" cy="30" r="4" fill="url(#neonRed)"><animate attributeName="r" values="4;5;4" dur="2s" repeatCount="indefinite"/></circle>
+    <circle cx="40" cy="25" r="3" fill="url(#neonRed)"/>
+    <circle cx="40" cy="35" r="3" fill="url(#neonRed)"/>
+    <line x1="29" y1="30" x2="37" y2="25" stroke="url(#neonRed)" stroke-width="1"/>
+    <line x1="29" y1="30" x2="37" y2="35" stroke="url(#neonRed)" stroke-width="1"/>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#FF6B81">RECIPE_GRAPHS</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Dependency traversal</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">Conflict detection ranked</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#FF6B81">▸ analyze_recipe_chain()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#FF6B81">▸ detect_recipe_conflicts()</text>
+  </g>
+  
+  <!-- Card 6 -->
+  <g transform="translate(455, 200)">
+    <rect x="0" y="0" width="200" height="110" rx="4" fill="#0A0A0F" stroke="url(#neonCyan)" stroke-width="1.5" filter="url(#neonGlow)">
+      <animate attributeName="stroke-opacity" values="0.5;1;0.5" dur="3s" begin="2.5s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="30" cy="30" r="8" fill="none" stroke="url(#neonCyan)" stroke-width="1.5"><animateTransform attributeName="transform" type="rotate" from="0 30 30" to="360 30 30" dur="8s" repeatCount="indefinite"/></circle>
+    <circle cx="30" cy="30" r="3" fill="url(#neonCyan)"/>
+    <text x="50" y="28" font-family="monospace" font-size="12" font-weight="bold" fill="#4ECDC4">WORKSHOP</text>
+    <text x="50" y="50" font-family="system-ui" font-size="9" fill="#888">Steam browse + download</text>
+    <text x="50" y="64" font-family="system-ui" font-size="9" fill="#888">Keyless API + SteamCMD</text>
+    <text x="50" y="85" font-family="monospace" font-size="8" fill="#4ECDC4">▸ workshop_search()</text>
+    <text x="50" y="98" font-family="monospace" font-size="8" fill="#4ECDC4">▸ workshop_download()</text>
+  </g>
+  
+  <!-- Bottom bar -->
+  <g transform="translate(25, 340)">
+    <rect x="0" y="0" width="650" height="50" rx="4" fill="rgba(255,46,147,0.03)" stroke="rgba(255,46,147,0.2)" stroke-width="1"/>
+    <text x="30" y="30" font-family="monospace" font-size="11" fill="#FFFFFF"><tspan fill="#FF2E93" font-weight="bold">16</tspan> MCP TOOLS TOTAL</text>
+    <text x="325" y="30" text-anchor="middle" font-family="monospace" font-size="10" fill="#666">SEE <tspan fill="#00F0FF">TOOLS.MD</tspan> FOR FULL PARAMETER REFERENCE</text>
+    <g transform="translate(600, 25)">
+      <circle cx="0" cy="0" r="6" fill="rgba(0,240,255,0.1)"><animate attributeName="r" values="6;10;6" dur="2s" repeatCount="indefinite"/></circle>
+      <circle cx="0" cy="0" r="3" fill="#00F0FF"><animate attributeName="opacity" values="1;0.5;1" dur="1s" repeatCount="indefinite"/></circle>
+    </g>
   </g>
 </svg>
