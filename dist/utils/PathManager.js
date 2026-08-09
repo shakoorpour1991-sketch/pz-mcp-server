@@ -1,0 +1,374 @@
+import { execFile } from "child_process";
+import { constants, existsSync, readFileSync, realpathSync } from "fs";
+import { access } from "fs/promises";
+import { isAbsolute, join, parse, resolve } from "path";
+import { homedir } from "os";
+import logger from "./logger.js";
+import { pzInstallEnvPath } from "./config.js";
+export class PathManager {
+    commonPaths = [];
+    constructor() {
+        this.initializeCommonPaths();
+    }
+    initializeCommonPaths() {
+        const home = homedir();
+        // Windows paths
+        if (process.platform === "win32") {
+            this.commonPaths = [
+                // Steam
+                "C:\\Program Files (x86)\\Steam\\steamapps\\common\\ProjectZomboid",
+                "C:\\Program Files\\Steam\\steamapps\\common\\ProjectZomboid",
+                "D:\\Steam\\steamapps\\common\\ProjectZomboid",
+                "E:\\Steam\\steamapps\\common\\ProjectZomboid",
+                // Epic Games
+                "C:\\Program Files\\Epic Games\\ProjectZomboid",
+                "C:\\Program Files (x86)\\Epic Games\\ProjectZomboid",
+                // GOG
+                "C:\\Program Files (x86)\\GOG Galaxy\\Games\\ProjectZomboid",
+                "C:\\Program Files\\GOG Galaxy\\Games\\ProjectZomboid",
+                "C:\\GOG Games\\ProjectZomboid",
+                // Standalone
+                "C:\\ProjectZomboid",
+                "C:\\Games\\ProjectZomboid",
+                "D:\\Games\\ProjectZomboid",
+            ];
+        }
+        // Linux paths
+        else if (process.platform === "linux") {
+            this.commonPaths = [
+                // Steam
+                join(home, ".steam/debian-installation/steamapps/common/ProjectZomboid"),
+                join(home, ".local/share/Steam/steamapps/common/ProjectZomboid"),
+                "/usr/games/ProjectZomboid",
+                // Standalone
+                join(home, "ProjectZomboid"),
+                join(home, "Games/ProjectZomboid"),
+                "/opt/ProjectZomboid",
+            ];
+        }
+        // macOS paths
+        else if (process.platform === "darwin") {
+            this.commonPaths = [
+                // Steam
+                join(home, "Library/Application Support/Steam/steamapps/common/ProjectZomboid"),
+                "/Applications/ProjectZomboid.app/Contents",
+                // Standalone
+                join(home, "Games/ProjectZomboid"),
+                "/Applications/ProjectZomboid",
+            ];
+        }
+        // WSL support - check Windows drives
+        if (process.platform === "linux" && process.env.WSL_DISTRO_NAME) {
+            const wslPaths = [
+                "/mnt/c/Program Files (x86)/Steam/steamapps/common/ProjectZomboid",
+                "/mnt/c/Program Files/Steam/steamapps/common/ProjectZomboid",
+                "/mnt/d/Steam/steamapps/common/ProjectZomboid",
+                "/mnt/e/Steam/steamapps/common/ProjectZomboid",
+                "/mnt/c/Program Files/Epic Games/ProjectZomboid",
+                "/mnt/c/Program Files (x86)/Epic Games/ProjectZomboid",
+            ];
+            this.commonPaths.push(...wslPaths);
+        }
+    }
+    async detectProjectZomboidPath() {
+        // First check environment variable override
+        const envPath = pzInstallEnvPath();
+        if (envPath && this.isValidProjectZomboidInstallation(envPath)) {
+            return envPath;
+        }
+        // Then try to detect from Steam registry/config
+        const steamPath = await this.detectSteamInstallation();
+        if (steamPath) {
+            return steamPath;
+        }
+        // Then try common installation paths
+        for (const path of this.commonPaths) {
+            if (this.isValidProjectZomboidInstallation(path)) {
+                return path;
+            }
+        }
+        return null;
+    }
+    async detectSteamInstallation() {
+        try {
+            if (process.platform === "win32") {
+                return await this.detectSteamWindows();
+            }
+            else if (process.platform === "linux") {
+                return await this.detectSteamLinux();
+            }
+            else if (process.platform === "darwin") {
+                return await this.detectSteamMacOS();
+            }
+        }
+        catch (error) {
+            logger.warn("Failed to detect Steam installation: %s", error instanceof Error ? error.message : String(error));
+        }
+        return null;
+    }
+    async detectSteamWindows() {
+        // Try Windows registry first
+        const registrySteamPath = await this.readSteamRegistryPath();
+        if (registrySteamPath) {
+            const defaultPzPath = join(registrySteamPath, "steamapps", "common", "ProjectZomboid");
+            if (this.isValidProjectZomboidInstallation(defaultPzPath)) {
+                return defaultPzPath;
+            }
+            const libraryFoldersPath = join(registrySteamPath, "steamapps", "libraryfolders.vdf");
+            if (existsSync(libraryFoldersPath)) {
+                try {
+                    const configContent = readFileSync(libraryFoldersPath, "utf-8");
+                    const libraries = this.parseSteamLibraryFolders(configContent);
+                    for (const library of libraries) {
+                        const pzPath = join(library, "steamapps", "common", "ProjectZomboid");
+                        if (this.isValidProjectZomboidInstallation(pzPath)) {
+                            return pzPath;
+                        }
+                    }
+                }
+                catch (error) {
+                    logger.warn("Failed to parse Steam library folders: %s", error instanceof Error ? error.message : String(error));
+                }
+            }
+        }
+        // Fall back to hardcoded paths
+        const steamPaths = [
+            "C:\\Program Files (x86)\\Steam",
+            "C:\\Program Files\\Steam",
+        ];
+        for (const steamPath of steamPaths) {
+            const configPath = join(steamPath, "steamapps", "libraryfolders.vdf");
+            if (existsSync(configPath)) {
+                try {
+                    const configContent = readFileSync(configPath, "utf-8");
+                    const libraries = this.parseSteamLibraryFolders(configContent);
+                    for (const library of libraries) {
+                        const pzPath = join(library, "steamapps", "common", "ProjectZomboid");
+                        if (this.isValidProjectZomboidInstallation(pzPath)) {
+                            return pzPath;
+                        }
+                    }
+                }
+                catch (error) {
+                    logger.warn("Failed to parse Steam library folders: %s", error instanceof Error ? error.message : String(error));
+                }
+            }
+        }
+        return null;
+    }
+    async readSteamRegistryPath() {
+        try {
+            const hkcuPath = await this.queryRegistryValue("HKCU\\Software\\Valve\\Steam", "SteamPath");
+            if (hkcuPath) {
+                return hkcuPath;
+            }
+            const hklmPath = await this.queryRegistryValue("HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam", "InstallPath");
+            if (hklmPath) {
+                return hklmPath;
+            }
+        }
+        catch (error) {
+            logger.warn("Failed to read Steam registry: %s", error instanceof Error ? error.message : String(error));
+        }
+        return null;
+    }
+    async queryRegistryValue(key, valueName) {
+        try {
+            const result = await new Promise((resolve, reject) => {
+                execFile("reg", ["query", key, "/v", valueName], { timeout: 5000 }, (error, stdout, stderr) => {
+                    if (error) {
+                        // `reg query` exits with code 1 when the key/value is not present —
+                        // an expected miss (we fall through to other detection strategies),
+                        // not an error worth warning about.
+                        const code = error.code;
+                        if (code === 1) {
+                            resolve({ stdout, stderr });
+                            return;
+                        }
+                        reject(error);
+                        return;
+                    }
+                    resolve({ stdout, stderr });
+                });
+            });
+            const lines = result.stdout.split("\n");
+            for (const line of lines) {
+                const trimmed = line.trim();
+                const regex = new RegExp(`^${valueName}\\s+REG_SZ\\s+(.+)$`);
+                const match = trimmed.match(regex);
+                if (match) {
+                    return match[1].trim();
+                }
+            }
+        }
+        catch (error) {
+            logger.warn("Steam registry query failed: %s", error instanceof Error ? error.message : String(error));
+        }
+        return null;
+    }
+    async detectSteamLinux() {
+        const home = homedir();
+        const steamPaths = [
+            join(home, ".steam/debian-installation"),
+            join(home, ".local/share/Steam"),
+            join(home, ".steam/steam"),
+        ];
+        for (const steamPath of steamPaths) {
+            const configPath = join(steamPath, "steamapps", "libraryfolders.vdf");
+            if (existsSync(configPath)) {
+                try {
+                    const configContent = readFileSync(configPath, "utf-8");
+                    const libraries = this.parseSteamLibraryFolders(configContent);
+                    for (const library of libraries) {
+                        const pzPath = join(library, "steamapps", "common", "ProjectZomboid");
+                        if (this.isValidProjectZomboidInstallation(pzPath)) {
+                            return pzPath;
+                        }
+                    }
+                }
+                catch (error) {
+                    logger.warn("Failed to parse Steam library folders: %s", error instanceof Error ? error.message : String(error));
+                }
+            }
+        }
+        return null;
+    }
+    async detectSteamMacOS() {
+        const home = homedir();
+        const steamPath = join(home, "Library/Application Support/Steam");
+        const configPath = join(steamPath, "steamapps", "libraryfolders.vdf");
+        if (existsSync(configPath)) {
+            try {
+                const configContent = readFileSync(configPath, "utf-8");
+                const libraries = this.parseSteamLibraryFolders(configContent);
+                for (const library of libraries) {
+                    const pzPath = join(library, "steamapps", "common", "ProjectZomboid");
+                    if (this.isValidProjectZomboidInstallation(pzPath)) {
+                        return pzPath;
+                    }
+                }
+            }
+            catch (error) {
+                logger.warn("Failed to parse Steam library folders: %s", error instanceof Error ? error.message : String(error));
+            }
+        }
+        return null;
+    }
+    parseSteamLibraryFolders(content) {
+        const libraries = [];
+        // Parse VDF format to extract library paths
+        const lines = content.split("\n");
+        let inLibraryFolders = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed === '"libraryfolders"') {
+                inLibraryFolders = true;
+                continue;
+            }
+            if (inLibraryFolders && trimmed.includes('"path"')) {
+                const match = trimmed.match(/"path"\s*"([^"]+)"/);
+                if (match) {
+                    let path = match[1];
+                    // Handle escaped backslashes
+                    path = path.replace(/\\\\/g, "\\");
+                    libraries.push(path);
+                }
+            }
+        }
+        return libraries;
+    }
+    isValidProjectZomboidInstallation(path) {
+        if (!existsSync(path)) {
+            return false;
+        }
+        // Check for key Project Zomboid files/directories
+        const requiredPaths = [join(path, "media"), join(path, "media", "scripts")];
+        // Check for executable (varies by platform)
+        const executables = [
+            join(path, "ProjectZomboid64.exe"), // Windows 64-bit
+            join(path, "ProjectZomboid32.exe"), // Windows 32-bit
+            join(path, "ProjectZomboid.exe"), // Windows generic
+            join(path, "projectzomboid.sh"), // Linux
+            join(path, "ProjectZomboid"), // Linux binary
+            join(path, "Contents", "MacOS", "ProjectZomboid"), // macOS
+        ];
+        const hasExecutable = executables.some((exe) => existsSync(exe));
+        const hasRequiredPaths = requiredPaths.every((reqPath) => existsSync(reqPath));
+        return hasExecutable && hasRequiredPaths;
+    }
+    /**
+     * Validate a user-supplied file path before it is used for filesystem access.
+     * Guards against path traversal (audit P1 #10): rejects empty/relative paths,
+     * NUL bytes, and any '..' segment. Verifies the target exists.
+     *
+     * @param input raw path from an MCP tool argument
+     * @param kind expected target type ('dir' or 'file')
+     * @returns the validated, resolved absolute path
+     * @throws Error describing the rejection
+     */
+    validateInputPath(input, kind = "dir") {
+        if (!input || input.trim() === "") {
+            throw new Error("Path must not be empty");
+        }
+        if (input.includes("\0")) {
+            throw new Error("Path contains invalid characters");
+        }
+        // Reject traversal sequences outright — no path may escape via '..'
+        const segments = input.split(/[\\/]+/).filter((seg) => seg.length > 0);
+        if (segments.includes("..")) {
+            throw new Error(`Path must not contain '..' segments: ${input}`);
+        }
+        if (!isAbsolute(input)) {
+            throw new Error(`Path must be absolute: ${input}`);
+        }
+        let resolved;
+        try {
+            resolved = realpathSync(input);
+        }
+        catch {
+            resolved = resolve(input);
+        }
+        if (kind === "dir" && !existsSync(resolved)) {
+            throw new Error(`Directory does not exist: ${resolved}`);
+        }
+        if (kind === "file" && !existsSync(resolved)) {
+            throw new Error(`File does not exist: ${resolved}`);
+        }
+        return resolved;
+    }
+    /**
+     * Walk up from `target` to the first existing ancestor directory and check
+     * whether it is writable (W_OK via fs.access). Returns a verdict object
+     * with `writable` boolean and, when not writable, an `error` message.
+     * Used by export_mod_script dry-run to warn early (audit D6).
+     */
+    async isAncestorWritable(target) {
+        let current = target;
+        for (;;) {
+            try {
+                await access(current, constants.W_OK);
+                return { writable: true };
+            }
+            catch {
+                // not writable or doesn't exist — walk up
+            }
+            const parent = join(current, "..");
+            if (parent === current)
+                break;
+            current = parent;
+        }
+        // Fallback: check filesystem root explicitly
+        try {
+            const root = parse(target).root;
+            if (root) {
+                await access(root, constants.W_OK);
+                return { writable: true };
+            }
+        }
+        catch (err) {
+            return { writable: false, error: err.message };
+        }
+        return { writable: false, error: "No writable ancestor found" };
+    }
+}
+//# sourceMappingURL=PathManager.js.map

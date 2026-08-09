@@ -1,0 +1,28 @@
+{
+  "entries": {
+    "123456": {
+      "data": {
+        "id": "123456",
+        "title": "Test",
+        "author": "",
+        "thumbnailUrl": "",
+        "shortDescription": "",
+        "tags": [],
+        "subscribers": 0,
+        "updatedAt": null,
+        "url": "https://steamcommunity.com/sharedfiles/filedetails/?id=123456",
+        "appId": "",
+        "fileSize": 0,
+        "fileUrl": "",
+        "description": "",
+        "timeCreated": 0,
+        "timeUpdated": 0,
+        "votesUp": 0,
+        "votesDown": 0,
+        "views": 0,
+        "workspaceAccepted": false
+      },
+      "cachedAt": 1786289390958
+    }
+  }
+}

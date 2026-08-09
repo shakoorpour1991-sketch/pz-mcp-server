@@ -17,6 +17,7 @@ import type { KnowledgeBaseManager } from "../knowledge/KnowledgeBaseManager.js"
 import type { PathManager } from "../utils/PathManager.js";
 import type { SteamWorkshopClient } from "../workshop/SteamWorkshopClient.js";
 import type { SteamCmdDownloader } from "../workshop/SteamCmdDownloader.js";
+import type { ModWorkspaceManager } from "../utils/ModWorkspaceManager.js";
 
 /**
  * Everything a tool handler may need. Populated once at server startup and
@@ -34,6 +35,7 @@ export interface ToolContext {
   pathManager: PathManager;
   workshopClient: SteamWorkshopClient;
   steamCmdDownloader: SteamCmdDownloader;
+  workspaceManager: ModWorkspaceManager;
   /** Workshop ids with a download in flight (dedupe concurrent calls). */
   activeWorkshopDownloads: Set<string>;
 }

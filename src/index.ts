@@ -42,6 +42,7 @@ import { ALL_TOOLS, ToolRegistry } from "./tools/index.js";
 import type { ServerResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolContext } from "./tools/index.js";
 import logger from "./utils/logger.js";
+import { ModWorkspaceManager } from "./utils/ModWorkspaceManager.js";
 
 // Read the server version from package.json (audit minor: was hardcoded '1.1.0')
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -75,6 +76,7 @@ let ctx: ToolContext;
 // Initialize core components
 let dbManager: DatabaseManager;
 let knowledgeBaseManager: KnowledgeBaseManager;
+let workspaceManager: ModWorkspaceManager;
 
 async function initializeServer() {
   try {
@@ -106,6 +108,16 @@ async function initializeServer() {
     const workshopClient = new SteamWorkshopClient();
     const steamCmdDownloader = new SteamCmdDownloader();
 
+    // Initialize workspace manager with configurable roots from env
+    const workspaceRoots = process.env.PZ_MCP_WORKSPACE_ROOTS
+      ? process.env.PZ_MCP_WORKSPACE_ROOTS.split(",").map((s) => s.trim())
+      : [process.cwd()];
+    workspaceManager = new ModWorkspaceManager({
+      workspaceRoots,
+      defaultTemplate: "B42",
+      strictPaths: true,
+    });
+
     ctx = {
       dbManager,
       parser,
@@ -117,6 +129,7 @@ async function initializeServer() {
       pathManager,
       workshopClient,
       steamCmdDownloader,
+      workspaceManager,
       activeWorkshopDownloads,
     };
 
