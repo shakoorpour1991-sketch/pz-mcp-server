@@ -1,137 +1,85 @@
-<svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 800 350" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="flowCyan" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#22D3EE;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF2E93;stop-opacity:1"><animate attributeName="stop-color" values="#FF2E93;#00F0FF;#FF2E93" dur="3s" repeatCount="indefinite"/></stop>
+      <stop offset="100%" style="stop-color:#00F0FF;stop-opacity:1"><animate attributeName="stop-color" values="#00F0FF;#FF2E93;#00F0FF" dur="3s" repeatCount="indefinite"/></stop>
     </linearGradient>
-    
-    <linearGradient id="flowViolet" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
-    </linearGradient>
-    
-    <linearGradient id="flowEmerald" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#34D399;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#10B981;stop-opacity:1" />
-    </linearGradient>
-    
-    <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M 30 0 L 0 0 0 30" fill="none" stroke="rgba(0,240,255,0.06)" stroke-width="1"/></pattern>
   </defs>
   
-  <!-- Background -->
-  <rect width="700" height="280" fill="none"/>
+  <rect width="800" height="350" fill="#050508"/>
+  <rect width="800" height="350" fill="url(#grid)"/>
+  
+  <!-- Node 1 -->
+  <g transform="translate(50, 140)">
+    <rect x="0" y="0" width="140" height="70" rx="6" fill="#0A0A0F" stroke="#FF2E93" stroke-width="2" filter="url(#glow)"/>
+    <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="#FF2E93">parse_game_files</text>
+    <text x="70" y="45" text-anchor="middle" font-family="system-ui" font-size="9" fill="#888">SQLite population</text>
+    <circle cx="120" cy="15" r="5" fill="#39FF14"><animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"/></circle>
+  </g>
+  
+  <!-- Arrow 1 -->
+  <line x1="190" y1="175" x2="240" y2="175" stroke="url(#grad1)" stroke-width="2"><animate attributeName="stroke-dasharray" values="0,10;5,5;10,0" dur="1s" repeatCount="indefinite"/></line>
+  <polygon points="240,170 260,175 240,180" fill="#00F0FF"/>
+  
+  <!-- Node 2 -->
+  <g transform="translate(260, 140)">
+    <rect x="0" y="0" width="140" height="70" rx="6" fill="#0A0A0F" stroke="#00F0FF" stroke-width="2" filter="url(#glow)"/>
+    <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="#00F0FF">search_vanilla</text>
+    <text x="70" y="45" text-anchor="middle" font-family="system-ui" font-size="9" fill="#888">FTS5 queries</text>
+    <circle cx="120" cy="15" r="5" fill="#00F0FF"><animate attributeName="opacity" values="1;0.3;1" dur="1s" begin="0.2s" repeatCount="indefinite"/></circle>
+  </g>
+  
+  <!-- Arrow 2 -->
+  <line x1="400" y1="175" x2="450" y2="175" stroke="url(#grad1)" stroke-width="2"><animate attributeName="stroke-dasharray" values="0,10;5,5;10,0" dur="1s" begin="0.3s" repeatCount="indefinite"/></line>
+  <polygon points="450,170 470,175 450,180" fill="#00F0FF"/>
+  
+  <!-- Node 3 -->
+  <g transform="translate(470, 140)">
+    <rect x="0" y="0" width="140" height="70" rx="6" fill="#0A0A0F" stroke="#39FF14" stroke-width="2" filter="url(#glow)"/>
+    <text x="70" y="25" text-anchor="middle" font-family="monospace" font-size="11" font-weight="bold" fill="#39FF14">generate_script</text>
+    <text x="70" y="45" text-anchor="middle" font-family="system-ui" font-size="9" fill="#888">Template engine</text>
+    <circle cx="120" cy="15" r="5" fill="#39FF14"><animate attributeName="opacity" values="1;0.3;1" dur="1s" begin="0.4s" repeatCount="indefinite"/></circle>
+  </g>
+  
+  <!-- Arrow 3 -->
+  <line x1="610" y1="175" x2="660" y2="175" stroke="url(#grad1)" stroke-width="2"><animate attributeName="stroke-dasharray" values="0,10;5,5;10,0" dur="1s" begin="0.5s" repeatCount="indefinite"/></line>
+  <polygon points="660,170 680,175 660,180" fill="#00F0FF"/>
+  
+  <!-- Node 4 -->
+  <g transform="translate(680, 140)">
+    <rect x="0" y="0" width="110" height="70" rx="6" fill="#0A0A0F" stroke="#FF9F43" stroke-width="2" filter="url(#glow)"/>
+    <text x="55" y="25" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#FF9F43">validate</text>
+    <text x="55" y="45" text-anchor="middle" font-family="system-ui" font-size="9" fill="#888">Syntax check</text>
+    <circle cx="90" cy="15" r="5" fill="#FF9F43"><animate attributeName="opacity" values="1;0.3;1" dur="1s" begin="0.6s" repeatCount="indefinite"/></circle>
+  </g>
+  
+  <!-- Bottom row - analysis tools -->
+  <g transform="translate(150, 250)">
+    <rect x="0" y="0" width="150" height="55" rx="6" fill="#0A0A0F" stroke="#A383FF" stroke-width="1.5"/>
+    <text x="75" y="22" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#A383FF">analyze_mod</text>
+    <text x="75" y="40" text-anchor="middle" font-family="system-ui" font-size="8" fill="#666">Structure audit</text>
+  </g>
+  
+  <g transform="translate(325, 250)">
+    <rect x="0" y="0" width="150" height="55" rx="6" fill="#0A0A0F" stroke="#FF6B81" stroke-width="1.5"/>
+    <text x="75" y="22" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#FF6B81">recipe_chain</text>
+    <text x="75" y="40" text-anchor="middle" font-family="system-ui" font-size="8" fill="#666">Dependency graph</text>
+  </g>
+  
+  <g transform="translate(500, 250)">
+    <rect x="0" y="0" width="150" height="55" rx="6" fill="#0A0A0F" stroke="#4ECDC4" stroke-width="1.5"/>
+    <text x="75" y="22" text-anchor="middle" font-family="monospace" font-size="10" font-weight="bold" fill="#4ECDC4">workshop_tools</text>
+    <text x="75" y="40" text-anchor="middle" font-family="system-ui" font-size="8" fill="#666">Steam integration</text>
+  </g>
   
   <!-- Title -->
-  <text x="350" y="28" text-anchor="middle" font-family="system-ui" font-size="13" font-weight="600" fill="#F4F5F8">Typical Workflow</text>
-  
-  <!-- Node 1: Parse -->
-  <g transform="translate(40, 60)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#22D3EE">parse_game_files</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Index vanilla data</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">→ SQLite + FTS5</text>
-  </g>
-  
-  <!-- Arrow 1→2 -->
-  <line x1="150" y1="95" x2="180" y2="95" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="180,90 190,95 180,100" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node 2: Search -->
-  <g transform="translate(190, 60)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#22D3EE">search_vanilla</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Find references</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">FTS queries</text>
-  </g>
-  
-  <!-- Arrow 2→3 -->
-  <line x1="300" y1="95" x2="330" y2="95" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="330,90 340,95 330,100" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node 3: Generate -->
-  <g transform="translate(340, 60)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(167,139,250,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#A78BFA">generate_script</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Create mod scripts</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Balanced templates</text>
-  </g>
-  
-  <!-- Arrow 3→4 -->
-  <line x1="450" y1="95" x2="480" y2="95" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="480,90 490,95 480,100" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node 4: Validate -->
-  <g transform="translate(490, 60)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(52,211,153,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#34D399">validate_script</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Check syntax &amp; refs</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Error detection</text>
-  </g>
-  
-  <!-- Bottom row: Analysis branch -->
-  
-  <!-- Arrow down -->
-  <line x1="545" y1="130" x2="545" y2="165" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="540,165 545,175 550,165" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node 5: Analyze Mod -->
-  <g transform="translate(490, 175)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(251,191,36,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#FBBF24">analyze_mod</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Full audit</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Structure/balance</text>
-  </g>
-  
-  <!-- Alternative path: Workshop -->
-  <g transform="translate(40, 175)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(167,139,250,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#A78BFA">workshop_analyze</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Fetch &amp; analyze</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Steam Workshop</text>
-  </g>
-  
-  <!-- Arrow from workshop to analyze -->
-  <line x1="150" y1="210" x2="180" y2="210" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="180,205 190,210 180,215" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node: Recipe Chain (parallel) -->
-  <g transform="translate(190, 175)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#22D3EE">analyze_recipe_chain</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Dependency graph</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Upstream/downstream</text>
-  </g>
-  
-  <!-- Arrow to export -->
-  <line x1="300" y1="210" x2="330" y2="210" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
-  <polygon points="330,205 340,210 330,215" fill="rgba(255,255,255,0.2)"/>
-  
-  <!-- Node: Export -->
-  <g transform="translate(340, 175)">
-    <rect x="0" y="0" width="110" height="70" rx="10" fill="#1A1C23" stroke="rgba(52,211,153,0.3)" stroke-width="1.5"/>
-    <text x="55" y="28" text-anchor="middle" font-family="system-ui" font-size="11" font-weight="600" fill="#34D399">export_mod_script</text>
-    <text x="55" y="48" text-anchor="middle" font-family="system-ui" font-size="9" fill="#9BA1AE">Write to mod folder</text>
-    <text x="55" y="60" text-anchor="middle" font-family="monospace" font-size="8" fill="#6E7480">Dry-run or commit</text>
-  </g>
+  <text x="400" y="40" text-anchor="middle" font-family="monospace" font-size="16" font-weight="bold" fill="url(#grad1)" filter="url(#glow)">TYPICAL_WORKFLOW</text>
   
   <!-- Legend -->
-  <g transform="translate(40, 260)">
-    <circle cx="6" cy="4" r="4" fill="#22D3EE"/>
-    <text x="16" y="7" font-family="system-ui" font-size="9" fill="#6E7480">Discovery</text>
-    
-    <circle cx="90" cy="4" r="4" fill="#A78BFA"/>
-    <text x="100" y="7" font-family="system-ui" font-size="9" fill="#6E7480">Generation</text>
-    
-    <circle cx="175" cy="4" r="4" fill="#34D399"/>
-    <text x="185" y="7" font-family="system-ui" font-size="9" fill="#6E7480">Validation</text>
-    
-    <circle cx="260" cy="4" r="4" fill="#FBBF24"/>
-    <text x="270" y="7" font-family="system-ui" font-size="9" fill="#6E7480">Analysis</text>
+  <g transform="translate(50, 20)">
+    <circle cx="0" cy="0" r="4" fill="#39FF14"/><text x="12" y="4" font-family="system-ui" font-size="9" fill="#666">Active</text>
+    <circle cx="70" cy="0" r="4" fill="#00F0FF"/><text x="82" y="4" font-family="system-ui" font-size="9" fill="#666">Data Flow</text>
   </g>
 </svg>
