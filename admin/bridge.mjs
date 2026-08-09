@@ -433,6 +433,17 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/stats') return json(res, lastTelemetry || { state });
 
+    // Real resolved env for the Settings tab (deck badges show these instead
+    // of hardcoded defaults).
+    if (req.method === 'GET' && url.pathname === '/api/env') {
+      return json(res, {
+        logLevel: process.env.PZ_MCP_LOG_LEVEL || 'info',
+        kbPath: process.env.PZ_MCP_KB_PATH || 'D:\\PZ-Modding\\Documentation',
+        workshopDir: readDeckSettings().workshopDir || process.env.PZ_WORKSHOP_DIR || null,
+        steamCmdPath: process.env.STEAMCMD_PATH || '(auto-detected)',
+      });
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/restart') {
       pushLog('↻ restart requested from Control Deck');
       try { child?.kill('SIGTERM'); } catch { /* */ }

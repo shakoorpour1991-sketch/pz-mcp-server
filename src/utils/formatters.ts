@@ -364,7 +364,7 @@ export function formatWorkshopSearchResults(
     }
     output += `\n`;
   });
-  output += `Run workshop_get_details with an id to fetch full metadata, then workshop_download (M2) to fetch and analyze the mod.`;
+  output += `Run workshop_get_details with an id to fetch full metadata, then workshop_download to fetch the mod, or workshop_analyze to fetch, download and analyze it in one pass.`;
   return output;
 }
 
@@ -492,16 +492,48 @@ export function formatWorkshopModReport(report: WorkshopModReport): string {
     out += `\n`;
   }
 
+  const comp = a.compatibility ?? {};
   if (a.compatibility) {
     out += `## Compatibility\n`;
-    out += `- ${JSON.stringify(a.compatibility).slice(0, 300)}\n\n`;
+    const gv = comp.gameVersionCompatibility ?? {};
+    if (gv.compatible !== undefined) {
+      out += `- **Game version**: ${gv.minVersion ?? "any"} – ${gv.maxVersion ?? "latest"} ${gv.compatible ? "✅ compatible" : "⚠️ may not be compatible"}\n`;
+    }
+    if ((comp.conflicts ?? []).length > 0) {
+      out += `- ⚠️ **Conflicts** (${comp.conflicts.length}):\n`;
+      comp.conflicts.slice(0, 5).forEach((c: any) => {
+        out += `  - ${c.item} ↔ ${c.conflictsWith}\n`;
+      });
+    }
+    if ((comp.missingDependencies ?? []).length > 0) {
+      out += `- ❌ **Missing dependencies**: ${comp.missingDependencies.slice(0, 5).join(", ")}\n`;
+    }
+    if ((comp.incompatibleMods ?? []).length > 0) {
+      out += `- 🚫 **Incompatible mods**: ${comp.incompatibleMods.slice(0, 5).join(", ")}\n`;
+    }
+    if (
+      (comp.conflicts ?? []).length === 0 &&
+      (comp.missingDependencies ?? []).length === 0 &&
+      (comp.incompatibleMods ?? []).length === 0
+    ) {
+      out += `- ✅ No conflicts or missing dependencies found\n`;
+    }
+    out += `\n`;
   }
 
+  const bal = a.balance ?? {};
   if (a.balance) {
     out += `## Balance\n`;
-    out += `- Score ${a.balance.score}/100 · ${a.balance.itemCount} items analyzed\n`;
-    if (a.balance.recommendations?.length > 0) {
-      out += `- ${a.balance.recommendations.slice(0, 5).join("\n- ")}\n`;
+    out += `- Score ${bal.score ?? "—"}/100 · ${bal.itemCount ?? 0} items analyzed\n`;
+    const outliers = bal.outliers ?? [];
+    if (outliers.length > 0) {
+      out += `- ⚠️ **Outliers** (${outliers.length}):\n`;
+      outliers.slice(0, 5).forEach((o: any) => {
+        out += `  - **${o.item}** · ${o.property}: ${o.value} → ${o.recommendation}\n`;
+      });
+    }
+    if ((bal.recommendations ?? []).length > 0) {
+      out += `- ${bal.recommendations.slice(0, 5).join("\n- ")}\n`;
     }
     out += `\n`;
   }

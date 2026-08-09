@@ -265,7 +265,7 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 
 .console{display:flex;flex-direction:column;overflow:hidden}
 .console-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--stroke-soft);flex-wrap:wrap}
-.console-head h3{margin:0;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}  .log-body{height:380px;overflow-y:auto;padding:8px;font-family:var(--font-mono);font-size:12px;scroll-behavior:smooth}
+.console-head h3{margin:0;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}  .log-body{height:380px;overflow-y:auto;padding:8px;font-family:var(--font-mono);font-size:12px}
 @media(max-width:620px){.log-body{height:300px}}
 .log-line{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto 20px;align-items:center;gap:8px;
   min-height:44px;padding:4px 10px;border-radius:12px;cursor:pointer;transition:background .15s,transform .15s;animation:logIn .35s var(--easeout) both}
@@ -306,7 +306,8 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .ws-detail-grid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;align-items:start}
 @media(max-width:720px){.ws-detail-grid{grid-template-columns:1fr}}
 .ws-detail-thumb{width:100%;border-radius:14px;border:1px solid var(--stroke-soft)}
-.ws-desc{font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;max-height:220px;overflow-y:auto;border-top:1px solid var(--stroke-soft);margin-top:12px;padding-top:12px}
+.ws-desc{font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;max-height:132px;overflow:hidden;border-top:1px solid var(--stroke-soft);margin-top:12px;padding-top:12px;position:relative}
+.ws-desc.expand{max-height:none}
 .ws-stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px}
 .ws-alert{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;font-size:13px;margin-bottom:14px;
   background:rgba(253,164,175,.08);border:1px solid rgba(253,164,175,.35);color:#FDA4AF}
@@ -433,9 +434,9 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .help-item .h-what{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.5}
 .help-item .h-how{font-size:12px;color:var(--text);margin-top:6px;line-height:1.55}
 .help-item .h-how b{color:var(--emerald)}
-.help-item .h-ex{display:inline-flex;align-items:center;gap:6px;margin-top:8px;max-width:100%;
+.help-item .h-ex{display:inline-flex;align-items:flex-start;gap:6px;margin-top:8px;max-width:100%;
   font-family:var(--font-mono);font-size:11px;color:var(--faint);background:rgba(0,0,0,.3);
-  border:1px solid var(--stroke-soft);padding:3px 9px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  border:1px solid var(--stroke-soft);padding:4px 9px;border-radius:8px;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
 .help-item .h-ex svg{width:12px;height:12px;color:var(--emerald);flex:none}
 .help-foot{padding:10px 18px;border-top:1px solid var(--stroke-soft);font-size:11.5px;color:var(--faint);
   display:flex;justify-content:space-between;gap:8px;flex:none}
@@ -570,7 +571,7 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const pad = n => String(n).padStart(2,'0');
 const fmtClock = t => { const d = new Date(t); return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); };
 function hexToRgb(h){ h = h.replace('#',''); if (h.length===3) h = h.split('').map(c=>c+c).join(''); const n = parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255].join(','); }
@@ -581,7 +582,10 @@ function fmtUp(sec){
   return (d ? d+'d ' : '') + pad(h)+':'+pad(m)+':'+pad(s);
 }
 function hlJSON(obj){
-  const s = esc(JSON.stringify(obj, null, 2));
+  // esc() now escapes quotes for attribute safety, but the highlighting regex
+  // below needs literal " chars — the inspector body is text content, so raw
+  // quotes are harmless there. Restore them before matching.
+  const s = esc(JSON.stringify(obj, null, 2)).replace(/&quot;/g, '"');
   return s.replace(/("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g, m => {
     let cls = 'tk-num';
     if (/^"/.test(m)) cls = /:\s*$/.test(m) ? 'tk-key' : 'tk-str';
@@ -749,6 +753,7 @@ const TOOL_GUIDES = {
 function openHelp(){
   const modal = $('#helpModal'); if (!modal) return;
   const body = $('#helpBody');
+  S._prevFocus = document.activeElement;
   const count = $('#helpCount'); if (count) count.textContent = S.tools.length + ' tools';
   let html = '';
   for (const cat of TOOL_CATS){
@@ -770,11 +775,13 @@ function openHelp(){
   body.innerHTML = html || '<div class="md-p" style="color:var(--faint)">Tools not loaded yet — try again in a moment.</div>';
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
+  const fb = modal.querySelector('button'); if (fb) fb.focus();
 }
 function closeHelp(){
   const modal = $('#helpModal'); if (!modal) return;
   modal.classList.remove('open');
   document.body.style.overflow = '';
+  if (S._prevFocus && S._prevFocus.focus) S._prevFocus.focus();
 }
 /* Whole-program guide (main page) */
 const GUIDE_STEPS = [
@@ -790,6 +797,7 @@ const GUIDE_STEPS = [
 function openGuide(){
   const modal = $('#guideModal'); if (!modal) return;
   const body = $('#guideBody');
+  S._prevFocus = document.activeElement;
   body.innerHTML =
     '<div class="guide-hero">'+ICONS.spark+'<div>' +
       '<div class="guide-hero-title">Welcome to the Control Deck</div>' +
@@ -802,11 +810,13 @@ function openGuide(){
       '</div>').join('');
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
+  const fb = modal.querySelector('button'); if (fb) fb.focus();
 }
 function closeGuide(){
   const modal = $('#guideModal'); if (!modal) return;
   modal.classList.remove('open');
   document.body.style.overflow = '';
+  if (S._prevFocus && S._prevFocus.focus) S._prevFocus.focus();
 }
 
 /* ---------- state ---------- */
@@ -818,8 +828,8 @@ const S = {
   ws: { results: [], detail: null, busy: false, error: null, actionError: null, downloading: false, download: null, analyzing: false, report: null, phase: null, startedAt: 0, pipeTimer: 0,
     dl: { active:false, paused:false, reqPaused:false, pct:0, bytes:0, expected:0, elapsed:0, phase:null, startedAt:0, timer:0 } },
   wsDir: null,
-  logs:[], fid:0, methodById:new Map(), resLatency:new Map(),
-  serverLog:[], seq:0,
+  logs:[], fid:0, methodById:new Map(), resLatency:new Map(), reqAt:new Map(),
+  serverLog:[], seq:0, _followAt:0, _prevFocus:null,
   lat:{ ema:null, calls:0, spark:[] },
   memSpark:[], sesSpark:[], itemsSpark:[], upSpark:[],
   events:[], lastResult:null,
@@ -892,7 +902,7 @@ async function handshake(){
   S.handshaken = true;
   setConn('live');
   addEvent('handshake · ' + S.tools.length + ' tools registered');
-  loadWorkshopDir();
+  loadWorkshopDir(); loadEnv();
   renderView();
 }
 
@@ -921,13 +931,24 @@ function connectEvents(){
 }
 function onFrame(f){
   if (f.dir === 'req' && f.msg.id !== undefined) S.methodById.set(f.msg.id, f.msg.method);
+  if (f.dir === 'req' && f.msg.id !== undefined) S.reqAt.set(f.msg.id, f.t);
   const entry = { id:'F' + (++S.fid), dir:f.dir, t:f.t, msg:f.msg,
     method: f.msg.method || (f.dir === 'res' ? (S.methodById.get(f.msg.id) || 'response') : 'notification') };
-  if (f.dir === 'res') entry.latency = S.resLatency.get(f.msg.id);
+  if (f.dir === 'res'){
+    // Latency = bridge req-frame → res-frame delta (frame timestamps always
+    // exist for both sides, so the wire-log latency column is never empty).
+    const t0 = f.msg.id !== undefined ? S.reqAt.get(f.msg.id) : undefined;
+    entry.latency = t0 != null ? Math.max(0, f.t - t0) : S.resLatency.get(f.msg.id);
+    if (f.msg.id !== undefined) S.reqAt.delete(f.msg.id);
+  }
   S.logs.push(entry); if (S.logs.length > 300) S.logs.shift();
   appendLogLine(entry);
   const cnt = $('#logCount'); if (cnt) cnt.textContent = S.logs.length + ' frames';
-  if (term.open && S.settings.follow) showPayload(entry);
+  if (term.open && S.settings.follow){
+    // Throttle inspector re-renders so a frame burst can't thrash the DOM.
+    const now = performance.now();
+    if (now - (S._followAt || 0) > 100){ S._followAt = now; showPayload(entry); }
+  }
 }
 
 /* ---------- telemetry ---------- */
@@ -936,7 +957,7 @@ function applyTelemetry(t){
   if (t.memMB != null){ S.memSpark.push(t.memMB); if (S.memSpark.length > 24) S.memSpark.shift(); }
   S.sesSpark.push(t.sessions || 0); if (S.sesSpark.length > 24) S.sesSpark.shift();
   S.itemsSpark.push(t.db?.total || 0); if (S.itemsSpark.length > 24) S.itemsSpark.shift();
-  S.upSpark.push(1); if (S.upSpark.length > 24) S.upSpark.shift();
+  S.upSpark.push(t.uptime ?? 0); if (S.upSpark.length > 24) S.upSpark.shift();
   $('#upChip').textContent = '⏱ ' + fmtUp(t.uptime);
   updateStatusDom(); renderDbStats();
 }
@@ -994,7 +1015,7 @@ function renderView(){
   }
   if (S.view === 'database') renderDbStats();
   if (S.view === 'workshop') renderWorkshopResults();
-  if (S.view === 'settings') loadWorkshopDir();
+  if (S.view === 'settings'){ loadWorkshopDir(); loadEnv(); }
   requestAnimationFrame(moveIndicator);
 }
 function bannerHTML(){
@@ -1025,7 +1046,7 @@ function statusHTML(){
     metricCard('up','Uptime','var(--cyan)','<span class="badge b-info" id="upPid">pid —</span>') +
     metricCard('mem','Memory · RSS','var(--violet)','<span class="badge b-vio">budget '+MEM_BUDGET_MB+' MB</span>') +
     metricCard('lat','Tool-Call Latency','var(--emerald)','<span class="badge b-ok" id="latCalls">0 calls</span>') +
-    metricCard('items','Indexed Items','var(--amber)','<span class="badge b-warn" id="refBadge">0 refs</span>') +
+    metricCard('items','Indexed Items','var(--amber)','<span class="badge b-dim" id="refBadge">— refs</span>') +
   '</div>' +
   '<div class="status-grid">' +
     '<section class="glass card panel-card"><h3>'+ICONS.link+' Transports & State</h3><div id="transportRows"></div></section>' +
@@ -1071,7 +1092,7 @@ function updateStatusDom(){
 
   const it = $('#mv-items'); if (it) it.textContent = (t?.db?.total ?? 0).toLocaleString();
   setRing('items', t?.db ? clamp(t.db.total/60000, 0, 1) : 0, t?.db ? (t.db.total/1000).toFixed(1)+'k' : '0');
-  const rb = $('#refBadge'); if (rb) rb.textContent = (t?.db?.references ?? 0).toLocaleString() + ' refs';
+  const rb = $('#refBadge'); if (rb) rb.textContent = t?.db ? (t.db.references ?? 0).toLocaleString() + ' refs' : '— refs';
 
   drawSpark('up', S.sesSpark); drawSpark('mem', S.memSpark); drawSpark('lat', S.lat.spark); drawSpark('items', S.itemsSpark);
 
@@ -1361,6 +1382,15 @@ function renderToolStack(){
 }
 function expandPanel(card, open){
   const panel = $('.tool-panel', card), head = $('.tool-head', card);
+  if (!panel || !head) return;
+  // Reduce-motion / prefers-reduced-motion: skip the WAAPI animation entirely.
+  if (document.documentElement.classList.contains('rm')){
+    card.classList.toggle('open', open);
+    head.setAttribute('aria-expanded', String(open));
+    panel.style.height = open ? 'auto' : '0px';
+    panel.style.opacity = open ? '1' : '0';
+    return;
+  }
   if (open){
     card.classList.add('open'); head.setAttribute('aria-expanded','true');
     panel.style.opacity = '0'; panel.style.height = '0px';
@@ -1502,24 +1532,27 @@ function renderRecent(){
       '<span class="r-time num">'+fmtClock(r.t)+'</span>' +
     '</button>').join('');
 }
+function resultHeadHTML(r){
+  const long = r.text && r.text.length > 6000;
+  return '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">'+(ICONS[TOOL_ICONS[r.name]]||ICONS.spark)+'</span>' +
+    '<span class="mono" style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</span>' +
+    (r.isError ? '<span class="badge b-err">✖ error</span>' : '<span class="badge b-ok">✓ '+(r.dt != null ? r.dt+'ms' : 'done')+'</span>') +
+    '<span style="flex:1"></span>' +
+    '<button class="btn sm ghost" data-act="copy-result">'+ICONS.copy+' Copy</button>' +
+    (long ? '<button class="btn sm" data-act="res-toggle">Show more</button>' : '') +
+    (r.script ? '<button class="btn sm" data-act="copy-script">'+ICONS.copy+' Copy script</button>' : '') +
+    (r.script && r.name === 'generate_script' ? '<button class="btn sm primary" data-act="to-validate">'+ICONS.shield+' Validate it</button>' : '') +
+    (r.reply ? '<button class="btn sm ghost" data-act="inspect-raw">raw JSON</button>' : '') +
+    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px;flex:none" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
+}
 function showResult(name, text, dt, reply, isError){
   const card = $('#resultCard'); if (!card) return;
   const fences = text.match(/```[\s\S]*?```/);
   const script = fences ? fences[0].replace(/^```[a-zA-Z]*\r?\n?/, '').replace(/```$/, '') : null;
-  S.lastResult = { name, text, script, reply, isError };
+  S.lastResult = { name, text, script, reply, isError, dt };
   const long = text.length > 6000;
   card.style.display = '';
-  $('#resultHead').innerHTML =
-    '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">'+(ICONS[TOOL_ICONS[name]]||ICONS.spark)+'</span>' +
-    '<span class="mono" style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(name)+'</span>' +
-    (isError ? '<span class="badge b-err">✖ error</span>' : '<span class="badge b-ok">✓ '+dt+'ms</span>') +
-    '<span style="flex:1"></span>' +
-    '<button class="btn sm ghost" data-act="copy-result">'+ICONS.copy+' Copy</button>' +
-    (long ? '<button class="btn sm" data-act="res-toggle">Show more</button>' : '') +
-    (script ? '<button class="btn sm" data-act="copy-script">'+ICONS.copy+' Copy script</button>' : '') +
-    (script && name === 'generate_script' ? '<button class="btn sm primary" data-act="to-validate">'+ICONS.shield+' Validate it</button>' : '') +
-    (reply ? '<button class="btn sm ghost" data-act="inspect-raw">raw JSON</button>' : '') +
-    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px;flex:none" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
+  $('#resultHead').innerHTML = resultHeadHTML(S.lastResult);
   const body = $('#resultBody');
   body.classList.toggle('long', long);
   body.classList.remove('show-all');
@@ -1551,15 +1584,7 @@ function restoreResult(){
   const r = S.lastResult;
   const long = r.text && r.text.length > 6000;
   card.style.display = '';
-  $('#resultHead').innerHTML =
-    '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">'+(ICONS[TOOL_ICONS[r.name]]||ICONS.spark)+'</span>' +
-    '<span class="mono" style="font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</span>' +
-    (r.isError ? '<span class="badge b-err">✖ error</span>' : '<span class="badge b-ok">✓ done</span>') +
-    '<span style="flex:1"></span>' +
-    '<button class="btn sm ghost" data-act="copy-result">'+ICONS.copy+' Copy</button>' +
-    (long ? '<button class="btn sm" data-act="res-toggle">Show more</button>' : '') +
-    (r.script ? '<button class="btn sm" data-act="copy-script">'+ICONS.copy+' Copy script</button>' : '') +
-    '<button class="ibtn" style="width:36px;height:36px;border-radius:10px;flex:none" data-act="close-result" aria-label="Close result">'+ICONS.x+'</button>';
+  $('#resultHead').innerHTML = resultHeadHTML(r);
   const body = $('#resultBody');
   body.classList.toggle('long', long);
   body.classList.remove('show-all');
@@ -1590,6 +1615,7 @@ function appendLogLine(e){
 }
 function renderAllLogs(){
   const body = $('#logBody'); if (!body) return;
+  if (body.childElementCount === S.logs.length && S.logs.length > 0) return;
   body.innerHTML = S.logs.length ? S.logs.map(logLineHTML).join('')
     : '<div class="log-empty">No frames yet — run a tool and watch the real JSON-RPC traffic here.</div>';
   if (S.settings.autoScroll) body.scrollTop = body.scrollHeight;
@@ -1689,13 +1715,14 @@ function renderWorkshopResults(){
   const body = $('#wsBody'); if (!body) return;
   if (S.ws.busy){ body.innerHTML = '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> querying Steam…</div>'; return; }
   if (S.ws.error){ body.innerHTML = '<div class="md-out" style="color:#FDA4AF">✖ '+esc(S.ws.error)+'</div>'; return; }
-  if (S.ws.detail){ body.innerHTML = wsDetailHTML(S.ws.detail); return; }
+  if (S.ws.detail){ body.innerHTML = wsDetailHTML(S.ws.detail); wsReportToggleFix(); return; }
   const r = S.ws.results || [];
   if (!r.length){ body.innerHTML = '<div class="md-out" style="color:var(--faint)">No results yet — search above, or paste a workshop URL/id for guaranteed metadata.</div>'; return; }
   body.innerHTML = '<div class="sec-title" style="margin:0 2px 10px">'+r.length+' result(s) · click a card to fetch details</div>' +
     '<div class="ws-grid">'+r.map(wsCardHTML).join('')+'</div>';
 }
 async function wsSearch(){
+  if (S.ws.busy){ toast('A workshop request is already running','warn'); return; }
   const q = $('#wsQuery').value.trim();
   if (!q){ toast('Type a search query','warn'); return; }
   clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
@@ -1716,6 +1743,7 @@ async function wsSearch(){
   } finally { if (btn) btn.disabled = false; }
 }
 async function wsFetchDetails(input, forceRefresh){
+  if (S.ws.busy){ toast('A workshop request is already running','warn'); return; }
   clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
   wsDlReset();
   S.ws.busy = true; S.ws.error = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
@@ -1744,7 +1772,7 @@ function wsDownloadResultHTML(r){
   return '<div class="md-out" style="margin-top:12px">' +
     '<div class="md-h">✅ Downloaded — '+esc(r.downloadedPath)+'</div>' +
     '<div class="md-p">'+ICONS.db+' '+esc(fmtBytes(r.bytes))+' in '+(r.elapsedMs/1000).toFixed(1)+'s · steamcmd attempts: '+esc(String(r.attempts))+'</div>' +
-    '<div class="md-p" style="color:var(--faint)">Next: run the analyze pipeline on this folder (M3).</div></div>';
+    '<div class="md-p" style="color:var(--faint)">Next: click <b>Fetch &amp; Analyze</b> to run the full pipeline — download, parse and a complete Mod Report.</div></div>';
 }
 /* Progress for workshop_download: the server streams
  * "workshop_download: progress N% (b/e bytes)" + phase lines via pino → SSE. */
@@ -1858,6 +1886,12 @@ function wsReportHTML(r){
     '<div style="padding:0 16px 4px">' + chips.join('') + '</div>' +
     '<div class="md-out ws-report-body" id="wsReportBody" style="border-radius:0;border:0;border-top:1px solid var(--stroke-soft)">' + renderMD(r.text) + '</div>' +
   '</section>';
+}
+function wsReportToggleFix(){
+  const body = $('#wsReportBody'), btn = $('#wsToggleBtn');
+  if (!body || !btn) return;
+  // Only offer "Show more" when the report actually overflows its box.
+  btn.style.display = body.scrollHeight > body.clientHeight + 4 ? '' : 'none';
 }
 async function wsAnalyze(id){
   if (S.ws.analyzing) return;
@@ -1981,7 +2015,7 @@ function wsDetailHTML(d){
         (S.ws.dl.active && !S.ws.dl.paused ? wsDlMeterHTML(d.id) : '') +
         (S.ws.download ? wsDownloadResultHTML(S.ws.download) : '') +
         (S.ws.report ? wsReportHTML(S.ws.report) : '') +
-        (d.description ? '<div class="ws-desc">'+esc(d.description)+'</div>' : '') +
+        (d.description ? '<div class="ws-desc" id="wsDesc">'+esc(d.description)+'</div>' + (d.description.length > 420 ? '<button class="btn sm ghost" data-act="ws-desc-toggle" id="wsDescToggle" style="margin-top:10px">Show full description</button>' : '') : '') +
       '</div>' +
     '</div></section>';
 }
@@ -2019,8 +2053,9 @@ function settingsHTML(){
     '<section class="glass card panel-card"><h3>'+ICONS.link+' Server</h3>' +
       '<div class="set-row"><div><div class="lbl">Restart MCP server</div><div class="sub">Bridge kills the child process and respawns it</div></div>' +
         '<button class="btn danger" data-act="restart" '+(S.conn!=='live'?'disabled':'')+'>'+ICONS.power+' Restart</button></div>' +
-      '<div class="set-row"><div><div class="lbl">Server log level</div><div class="sub">Set before starting the bridge</div></div><span class="badge b-dim mono">PZ_MCP_LOG_LEVEL=info</span></div>' +
-      '<div class="set-row"><div><div class="lbl">Knowledge base path</div><div class="sub">index_knowledge_base reads this env, defaults to D:\PZ-Modding\Documentation</div></div><span class="badge b-dim mono">PZ_MCP_KB_PATH</span></div>' +
+      '<div class="set-row"><div><div class="lbl">Server log level</div><div class="sub">Live from the bridge env</div></div><span class="badge b-dim mono" id="envLogLevel">…</span></div>' +
+      '<div class="set-row"><div><div class="lbl">Knowledge base path</div><div class="sub">Live from the bridge env</div></div><span class="badge b-dim mono" id="envKbPath">…</span></div>' +
+      '<div class="set-row"><div><div class="lbl">SteamCMD</div><div class="sub">Workshop downloads use this binary</div></div><span class="badge b-dim mono" id="envSteamCmd">…</span></div>' +
     '</section>' +
     '<section class="glass card panel-card"><h3>'+ICONS.db+' About</h3>' +
       '<div class="krow"><span class="k">Server</span><span class="v">'+esc((S.serverInfo?.name||'pz-mcp-server')+' v'+(S.serverInfo?.version||'—'))+'</span></div>' +
@@ -2038,6 +2073,15 @@ async function restartServer(){
     setConn('connecting');
     setTimeout(() => handshake().catch(() => setConn('offline')), 2500);
   } catch { toast('Bridge unreachable','warn'); }
+}
+async function loadEnv(){
+  try {
+    const r = await fetch('/api/env');
+    const d = await r.json();
+    const ll = $('#envLogLevel'); if (ll && d.logLevel) ll.textContent = 'PZ_MCP_LOG_LEVEL=' + d.logLevel;
+    const kp = $('#envKbPath'); if (kp && d.kbPath) kp.textContent = 'PZ_MCP_KB_PATH=' + d.kbPath;
+    const sc = $('#envSteamCmd'); if (sc && d.steamCmdPath) sc.textContent = 'STEAMCMD_PATH=' + d.steamCmdPath;
+  } catch { /* bridge not up yet */ }
 }
 async function loadWorkshopDir(){
   try {
@@ -2158,6 +2202,7 @@ document.addEventListener('click', e => {
       const id = act.dataset.cat;
       const open = act.getAttribute('aria-expanded') !== 'true';
       S.pg.cats[id] = open;
+      try{ localStorage.setItem('pzdeck.pgcats', JSON.stringify(S.pg.cats)); }catch(e){}
       act.setAttribute('aria-expanded', String(open));
       act.closest('.cat').classList.toggle('open', open);
       const body = act.nextElementSibling;
@@ -2224,8 +2269,14 @@ document.addEventListener('click', e => {
       const open = body.classList.toggle('expand');
       btn.textContent = open ? 'Show less' : 'Show more';
     }
+    else if (a === 'ws-desc-toggle'){
+      const body = $('#wsDesc'), btn = $('#wsDescToggle');
+      if (!body) return;
+      const open = body.classList.toggle('expand');
+      if (btn) btn.textContent = open ? 'Show less' : 'Show full description';
+    }
     else if (a === 'open-term') openTerminal();
-    else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); renderAllLogs(); toast('Local wire log cleared'); }
+    else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); S.reqAt.clear(); renderAllLogs(); toast('Local wire log cleared'); }
     else if (a === 'restart') restartServer();
     else if (a === 'reconnect') handshake().catch(() => setConn('offline'));
     else if (a === 'copy-script'){
@@ -2313,6 +2364,19 @@ document.addEventListener('change', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  // Modal focus trap: keep Tab/Shift+Tab cycling inside an open help/guide
+  // dialog so keyboard users can't tab out into the page behind it.
+  const openModal = $('#helpModal').classList.contains('open') ? $('#helpModal')
+    : $('#guideModal').classList.contains('open') ? $('#guideModal') : null;
+  if (openModal && e.key === 'Tab'){
+    const f = openModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (f.length){
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    }
+    return;
+  }
   const inField = walkUp(e.target, 'input,textarea,select,[contenteditable]');
   if (inField){
     if (e.key === 'Enter' && inField.id === 'dbQuery'){ e.preventDefault(); dbSearch(); }
@@ -2349,26 +2413,37 @@ $('#tabbar').addEventListener('keydown', e => {
 function initParallax(){
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const l1 = $('#pxl1'), l2 = $('#pxl2');
-  let tx = 0, ty = 0, cx = 0, cy = 0;
-  addEventListener('pointermove', e => { tx = e.clientX/innerWidth - .5; ty = e.clientY/innerHeight - .5; }, { passive:true });
-  (function loop(){
+  let tx = 0, ty = 0, cx = 0, cy = 0, lastMove = 0, raf = 0;
+  addEventListener('pointermove', e => {
+    tx = e.clientX/innerWidth - .5; ty = e.clientY/innerHeight - .5; lastMove = performance.now();
+    if (!raf) raf = requestAnimationFrame(loop);
+  }, { passive:true });
+  function loop(){
     cx += (tx - cx) * .045; cy += (ty - cy) * .045;
     if (!document.documentElement.classList.contains('rm')){
       l1.style.transform = 'translate3d(' + (cx*32) + 'px,' + (cy*24) + 'px,0)';
       l2.style.transform = 'translate3d(' + (cx*-52) + 'px,' + (cy*-40) + 'px,0)';
     }
-    requestAnimationFrame(loop);
-  })();
+    // Idle pause: after 1.5s without pointer movement, park the layers and
+    // stop the rAF loop so an open dashboard stops consuming a frame budget.
+    if (performance.now() - lastMove > 1500){
+      raf = 0;
+      return;
+    }
+    raf = requestAnimationFrame(loop);
+  }
 }
 
 /* ==================== BOOT ==================== */
 function boot(){
   loadSettings();
+  try{ Object.assign(S.pg.cats, JSON.parse(localStorage.getItem('pzdeck.pgcats') || '{}')); }catch(e){}
   applyAccent(S.settings.accent);
   if (S.settings.reduceMotion) document.documentElement.classList.add('rm');
   bindTerminal();
   connectEvents();
   renderView();
+  moveIndicator();
   $('#btnTermTop').addEventListener('click', () => openTerminal());
   handshake().catch(() => setConn('offline'));
   setInterval(() => { if (!S.handshaken && S.conn === 'offline') handshake().catch(() => {}); }, 5000);
