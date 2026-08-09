@@ -149,6 +149,14 @@ export class RecipeAnalyzer {
   private idx: WalkGraphIndex | null = null;
 
   /**
+   * Cross-call index cache (reviewer: index caching). The walk index loads
+   * the full mirror + items + references tables; rebuilding it on every call
+   * wastes 10–20ms on unchanged data. Keyed on the DB graph stamp — a
+   * re-parse or newly parsed mod changes the stamp and the next call rebuilds.
+   */
+  private indexCache: { stamp: string; idx: WalkGraphIndex } | null = null;
+
+  /**
    * Resolve `id` to its canonical items row (the id as stored in the DB).
    * Tries every candidate spelling — bare, "Base."-qualified and "base:"-tag —
    * so "Base.Flour2", "Flour2" and "base:flour2" all land on the same row
@@ -178,6 +186,22 @@ export class RecipeAnalyzer {
     this.itemCache.clear();
     this.nodeCache.clear();
     this.idx = null;
+  }
+
+  /**
+   * Reuse the cached walk index while the graph tables are unchanged, else
+   * rebuild it (see buildWalkIndex). This is the only per-call cost of the
+   * graph index — the full-table loads are skipped on every call whose DB
+   * stamp matches the last build.
+   */
+  private async cachedWalkIndex(): Promise<WalkGraphIndex> {
+    const stamp = await this.db.getGraphStamp();
+    if (this.indexCache && this.indexCache.stamp === stamp) {
+      return this.indexCache.idx;
+    }
+    const idx = await this.buildWalkIndex(this.db);
+    this.indexCache = { stamp, idx };
+    return idx;
   }
 
   /**
@@ -485,7 +509,7 @@ export class RecipeAnalyzer {
     // ids hit the cache instead of re-querying the DB per node (reviewer:
     // N+1). The index is the mirror + references + item-tag edge store.
     this.clearCaches();
-    this.idx = await this.buildWalkIndex(this.db);
+    this.idx = await this.cachedWalkIndex();
     const seedRes = await this.resolveItem(seed);
     const seedId = seedRes ? seedRes.id : seed;
     const seedKind: ChainNode["kind"] = seedRes

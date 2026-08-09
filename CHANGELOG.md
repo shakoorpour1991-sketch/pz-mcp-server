@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The parser now also emits mirror rows as `references` rows during `parse_game_files`, so fresh parses carry the same edges in both stores
 
 ### Added
+- **Recipe Chain: fullscreen-only graph, dense collapse, smooth panning** (Control Deck Chain tab):
+  - **Real fullscreen**: the graph now renders ONLY in a true browser-fullscreen layer (`requestFullscreen` on `#chainFs`) — the tab shows a launcher card with graph stats; Esc / exit button / OS exit returns to the launcher automatically, with a windowed-overlay fallback if the browser blocks fullscreen
+  - **Smooth 60fps panning**: zoom/pan are pure transform writes (never repaint the graph), wheel-zoom coalesced per frame, drag inertia ("flick" with exponential decay), middle-button pan, touch pinch-zoom, arrow-key nudge, animated ease-out zoom for buttons/fit, double-click or `0` to fit, re-fit on fullscreen enter and window resize (user view preserved once they pan/zoom)
+  - **Dense graph collapse**: per-column cap slider (3–30), a dense-pill mode that collapses any column over the cap into one aggregate pill (click to expand), and per-node subtree collapse chevrons (−/+) that prune the branch from the layout; edges flow through pills in both directions
+  - **Tag input edges** render violet & dashed (dedicated arrow marker + legend entry) so tag-resolved inputs are visually distinct from direct item inputs
+- **`analyze_recipe_chain`: graph index caching** — the mirror+references+tag edge index is cached per database generation (`getGraphStamp`, auto-invalidated when the DB changes), so repeated/expanded walks skip rebuilding it
+- **Game DB re-parsed** with the mirror→references parser emission — `references` ingredient rows grew from 228 to 3,848 (+758 tag-ingredient); verified live: Plank 3→36 consumers, Flour2 14 consumers via tags, path FlaxSeed→RippleFlax→FlaxRippled
+
+### Added
 - **Recipe Chain roadmap (7 items)** — richer chain browsing in `analyze_recipe_chain` + the Control Deck Chain tab:
   - **Rich node payloads**: every chain node now carries item stats (`props`: Type/category/weight/calories/hunger/thirst/tags) and recipe metadata (`meta`: category/time/skill/skillLevel/tools) straight from the DB — one round trip, no extra tool calls; the admin inspector shows them
   - **Expand-in-place**: new `expandNode` param returns a one-hop delta around any node — the dashboard merges it into the existing graph instead of re-walking from the seed (no more rebuild-everything on big graphs)

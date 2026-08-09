@@ -1399,6 +1399,25 @@ export class DatabaseManager {
   }
 
   /**
+   * Cheap fingerprint of the graph tables (COUNT + MAX(rowid) per table, one
+   * query). RecipeAnalyzer caches its in-memory walk index and only rebuilds
+   * it when this stamp changes — a re-parse or a newly parsed mod bumps a
+   * rowid/count, so the per-call full-table loads only happen when the data
+   * actually changed (reviewer: index caching).
+   */
+  async getGraphStamp(): Promise<string> {
+    const row = this.db
+      .prepare(
+        `SELECT
+          (SELECT COUNT(*) FROM items) || ':' || (SELECT IFNULL(MAX(rowid),0) FROM items) || '|' ||
+          (SELECT COUNT(*) FROM recipe_ingredients) || ':' || (SELECT IFNULL(MAX(rowid),0) FROM recipe_ingredients) || '|' ||
+          (SELECT COUNT(*) FROM "references") || ':' || (SELECT IFNULL(MAX(rowid),0) FROM "references") AS stamp`,
+      )
+      .get() as unknown as { stamp: string };
+    return row.stamp;
+  }
+
+  /**
    * The graph-relevant references rows (item-type ingredient/result/output
    * edges) in one pass — the legacy supplement to the recipe_ingredients
    * mirror for the recipe-chain walk. Sprite/sound/model rows are excluded

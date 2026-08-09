@@ -168,6 +168,8 @@ describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
       getRecipeIngredientIndex: async () => mirrorRows,
       getGraphItems: async () => graphItems,
       getReferenceEdges: async () => refEdges,
+      // Stable stub stamp: the index is cached across calls (never rebuilt).
+      getGraphStamp: async () => data.stamp ?? 'stub',
     };
   }
 
@@ -623,5 +625,29 @@ describe('RecipeAnalyzer chain-graph consumers (recipe_ingredients mirror fix)',
     assert.ok(ids.includes('Flour2'));
     assert.ok(ids.includes('MakeFlour'));
     assert.ok(ids.includes('Wheat'));
+  });
+
+  test('index cache invalidates when the DB changes (new edges are seen)', async () => {
+    // First call builds the cached index from the seeded data.
+    const before = await analyzer.analyzeChain('Plank', 'both', 1);
+    assert.equal(
+      before.nodes.find((n) => n.id === 'Plank').consumedBy.includes('MakeNewBox'),
+      false,
+    );
+    // Simulate a re-parse: a new recipe + its mirror rows (stamp changes →
+    // the cached index must be rebuilt on the next call).
+    await db.insertItems([
+      { id: 'MakeNewBox', name: 'MakeNewBox', displayName: 'Make New Box', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+    ]);
+    await db.insertRecipes([
+      { id: 'MakeNewBox', name: 'MakeNewBox', module: 'Base', result: 'Base.NewBox', resultCount: 1, properties: {}, filePath: 'x.txt' },
+    ]);
+    await db.insertRecipeIngredients([
+      { recipeId: 'MakeNewBox', ref: 'Base.Plank', refType: 'item', count: 2, role: 'ingredient', sortOrder: 0 },
+    ]);
+
+    const after = await analyzer.analyzeChain('Plank', 'both', 1);
+    const plank = after.nodes.find((n) => n.id === 'Plank');
+    assert.ok(plank.consumedBy.includes('MakeNewBox'), 'rebuilt index sees the new consumer');
   });
 });
