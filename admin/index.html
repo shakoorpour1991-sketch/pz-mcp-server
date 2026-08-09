@@ -486,6 +486,8 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-svgwrap.trunc{border-style:dashed;border-color:rgba(251,191,36,.5)}
 .chain-svg{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 .chain-svg.dragging{cursor:grabbing}
+.chain-svg #chainG{will-change:transform}
+.chain-svg.dragging .chain-node rect{filter:none!important;transition:none!important}
 .chain-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .chain-tools .spacer{flex:1}
 .chain-node{cursor:pointer}
@@ -518,6 +520,9 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-canvas.fs{position:fixed;inset:12px;z-index:85;border-radius:18px;border:1px solid var(--stroke-soft);background:rgba(4,8,16,.94);
   padding:12px;box-shadow:0 24px 60px rgba(0,0,0,.55);backdrop-filter:blur(14px)}
 .chain-canvas.fs .chain-svgwrap{flex:1;height:auto}
+.chain-insp-fs{position:absolute;top:64px;right:16px;width:min(320px,calc(100% - 32px));max-height:calc(100% - 96px);overflow:auto;z-index:2;padding:12px;border-radius:14px}
+.insp-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.chain-rebuild{position:sticky;top:0;z-index:5;margin-top:10px;width:max-content;max-width:100%;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:6px 12px;border-radius:999px;background:rgba(16,20,30,.9);border:1px solid var(--stroke-soft)}
 </style>
 </head>
 <body>
@@ -2181,7 +2186,8 @@ function renderChain(){
   if (emptyDb) html += '<div class="ws-alert" style="margin-bottom:14px">'+ICONS.warn+' The database is empty — run <b>parse_game_files</b> once so the graph has real crafting data. <button class="btn sm primary" style="margin-left:auto" data-act="go-tool" data-tool="parse_game_files">'+ICONS.db+' parse_game_files</button></div>';
   if (c.confBusy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> scanning recipes for conflicts…</div>';
   else if (c.conflicts) html += chainConflictsHTML();
-  if (c.busy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> expanding crafting graph…</div>';
+  if (c.busy && c.layout) html += chainGraphHTML() + '<div class="chain-rebuild"><span class="spinner" style="width:12px;height:12px"></span> rebuilding graph…</div>';
+  else if (c.busy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> expanding crafting graph…</div>';
   else if (c.error) html += '<div class="md-out" style="color:#FDA4AF;margin-top:14px">✖ '+esc(c.error)+'</div>';
   else if (c.layout) html += chainGraphHTML();
   else if (c.sugg) html += chainSuggHTML();
@@ -2190,7 +2196,9 @@ function renderChain(){
   if (c.layout){
     chainPaint();
     bindChainSvg();
-    if (!c.fitted){ c.fitted = true; requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); }); }
+    // Never fit while busy (rebuild): the old graph shown during rebuild must not
+    // claim the fit — the arriving new graph fits instead.
+    if (!c.fitted && !c.busy){ c.fitted = true; requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); }); }
   }
 }
 function chainConflictsHTML(){
@@ -2235,8 +2243,11 @@ async function chainRun(seedOverride){
   const seed = seedOverride ?? (f ? f.value.trim() : '');
   if (!seed){ toast('Type an item or recipe id first','warn'); return; }
   if (f) f.value = seed;
+  const newSeed = seed !== c.seed;
   c.seed = seed; c.insp = null; c.sugg = null; c.error = null;
-  c.busy = true; c.graph = null; c.layout = null; c.expLayers = {}; c.fitted = false;
+  c.busy = true;
+  if (newSeed) c.fitted = false; // new seed re-fits; depth/direction tweaks preserve the current view
+  c.expLayers = {};
   chainDropClose();
   const btn = $('#chainRunBtn');
   if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> Building…'; }
@@ -2250,12 +2261,14 @@ async function chainRun(seedOverride){
       renderChain();
       addEvent('recipe chain · ' + g.seed + ' → ' + (g.nodes.length - 1) + ' linked');
     } else {
+      c.graph = null; c.layout = null;
       c.sugg = { seed: g.seed, kind: g.seedKind, results: [] };
       renderChain();
       chainSuggest(g.seed);
     }
   } catch (e){
     c.busy = false; c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    c.graph = null; c.layout = null; // drop the stale view when a build fails
     renderChain();
   } finally {
     if (btn){ btn.disabled = false; btn.innerHTML = ICONS.play+' Build graph'; }
@@ -2448,6 +2461,7 @@ function chainGraphHTML(){
         '<button class="ibtn" data-act="chain-fit" style="width:34px;height:34px;border-radius:10px" title="Fit view" aria-label="Fit view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomout" style="width:34px;height:34px;border-radius:10px" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomin" style="width:34px;height:34px;border-radius:10px" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
+        '<span class="badge b-dim mono" id="chainZoomVal" style="min-width:46px;text-align:center;font-size:11px">'+Math.round(S.chain.zoom * 100)+'%</span>' +
         '<button class="ibtn" data-act="chain-full" style="width:34px;height:34px;border-radius:10px" title="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'" aria-label="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'">'+(c.fs ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15h-6v-6M3 9h6v6M21 21l-6-6M3 3l6 6"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>')+'</button>' +
       '</div>' +
       '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap" style="height:'+(c.fs ? 'auto' : H)+'px">' +
@@ -2467,8 +2481,9 @@ function chainGraphHTML(){
         '<span style="margin-left:auto">drag to pan · ctrl+scroll to zoom</span>' +
       '</div>' +
       (c.graph.truncated ? '<div class="chain-note">'+ICONS.warn+' The server hit its depth limit — raise <b>Depth</b> to expand the graph further.</div>' : '') +
+    (c.fs ? '<div class="glass card panel-card chain-insp-fs" id="chainInspFs">' + (insp ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(insp.name || insp.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node — details appear here.</div>') + '</div>' : '') +
     '</div>' +
-    '<aside class="glass card panel-card chain-insp" id="chainInsp">' +
+    '<aside class="glass card panel-card chain-insp" id="chainInsp"'+(c.fs ? ' hidden' : '')+'>' +
       (insp ? chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it — ingredients, results, producers and consumers. Click again to re-root the graph.</div>') +
     '</aside>' +
   '</div>';
@@ -2546,6 +2561,7 @@ function chainPaint(){
   });
   g.innerHTML = edgeHTML + nodeHTML;
   chainApplyTransform();
+  const zv = $('#chainZoomVal'); if (zv) zv.textContent = Math.round(S.chain.zoom * 100) + '%';
 }
 function chainNodeHTML(n, x, y, extra){
   const cls = n.kind === 'recipe' ? 'r' : n.kind === 'item' ? 'i' : 'u';
@@ -2590,9 +2606,13 @@ function chainInspHTML(n){
     '</div></div>';
 }
 function chainInspPaint(){
-  const box = $('#chainInsp'); if (!box) return;
   const n = S.chain.layout && S.chain.layout.byId.get(S.chain.insp);
-  box.innerHTML = n ? chainInspHTML(n) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it.</div>';
+  const box = $('#chainInsp');
+  if (box) box.innerHTML = n ? chainInspHTML(n) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it.</div>';
+  const fsBox = $('#chainInspFs');
+  if (fsBox) fsBox.innerHTML = n
+    ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(n.name || n.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(n)
+    : '<div style="color:var(--faint);font-size:12.5px">Click any node — details appear here.</div>';
 }
 function chainMarkSel(id){
   $$('#chainG [data-act="chain-node"]').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
@@ -2637,41 +2657,60 @@ function chainFit(){
   S.chain.pan.y = (ch - H * z) / 2;
   chainPaint();
 }
-function chainZoom(f){
+function chainZoom(f, cx, cy){
   const wrap = $('#chainSvgWrap'); if (!wrap) return;
-  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || chainViewH();
+  const r = wrap.getBoundingClientRect();
+  const px = cx != null ? cx - r.left : r.width / 2;
+  const py = cy != null ? cy - r.top : r.height / 2;
   const z = Math.max(0.2, Math.min(3, S.chain.zoom * f));
-  const cx = (cw / 2 - S.chain.pan.x) / S.chain.zoom, cy = (ch / 2 - S.chain.pan.y) / S.chain.zoom;
+  const gx = (px - S.chain.pan.x) / S.chain.zoom, gy = (py - S.chain.pan.y) / S.chain.zoom;
   S.chain.zoom = z;
-  S.chain.pan.x = cw / 2 - cx * z;
-  S.chain.pan.y = ch / 2 - cy * z;
+  S.chain.pan.x = px - gx * z;
+  S.chain.pan.y = py - gy * z;
   chainPaint();
 }
 function bindChainSvg(){
   const svg = $('#chainSvg'); if (!svg) return;
-  let drag = null;
+  let drag = null, panRaf = 0;
+  // Coalesce pan writes to one rAF per frame so dragging stays at 60fps.
+  const panPaint = () => {
+    if (panRaf) return;
+    panRaf = requestAnimationFrame(() => { panRaf = 0; chainApplyTransform(); });
+  };
   svg.addEventListener('pointerdown', e => {
     if (e.target.closest('[data-act]')) return;
     drag = { x: e.clientX, y: e.clientY, px: S.chain.pan.x, py: S.chain.pan.y };
     svg.setPointerCapture(e.pointerId);
     svg.classList.add('dragging');
+    document.body.classList.add('panning');
   });
   svg.addEventListener('pointermove', e => {
     if (!drag) return;
     S.chain.pan.x = drag.px + e.clientX - drag.x;
     S.chain.pan.y = drag.py + e.clientY - drag.y;
     chainClampPan();
-    const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
+    panPaint();
   });
-  const endDrag = () => { drag = null; svg.classList.remove('dragging'); };
+  const endDrag = () => { drag = null; svg.classList.remove('dragging'); document.body.classList.remove('panning'); };
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
+  svg.addEventListener('dblclick', e => { if (!e.target.closest('[data-act]')) chainFit(); });
   svg.addEventListener('wheel', e => {
     const wrap = $('#chainSvgWrap');
     const cw = wrap ? wrap.clientWidth : 600, ch = wrap ? wrap.clientHeight : chainViewH();
     if (e.ctrlKey || e.metaKey){
       e.preventDefault();
-      chainZoom(e.deltaY < 0 ? 1.12 : 0.89);
+      // Coalesce rapid wheel-zoom into one paint per frame (like panPaint).
+      S.chain._zoomAcc = (S.chain._zoomAcc || 0) + (e.deltaY < 0 ? 1 : -1);
+      S.chain._zoomPt = { x: e.clientX, y: e.clientY };
+      if (!S.chain._zoomRaf){
+        S.chain._zoomRaf = requestAnimationFrame(() => {
+          S.chain._zoomRaf = 0;
+          const f = Math.pow(1.12, S.chain._zoomAcc || 0);
+          S.chain._zoomAcc = 0;
+          if (f !== 1 && S.chain.layout){ const pt = S.chain._zoomPt || null; chainZoom(f, pt && pt.x, pt && pt.y); }
+        });
+      }
       return;
     }
     const L = S.chain.layout;
@@ -2682,7 +2721,7 @@ function bindChainSvg(){
       S.chain.pan.x -= e.shiftKey ? e.deltaY : 0;
       S.chain.pan.y += e.shiftKey ? 0 : e.deltaY;
       chainClampPan();
-      const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
+      panPaint();
     }
   }, { passive:false });
 }
@@ -3032,6 +3071,7 @@ document.addEventListener('click', e => {
     else if (a === 'chain-conflicts') chainConflicts();
     else if (a === 'chain-conf-clear'){ S.chain.conflicts = null; renderChain(); }
     else if (a === 'chain-node'){ S.chain.insp = act.dataset.id; chainInspPaint(); chainMarkSel(act.dataset.id); }
+    else if (a === 'chain-insp-close'){ S.chain.insp = null; chainInspPaint(); chainMarkSel(null); }
     else if (a === 'chain-root') chainRun(act.dataset.id);
     else if (a === 'chain-copy-id'){
       navigator.clipboard?.writeText(act.dataset.id).then(() => toast('Copied '+act.dataset.id)).catch(() => toast('Copy blocked by browser','warn'));
@@ -3193,6 +3233,8 @@ function initParallax(){
       l1.style.transform = 'translate3d(' + (cx*32) + 'px,' + (cy*24) + 'px,0)';
       l2.style.transform = 'translate3d(' + (cx*-52) + 'px,' + (cy*-40) + 'px,0)';
     }
+    // Skip while the graph is being dragged — the pan already repaints every frame.
+    if (document.body.classList.contains('panning')){ raf = requestAnimationFrame(loop); return; }
     // Idle pause: after 1.5s without pointer movement, park the layers and
     // stop the rAF loop so an open dashboard stops consuming a frame budget.
     if (performance.now() - lastMove > 1500){
