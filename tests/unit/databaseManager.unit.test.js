@@ -8,7 +8,10 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
-import { DatabaseManager } from '../../dist/database/DatabaseManager.js';
+import {
+  DatabaseManager,
+  referenceCandidates,
+} from '../../dist/database/DatabaseManager.js';
 
 describe('DatabaseManager', () => {
   let tmpDir;
@@ -723,5 +726,47 @@ describe('DatabaseManager D2/D3 fixes', () => {
     assert.strictEqual(counts.item_count, 1);
     healedDb.close();
     fs.rmSync(driftDir, { recursive: true, force: true });
+  });
+
+  describe('recipe-chain reference tolerance', () => {
+    test('referenceCandidates builds bare/qualified spellings and dedupes', () => {
+      assert.deepEqual(referenceCandidates('Base.Flour2'), [
+        'Base.Flour2',
+        'Flour2',
+        'base:flour2',
+      ]);
+      assert.deepEqual(referenceCandidates('Flour2'), [
+        'Flour2',
+        'Base.Flour2',
+        'base:flour2',
+      ]);
+      assert.deepEqual(referenceCandidates('base:flour2'), [
+        'base:flour2',
+        'flour2',
+        'Base.flour2',
+      ]);
+      // Tag-form candidates are lowercase, so they never match a PascalCase
+      // item row — they exist for tag-style reference rows only (harmless).
+    });
+
+    test('getReferencesToAny matches every candidate spelling', async () => {
+      await db.insertItems([
+        { id: 'Flour2', name: 'Flour', displayName: 'Flour', type: 'item', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+        { id: 'R1', name: 'R1', displayName: 'R1', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+        { id: 'R2', name: 'R2', displayName: 'R2', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      ]);
+      await db.addReference('R1', 'Base.Flour2', 'item', 'result');
+      await db.addReference('R2', 'Flour2', 'item', 'ingredient');
+
+      // Both a bare and a qualified spelling reach the same two rows.
+      const bare = await db.getReferencesToAny('Flour2');
+      assert.equal(bare.length, 2);
+      assert.deepEqual(bare.map((r) => r.itemId).sort(), ['R1', 'R2']);
+      const qualified = await db.getReferencesToAny('Base.Flour2');
+      assert.deepEqual(qualified.map((r) => r.itemId).sort(), ['R1', 'R2']);
+      // Tag-form spelling is case-sensitive and matches nothing here.
+      const tag = await db.getReferencesToAny('base:flour2');
+      assert.deepEqual(tag, []);
+    });
   });
 });

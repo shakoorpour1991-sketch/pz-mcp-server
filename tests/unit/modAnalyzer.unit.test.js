@@ -347,6 +347,7 @@ describe('ModAnalyzer Lua precision (audit D5)', () => {
   before(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-d5-'));
     fs.mkdirSync(path.join(tempDir, 'media', 'lua'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'media', 'lua', 'server'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=TestMod\n');
 
     dbManager = new DatabaseManager(path.join(tempDir, 'd5.db'));
@@ -388,5 +389,296 @@ describe('ModAnalyzer Lua precision (audit D5)', () => {
     const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
     assert.equal(leaks.length, 1);
     assert.equal(leaks[0].message.includes('c'), true);
+  });
+
+  // Mod-analyzer review: block keywords inside string literals and long
+  // strings used to be counted, producing false SEMANTIC_ERRORs.
+  test('D6: keywords inside quoted strings and long strings do not skew block counting', async () => {
+    const r = await analyze(
+      'local s = "if x then end for i = 1, 2 do end while y do end function z() end"\nlocal t = [[ if a then end repeat b until c ]]\n'
+    );
+    assert.equal(r.issues.filter((i) => i.code === 'SEMANTIC_ERROR').length, 0);
+    assert.equal(r.issues.filter((i) => i.code === 'GLOBAL_VAR').length, 0);
+  });
+
+  test('D6: standalone do ... end and repeat ... until blocks are balanced', async () => {
+    const r = await analyze('do\n  print("hi")\nend\nlocal x = 0\nrepeat\n  x = x + 1\nuntil x > 5\n');
+    assert.equal(r.issues.filter((i) => i.code === 'SEMANTIC_ERROR').length, 0);
+  });
+
+  test('D6: while ... do ... end does not double-count do as an opener', async () => {
+    const r = await analyze(
+      'local n = 0\nwhile n < 10 do\n  n = n + 1\nend\nrepeat\n  n = n - 1\nuntil n <= 0\n'
+    );
+    assert.equal(r.issues.filter((i) => i.code === 'SEMANTIC_ERROR').length, 0);
+  });
+
+  test('D6: repeat/until nested inside a function stays balanced', async () => {
+    const r = await analyze(
+      'local function drain(target)\n  repeat\n    target:removeItem()\n  until target:getItemCount() == 0\nend\n'
+    );
+    assert.equal(r.issues.filter((i) => i.code === 'SEMANTIC_ERROR').length, 0);
+  });
+
+  test('D6: GLOBAL_VAR leaks are downgraded to info severity', async () => {
+    const r = await analyze('y = 2\n');
+    const leaks = r.issues.filter((i) => i.code === 'GLOBAL_VAR');
+    assert.equal(leaks.length, 1);
+    assert.equal(leaks[0].severity, 'info');
+  });
+
+  test('D6: current vanilla APIs are no longer flagged as deprecated', async () => {
+    const r = await analyze(
+      'local p = getSpecificPlayer(0)\nlocal g = getCell():getGridSquare(0, 0, 0)\nif instanceof(weapon, "HandWeapon") then end\n'
+    );
+    assert.equal(r.issues.filter((i) => i.code === 'DEPRECATED_API').length, 0);
+  });
+
+  test('D6: legacy B41 player helpers are flagged with the getPlayer() suggestion', async () => {
+    const r = await analyze('local p = getLocalPlayer()\nlocal q = getClosestPlayer()\n');
+    const dep = r.issues.filter((i) => i.code === 'DEPRECATED_API');
+    assert.equal(dep.length, 2);
+    assert.equal(dep[0].suggestion, 'Replace with: getPlayer()');
+  });
+
+  test('D6: per-frame handler registration is an info reminder, not a defect', async () => {
+    const r = await analyze('Events.OnPlayerUpdate.Add(function(player) end)\n');
+    const perf = r.issues.filter((i) => i.code === 'PERF_ISSUE');
+    assert.ok(perf.length >= 1);
+    // info severity: once-at-load registration is the correct standard pattern
+    assert.equal(perf[0].severity, 'info');
+  });
+
+  test('D6: Events.OnTick in server Lua raises a performance warning', async () => {
+    const srvPath = path.join(tempDir, 'media', 'lua', 'server', 'srv.lua');
+    fs.writeFileSync(srvPath, 'Events.OnTick.Add(function() end)\n');
+    try {
+      const r = await analyzer.analyzeMod(tempDir, {
+        checkBalance: false,
+        checkCompatibility: false,
+      });
+      const perf = r.issues.filter((i) => i.code === 'PERF_ISSUE');
+      assert.ok(perf.length >= 1);
+    } finally {
+      fs.unlinkSync(srvPath);
+    }
+  });
+
+  test('D6: event listeners registered inside a loop are flagged', async () => {
+    const r = await analyze(
+      'for i = 1, 10 do\n  Events.OnZombieUpdate.Add(handler)\nend\n'
+    );
+    const perf = r.issues.filter((i) => i.code === 'PERF_ISSUE');
+    assert.ok(perf.length >= 1);
+    assert.ok(perf[0].message.includes('inside a loop'));
+  });
+});
+
+// ===========================================================================
+// Dead fields (mod-analyzer review): unexpectedFiles, incompatibleMods,
+// compatibility.conflicts, documentation scoring
+// ===========================================================================
+
+describe('ModAnalyzer structure fields (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  before(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-struct-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=StructMod\nid=StructMod\n');
+    fs.writeFileSync(path.join(tempDir, 'preview.png'), 'fake');
+    fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'stray');
+    fs.writeFileSync(path.join(tempDir, '.gitkeep'), '');
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# StructMod');
+    fs.writeFileSync(path.join(tempDir, 'workshop.txt'), 'id=12345');
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'struct.db'));
+    await dbManager.initialize();
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  after(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('reports only genuinely unexpected top-level entries', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    // notes.txt is unexpected; preview.png, mod.info, media/, dotfiles,
+    // README.md and workshop.txt (ubiquitous workshop artifacts) are not.
+    assert.ok(r.structure.unexpectedFiles.includes('notes.txt'));
+    assert.ok(!r.structure.unexpectedFiles.includes('preview.png'));
+    assert.ok(!r.structure.unexpectedFiles.includes('mod.info'));
+    assert.ok(!r.structure.unexpectedFiles.includes('media'));
+    assert.ok(!r.structure.unexpectedFiles.includes('.gitkeep'));
+    assert.ok(!r.structure.unexpectedFiles.includes('README.md'));
+    assert.ok(!r.structure.unexpectedFiles.includes('workshop.txt'));
+  });
+});
+
+describe('ModAnalyzer compatibility fields (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  before(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-conflict-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), [
+      'name=ClashMod',
+      'id=ClashMod',
+      'incompatible=BadMod, WorseMod',
+    ].join('\n'));
+    fs.writeFileSync(
+      path.join(tempDir, 'media', 'scripts', 'clash.txt'),
+      'item ClashItem\n{\n\tType = Weapon,\n\tDisplayName = Clash Item,\n}\n'
+    );
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'clash.db'));
+    await dbManager.initialize();
+    // Vanilla already defines ClashItem — the mod redefining it is a conflict.
+    await dbManager.insertItems([
+      {
+        id: 'ClashItem', name: 'ClashItem', displayName: 'Vanilla Clash',
+        type: 'item', module: 'Base',
+        properties: { Type: 'Weapon', MaxDamage: 5 },
+        rawContent: 'item ClashItem {}', filePath: 'vanilla.txt',
+      },
+    ]);
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  after(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('mod.info incompatible= populates incompatibleMods', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: true,
+    });
+    assert.deepEqual(r.compatibility.incompatibleMods, ['BadMod', 'WorseMod']);
+  });
+
+  test('items colliding with the game DB are reported as conflicts', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: true,
+    });
+    // The mod item is stored module-qualified (ClashMod.ClashItem); the
+    // collision is with vanilla's bare ClashItem.
+    const clash = r.compatibility.conflicts.find(
+      (c) => c.item === 'ClashMod.ClashItem',
+    );
+    assert.notEqual(clash, undefined);
+    assert.equal(clash.conflictsWith, 'vanilla');
+  });
+});
+
+describe('ModAnalyzer balance z-score (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  before(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-zscore-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=ZMod\nid=ZMod\n');
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'z.db'));
+    await dbManager.initialize();
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  after(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  async function runWithVanilla(vanillaMax, modScript) {
+    fs.writeFileSync(path.join(tempDir, 'media', 'scripts', 'mod.txt'), modScript);
+    // Re-seed the baseline so each test owns its vanilla distribution.
+    await dbManager.clearDatabase();
+    await dbManager.insertItems(vanillaMax.map((m, i) => ({
+      id: 'VanillaW' + i, name: 'VanillaW' + i, displayName: 'VanillaW' + i,
+      type: 'item', module: 'Base',
+      properties: { Type: 'Weapon', MaxDamage: m },
+      rawContent: 'item VanillaW' + i + ' {}', filePath: 'vanilla.txt',
+    })));
+    return analyzer.analyzeMod(tempDir, { checkBalance: true, checkCompatibility: false });
+  }
+
+  test('z-score flags items inside the 2x ratio band when vanilla variance is low', async () => {
+    // Vanilla MaxDamage [5, 10]: mean 7.5, sd 2.5. 12.5 is only 1.67x the
+    // average (inside the ratio band) but sits exactly 2σ above it.
+    const r = await runWithVanilla(
+      [5, 10],
+      'item ZetaBlade\n{\n\tType = Weapon,\n\tDisplayName = Zeta Blade,\n\tMaxDamage = 12.5,\n}\n'
+    );
+    const outlier = r.balance.outliers.find((o) => o.item === 'ZetaBlade');
+    assert.notEqual(outlier, undefined);
+    assert.equal(outlier.property, 'MaxDamage');
+  });
+
+  test('zero-variance vanilla falls back to the ratio rule', async () => {
+    // All vanilla MaxDamage 5 → sd 0. 8 is 1.6x (not > 2x) → not an outlier.
+    const mildScript =
+      'item MildBlade\n{\n\tType = Weapon,\n\tDisplayName = Mild Blade,\n\tMaxDamage = 8,\n}\n';
+    const r = await runWithVanilla([5, 5, 5], mildScript);
+    const outlier = r.balance.outliers.find((o) => o.item === 'MildBlade');
+    assert.equal(outlier, undefined);
+    // 15 is 3x → still flagged by the ratio rule (self-contained script arg,
+    // no reliance on prior test file state).
+    const bigScript =
+      'item BigBlade\n{\n\tType = Weapon,\n\tDisplayName = Big Blade,\n\tMaxDamage = 15,\n}\n';
+    const r2 = await runWithVanilla([5, 5, 5], bigScript);
+    const big = r2.balance.outliers.find((o) => o.item === 'BigBlade');
+    assert.notEqual(big, undefined);
+  });
+});
+
+describe('ModAnalyzer documentation score (seeded)', () => {
+  let tempDir;
+  let dbManager;
+  let analyzer;
+
+  before(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modanalyzer-docs-'));
+    fs.mkdirSync(path.join(tempDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'mod.info'), [
+      'name=DocMod',
+      'id=DocMod',
+      'author=Me',
+      'version=1.0',
+      'description=A fully documented mod',
+    ].join('\n'));
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# DocMod\n');
+
+    dbManager = new DatabaseManager(path.join(tempDir, 'docs.db'));
+    await dbManager.initialize();
+    const parser = new ProjectZomboidParser(dbManager);
+    analyzer = new ModAnalyzer(dbManager, parser);
+  });
+
+  after(() => {
+    dbManager.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('complete mod.info metadata plus README scores 100', async () => {
+    const r = await analyzer.analyzeMod(tempDir, {
+      checkBalance: false,
+      checkCompatibility: false,
+    });
+    assert.equal(r.quality.documentation, 100);
   });
 });

@@ -13,7 +13,18 @@
  * detectConflicts finds items produced by more than one recipe (duplicate
  * crafting paths that can break recipe resolution in-game).
  */
-import { DatabaseManager } from "../database/DatabaseManager.js";
+import {
+  DatabaseManager,
+  GameItem,
+  referenceCandidates,
+} from "../database/DatabaseManager.js";
+
+/**
+ * Safety cap on chain-graph nodes: a dense 'both' walk at maxDepth 10 can fan
+ * out to thousands of nodes — stop at the cap and flag truncation instead of
+ * hanging the tool reply (recipe-chain review).
+ */
+export const CHAIN_MAX_NODES = 500;
 
 export interface ChainNode {
   id: string;
@@ -58,18 +69,45 @@ export class RecipeAnalyzer {
   constructor(private db: DatabaseManager) {}
 
   /**
+   * Resolve `id` to its canonical items row (the id as stored in the DB).
+   * Tries every candidate spelling — bare, "Base."-qualified and "base:"-tag —
+   * so "Base.Flour2", "Flour2" and "base:flour2" all land on the same row
+   * (recipe-chain review: naming tolerance).
+   */
+  private async resolveItem(
+    id: string,
+  ): Promise<{ id: string; info: GameItem } | null> {
+    for (const cand of referenceCandidates(id)) {
+      const info = await this.db.getItemById(cand);
+      if (info) return { id: cand, info };
+    }
+    return null;
+  }
+
+  /** Canonical stored id for a reference (falls back to the written id when no
+   * items row exists — dangling refs keep their written spelling). */
+  private async canonicalItemId(id: string): Promise<string> {
+    const res = await this.resolveItem(id);
+    return res ? res.id : id;
+  }
+
+  /**
    * Walk the recipe graph from `seed` (an item or recipe id) up to maxDepth.
    * direction: 'upstream' = what makes the seed / its ingredients;
    * 'downstream' = what the seed makes / what consumes it; 'both' = all edges.
+   * The seed and every reference resolve through their candidate spellings
+   * (bare / "Base."-qualified / "base:"-tag) so the graph builds regardless of
+   * the naming form the caller or the script used (recipe-chain review).
    */
   async analyzeChain(
     seed: string,
     direction: "upstream" | "downstream" | "both" = "both",
     maxDepth: number = 3,
   ): Promise<ChainResult> {
-    const item = await this.db.getItemById(seed);
-    const seedKind: ChainNode["kind"] = item
-      ? item.type === "recipe"
+    const seedRes = await this.resolveItem(seed);
+    const seedId = seedRes ? seedRes.id : seed;
+    const seedKind: ChainNode["kind"] = seedRes
+      ? seedRes.info.type === "recipe"
         ? "recipe"
         : "item"
       : "unknown";
@@ -77,12 +115,17 @@ export class RecipeAnalyzer {
     const nodes: ChainNode[] = [];
     const visited = new Set<string>();
     const queue: Array<{ id: string; kind: ChainNode["kind"]; depth: number }> =
-      [{ id: seed, kind: seedKind, depth: 0 }];
-    visited.add(`${seed}::${seedKind}`);
+      [{ id: seedId, kind: seedKind, depth: 0 }];
+    visited.add(`${seedId}::${seedKind}`);
     let truncated = false;
     let head = 0;
 
     while (head < queue.length) {
+      if (nodes.length >= CHAIN_MAX_NODES) {
+        truncated = true;
+        break;
+      }
+
       const { id, kind, depth } = queue[head++];
       const node: ChainNode = {
         id,
@@ -102,23 +145,50 @@ export class RecipeAnalyzer {
 
       if (kind === "recipe") {
         const refs = await this.db.getReferencesFrom(id);
-        for (const ref of refs) {
-          if (ref.type !== "item") continue;
-          if (ref.context === "ingredient") {
-            node.ingredients.push({ id: ref.referenceId });
-          } else if (RESULT_CONTEXTS.has(ref.context)) {
-            node.results.push({ id: ref.referenceId });
+        // Count labels come from the recipe_ingredients mirror (the references
+        // table has no count column); keyed by the exact written spelling.
+        const counts = new Map<string, number>();
+        for (const r of await this.db.getRecipeRefCounts(id)) {
+          if (r.role === "ingredient" || r.role === "output") {
+            counts.set(r.ref, r.count);
           }
         }
-        // Edge expansion at this node happens below via the refs lists.
+        const addRef = (
+          arr: Array<{ id: string; count?: number }>,
+          writtenId: string,
+          canonicalId: string,
+        ) => {
+          if (arr.some((x) => x.id === canonicalId)) return;
+          // Built conditionally: exactOptionalPropertyTypes forbids pushing
+          // count: undefined onto an optional property.
+          const count = counts.get(writtenId);
+          arr.push(
+            count === undefined
+              ? { id: canonicalId }
+              : { id: canonicalId, count },
+          );
+        };
+        for (const ref of refs) {
+          if (ref.type !== "item") continue;
+          const canonical = await this.canonicalItemId(ref.referenceId);
+          if (ref.context === "ingredient") {
+            addRef(node.ingredients, ref.referenceId, canonical);
+          } else if (RESULT_CONTEXTS.has(ref.context)) {
+            addRef(node.results, ref.referenceId, canonical);
+          }
+        }
       } else if (kind === "item") {
-        const incoming = await this.db.getReferencesTo(id);
+        const incoming = await this.db.getReferencesToAny(id);
         for (const ref of incoming) {
           if (ref.type !== "item") continue;
           if (RESULT_CONTEXTS.has(ref.context)) {
-            node.producedBy.push(ref.itemId);
+            if (!node.producedBy.includes(ref.itemId)) {
+              node.producedBy.push(ref.itemId);
+            }
           } else if (ref.context === "ingredient") {
-            node.consumedBy.push(ref.itemId);
+            if (!node.consumedBy.includes(ref.itemId)) {
+              node.consumedBy.push(ref.itemId);
+            }
           }
         }
       }
@@ -176,7 +246,7 @@ export class RecipeAnalyzer {
         if (direction !== "downstream") {
           // Upstream of a recipe: for each ingredient, who produces it?
           for (const ing of node.ingredients) {
-            const producers = await this.db.getReferencesTo(ing.id);
+            const producers = await this.db.getReferencesToAny(ing.id);
             for (const p of producers) {
               if (p.type === "item" && RESULT_CONTEXTS.has(p.context)) {
                 const key = `${p.itemId}::recipe`;
@@ -196,7 +266,7 @@ export class RecipeAnalyzer {
         if (direction !== "upstream") {
           // Downstream of a recipe: what consumes its results?
           for (const res of node.results) {
-            const consumers = await this.db.getReferencesTo(res.id);
+            const consumers = await this.db.getReferencesToAny(res.id);
             for (const c of consumers) {
               if (c.type === "item" && c.context === "ingredient") {
                 const key = `${c.itemId}::recipe`;
@@ -239,7 +309,7 @@ export class RecipeAnalyzer {
       }
     }
 
-    return { seed, seedKind, nodes, maxDepth, truncated };
+    return { seed: seedId, seedKind, nodes, maxDepth, truncated };
   }
 
   /**
@@ -265,9 +335,20 @@ export class RecipeAnalyzer {
     const conflicts: RecipeConflict[] = [];
     for (const row of rows) {
       const refs = refsMap.get(row.item) ?? [];
-      const recipes = refs
-        .filter((p) => p.type === "item" && RESULT_CONTEXTS.has(p.context))
-        .map((p) => ({ id: p.itemId, context: p.context }));
+      // Dedupe by producer id: one recipe can claim the item through both a
+      // 'result' and an 'output' context — it is still a single producer.
+      const recipes: Array<{ id: string; context: string }> = [];
+      const seen = new Set<string>();
+      for (const p of refs) {
+        if (
+          p.type === "item" &&
+          RESULT_CONTEXTS.has(p.context) &&
+          !seen.has(p.itemId)
+        ) {
+          seen.add(p.itemId);
+          recipes.push({ id: p.itemId, context: p.context });
+        }
+      }
       conflicts.push({ item: row.item, recipes });
     }
 

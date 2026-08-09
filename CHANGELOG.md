@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`clearDatabase()` order fixed under FK enforcement**: `references`/`mods` are deleted before `items` — `parse_game_files` with `forceReparse=true` would otherwise hit `FOREIGN KEY constraint failed`
 - **Template-selection hints no longer leak into generated scripts**: `category`/`weaponType`/`similar` are stripped from item/vehicle output (sound keeps `category` — it is a real property)
 
+### Fixed
+- **Recipe Chain tab uses the authoritative server graph** (recipe-chain review): the tab now calls `analyze_recipe_chain` directly instead of re-deriving a sampled graph from `search_recipes` — no more silent 14-node/layer and 8-recipe-per-item caps, no more phantom lowercase nodes from tag/mapper refs, and the depth-limit UI (badge, dashed border, note) is live again
+- **`analyze_recipe_chain` naming tolerance**: the seed and every reference resolve through bare / `Base.`-qualified / `base:`-tag candidate spellings (vanilla items are stored bare, scripts may reference them qualified) — `Base.Axe`, `Axe` and `base:axe` all build the same graph; item nodes are canonicalized to their stored id so one item never appears twice
+- **Chain-graph safety cap**: `analyze_recipe_chain` stops at 500 nodes (flagged `truncated`) instead of returning thousands of nodes for dense `both` walks at maxDepth 10
+- **Recipe conflict/producer lists deduped**: a recipe claiming an item through both `result` and `output` contexts now counts once in `detect_recipe_conflicts` and in chain `producedBy`/`consumedBy` lists
+- **Recipe Chain fit/zoom fixed**: fit now divides out the SVG viewBox base scale so wide graphs actually fill the viewport, and the zoom badge is WYSIWYG (visible %)
+- **Recipe Chain input & controls**: Enter runs the exact typed seed unless an arrow selection was made; depth slider max raised to 10 (matches the tool schema); conflicts scan uses the documented default limit (50)
+
 ### Changed
 - **DB layer migrated to built-in `node:sqlite`** (no native deps); Node >= 22.5 now required — engines, CI matrix, and docs updated to match.
 - **Dead code removed** (freebuff review H2): unused `commander` and deprecated `@types/pino` deps dropped; unused `PathManager` methods (`detectAllInstallations`, `getUserZomboidPath`, `getModsPath`, `getWorkshopPath`, `resolvePathWithPriority`), `DatabaseManager.getCategories`/`getReferences`, `ScriptGenerator.generateModTemplate`, and the unused `analyze_mod` `generateReport` option removed

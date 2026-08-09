@@ -129,7 +129,7 @@ Walk the recipe dependency graph built during parsing.
 | `direction` | enum | No | `upstream`, `downstream`, `both` (default) |
 | `maxDepth` | number | No | Chain depth, 1–10 (default: 3) |
 
-**Output:** Ordered chain of nodes — recipes with ingredients/results, items with producers/consumers.
+**Output:** Ordered chain of nodes — recipes with ingredients/results, items with producers/consumers. Node ids are canonicalized to the stored item id, and `seed` accepts bare (`Axe`), module-qualified (`Base.Axe`) or tag (`base:axe`) spellings. `truncated` is true when the depth limit or the 500-node safety cap cut the walk short.
 
 ---
 

@@ -6,6 +6,27 @@ import { databasePath } from "../utils/config.js";
 import { sanitizeFtsTerms } from "../utils/fts.js";
 import { BlockType } from "../utils/blockTypes.js";
 
+/**
+ * Candidate spellings of an id that all resolve to the same underlying
+ * recipe/item reference (recipe-chain review: naming tolerance). The parser
+ * stores vanilla items bare ("Flour2") and mod items qualified
+ * ("ModName.Item"), while recipe blocks reference ingredients/results in
+ * whatever form the script used ("Base.Flour2", "Flour2", "base:flour2").
+ * Reference lookups try every form so the chain graph resolves regardless of
+ * which spelling the caller (or the script) used.
+ */
+export function referenceCandidates(raw: string): string[] {
+  const s = String(raw);
+  const out = [s];
+  const bare = s.replace(/^[A-Za-z]+[.:]/, "");
+  if (bare && bare !== s) out.push(bare);
+  if (bare && !bare.startsWith("Base.") && !bare.includes(":")) {
+    out.push(`Base.${bare}`);
+  }
+  if (bare) out.push(`base:${bare.toLowerCase()}`);
+  return [...new Set(out)];
+}
+
 /** Shared item column list (freebuff L3) — keeps the SQL in sync. */
 const ITEM_SELECT_COLUMNS =
   "id, name, display_name, type, module, category, properties, raw_content, file_path, tags, metal_value, weight, condition_max, attachment_type, run_speed_modifier, hunger_change, thirst_change, icon, calories";
@@ -982,6 +1003,52 @@ export class DatabaseManager {
     return this.rowToItem(row);
   }
 
+  /**
+   * Items whose properties.Type matches exactly (e.g. "Weapon", "Armor",
+   * "Ammo") — the precise baseline query for ModAnalyzer balance analysis.
+   * Replaces an FTS keyword search + in-memory filter, which could both miss
+   * and over-match (mod-analyzer review: exact Type baseline).
+   */
+  async getItemsByPropertyType(
+    propertyType: string,
+    limit: number = 1000,
+  ): Promise<GameItem[]> {
+    const rows = this.db
+      .prepare(
+        `
+      SELECT ${ITEM_SELECT_COLUMNS}
+      FROM items
+      WHERE type = 'item' AND json_extract(properties, '$.Type') = ?
+      ORDER BY name ASC
+      LIMIT ?
+    `,
+      )
+      .all(propertyType, limit) as unknown as ItemRow[];
+
+    return rows.map((row) => this.rowToItem(row));
+  }
+
+  /**
+   * Items whose internal name matches exactly (blockInfo.name). Used by
+   * ModAnalyzer conflict detection: mod items are stored module-qualified
+   * ("ClashMod.ClashItem") while vanilla Base items are bare ("ClashItem"),
+   * so id-based collision checks would never match vanilla — the name is the
+   * stable identity across modules (mod-analyzer review).
+   */
+  async getItemsByName(
+    name: string,
+    limit: number = 10,
+  ): Promise<Array<{ id: string; module: string; type: string }>> {
+    const rows = this.db
+      .prepare(`SELECT id, module, type FROM items WHERE name = ? LIMIT ?`)
+      .all(name, limit) as unknown as Array<{
+      id: string;
+      module: string;
+      type: string;
+    }>;
+    return rows;
+  }
+
   async getItemsByType(type: string): Promise<GameItem[]> {
     const rows = this.db
       .prepare(
@@ -1152,17 +1219,23 @@ export class DatabaseManager {
   }
 
   /**
-   * All item/recipe rows that reference a given id (what points to it).
-   * Used to walk the recipe graph in both directions.
+   * Tolerant getReferencesTo — matches against every candidate spelling of
+   * `referenceId` (bare / qualified / tag form) in one IN query, so recipes
+   * that reference "Base.Flour2" are found when the caller passes "Flour2"
+   * (and vice versa). Used for recipe-chain graph expansion so the graph
+   * resolves regardless of the naming form the script used (recipe-chain
+   * review: naming tolerance). Replaces the exact-match getReferencesTo.
    */
-  async getReferencesTo(
+  async getReferencesToAny(
     referenceId: string,
   ): Promise<Array<{ itemId: string; type: string; context: string }>> {
+    const cands = referenceCandidates(referenceId);
+    const placeholders = cands.map(() => "?").join(",");
     const rows = this.db
       .prepare(
-        'SELECT item_id, reference_type, context FROM "references" WHERE reference_id = ?',
+        `SELECT item_id, reference_type, context FROM "references" WHERE reference_id IN (${placeholders})`,
       )
-      .all(referenceId) as unknown as Array<{
+      .all(...cands) as unknown as Array<{
       item_id: string;
       reference_type: string;
       context: string;
@@ -1172,6 +1245,26 @@ export class DatabaseManager {
       type: r.reference_type,
       context: r.context,
     }));
+  }
+
+  /**
+   * Ingredient/output rows for one recipe (the recipe_ingredients mirror) —
+   * used to attach count labels to chain-graph nodes. ref is the exact
+   * spelling the script used (may be a tag or mapper ref).
+   */
+  async getRecipeRefCounts(
+    recipeId: string,
+  ): Promise<Array<{ ref: string; role: string; count: number }>> {
+    const rows = this.db
+      .prepare(
+        "SELECT ref, role, count FROM recipe_ingredients WHERE recipe_id = ?",
+      )
+      .all(recipeId) as unknown as Array<{
+      ref: string;
+      role: string;
+      count: number;
+    }>;
+    return rows;
   }
 
   /**

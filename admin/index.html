@@ -1044,8 +1044,8 @@ function applyTelemetry(t){
   S.upSpark.push(t.uptime ?? 0); if (S.upSpark.length > 24) S.upSpark.shift();
   if (t && t.db){
     // DB re-parse fingerprint: when the parsed item count changes mid-session,
-    // drop the recipe/item caches so graphs rebuild from fresh data.
-    if (S.chain._dbFinger != null && S.chain._dbFinger !== t.db.total){ chainItemCache.clear(); chainRecipeCache.clear(); S.chain.conflicts = null; }
+    // drop the cached conflict list so the next scan uses fresh data.
+    if (S.chain._dbFinger != null && S.chain._dbFinger !== t.db.total){ S.chain.conflicts = null; }
     S.chain._dbFinger = t.db.total;
   }
   $('#upChip').textContent = '⏱ ' + fmtUp(t.uptime);
@@ -2159,10 +2159,6 @@ const CHAIN_CHIPS = [
 ];
 const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14, CHAIN_PITCH = 60;
 const chop = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-/* The DB stores items bare ("Flour2") but recipes reference them as "Base.Flour2"
- * (or "base:flour2" tags). bare() bridges the two so graph ids stay consistent. */
-const bare = id => String(id).replace(/^[A-Za-z]+[.:]/, '');
-const mergeRefs = (a, b) => { const m = new Map(); [...(a || []), ...(b || [])].forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; };
 function chainHTML(){
   const segs = ['both','upstream','downstream'];
   return '<div class="sec-title" style="margin-top:0">'+ICONS.graph+' Recipe Chain · crafting graph browser</div>' +
@@ -2180,7 +2176,7 @@ function chainHTML(){
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Direction</span>' +
           '<div class="chain-seg" role="group" aria-label="Graph direction">'+segs.map(d => '<button class="'+(S.chain.direction === d ? 'on' : '')+'" data-act="chain-dir" data-v="'+d+'">'+({both:'Both',upstream:'Upstream',downstream:'Downstream'}[d])+'</button>').join('')+'</div></div>' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Depth <b id="chainDepthVal" style="color:var(--text)">'+S.chain.depth+'</b></span>' +
-          '<input type="range" id="chainDepth" min="1" max="6" step="1" value="'+S.chain.depth+'" style="width:150px" aria-label="Graph depth">' +
+          '<input type="range" id="chainDepth" min="1" max="10" step="1" value="'+S.chain.depth+'" style="width:150px" aria-label="Graph depth">' +
           '<button class="btn sm ghost" id="chainConfBtn" data-act="chain-conflicts" style="border:1px solid var(--stroke)">'+ICONS.warn+' Show recipe conflicts</button></div>' +
       '</div>' +
     '</section>' +
@@ -2229,7 +2225,7 @@ async function chainConflicts(){
   if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> scanning…'; }
   renderChain();
   try {
-    const reply = await rpc('tools/call', { name:'detect_recipe_conflicts', arguments:{ limit:40 } });
+    const reply = await rpc('tools/call', { name:'detect_recipe_conflicts', arguments:{ limit:50 } });
     const sc = reply.result?.structuredContent;
     c.conflicts = sc?.conflicts || [];
     c.confTotal = sc?.totalRecipes || 0;
@@ -2261,7 +2257,13 @@ async function chainRun(seedOverride){
   if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> Building…'; }
   renderChain();
   try {
-    const g = await chainBuildGraph(seed, c.direction, c.depth);
+    // The server walks the authoritative reference graph (complete edges, a
+    // real truncation flag, naming-tolerant seed/ref resolution). The tab
+    // renders that result directly instead of re-deriving a sampled graph
+    // from search_recipes (recipe-chain review: one graph engine).
+    const reply = await rpc('tools/call', { name:'analyze_recipe_chain', arguments:{ seed, direction:c.direction, maxDepth:c.depth } });
+    const g = reply.result?.structuredContent;
+    if (!g || !Array.isArray(g.nodes)) throw new Error('empty graph reply');
     if (g.seed !== seed){ c.seed = g.seed; if (f) f.value = g.seed; }
     c.busy = false;
     if (g.nodes.length > 1){
@@ -2282,112 +2284,7 @@ async function chainRun(seedOverride){
     if (btn){ btn.disabled = false; btn.innerHTML = ICONS.play+' Build graph'; }
   }
 }
-const chainItemCache = new Map();
-const chainRecipeCache = new Map();
-async function chainRecipeById(id){
-  if (chainRecipeCache.has(id)) return chainRecipeCache.get(id);
-  const r = await rpc('tools/call', { name:'search_recipes', arguments:{ query:id, limit:10 } }).catch(() => null);
-  const list = (r && r.result && r.result.structuredContent && r.result.structuredContent.recipes) || [];
-  const hit = list.find(x => x.id === id) || null; // exact recipe-id match only
-  chainRecipeCache.set(id, hit);
-  return hit;
-}
-async function chainItemLinksRaw(id){
-  const [pr, cr] = await Promise.all([
-    rpc('tools/call', { name:'search_recipes', arguments:{ result:id, limit:20 } }).catch(() => null),
-    rpc('tools/call', { name:'search_recipes', arguments:{ ingredient:id, limit:20 } }).catch(() => null),
-  ]);
-  return {
-    producers: (pr && pr.result && pr.result.structuredContent && pr.result.structuredContent.recipes) || [],
-    consumers: (cr && cr.result && cr.result.structuredContent && cr.result.structuredContent.recipes) || [],
-  };
-}
-async function chainItemLinks(id){
-  if (chainItemCache.has(id)) return chainItemCache.get(id);
-  const links = await chainItemLinksRaw(id);
-  chainItemCache.set(id, links);
-  return links;
-}
-async function chainPool(fns, n = 6){
-  const out = new Array(fns.length); let i = 0;
-  await Promise.all(Array.from({ length: Math.min(n, fns.length) }, async () => {
-    while (i < fns.length){ const j = i++; out[j] = await fns[j](); }
-  }));
-  return out;
-}
-/* Build an accurate crafting graph entirely from search_recipes (which indexes
- * real ingredients/outputs per recipe). Both recipe seeds and item seeds expand
- * through producing/consuming recipes — every selection yields a genuine graph. */
-async function chainBuildGraph(seed, dir, depth){
-  const map = new Map();
-  // session caches intentionally persist across runs — depth/direction changes
-  // reuse already-fetched recipes/links instead of re-querying the server
-  const upsertItem = id => {
-    const key = bare(id);
-    if (!map.has(key)) map.set(key, { id:key, kind:'item', name:key, itemType:null, ingredients:[], results:[], producedBy:[], consumedBy:[] });
-    return map.get(key);
-  };
-  const upsertRecipe = r => {
-    const node = {
-      id: r.id, kind:'recipe', name: r.name || r.id, itemType: null,
-      ingredients: (r.ingredients || []).filter(i => i.role === 'ingredient').map(i => ({ id: bare(i.ref), count: i.count })),
-      results: ((r.properties && r.properties.outputs) || []).map(o => ({ id: bare(o.item), count: o.count })),
-      producedBy: [], consumedBy: [],
-    };
-    if (!node.results.length && r.result) node.results.push({ id: bare(r.result), count: r.resultCount || 1 });
-    const ex = map.get(node.id);
-    if (!ex) map.set(node.id, node);
-    else if (ex.kind === 'recipe'){ ex.ingredients = mergeRefs(ex.ingredients, node.ingredients); ex.results = mergeRefs(ex.results, node.results); }
-    else map.set(node.id, node); // a recipe with a matching id wins over an item placeholder
-    return map.get(node.id);
-  };
-  const root = bare(seed);
-  let seedKind = 'unknown';
-  const seedRecipe = await chainRecipeById(seed);
-  if (seedRecipe){ seedKind = 'recipe'; upsertRecipe(seedRecipe); }
-  else {
-    seedKind = 'item'; upsertItem(root);
-    // Module/namespace-qualified inputs (e.g. Base.SteelChunk, mapper:metalType from
-    // the conflicts list) also resolve through their exact raw ref — search_recipes
-    // treats ':'/'.'-qualified refs as exact, so the raw id reaches those recipes.
-    if (seed !== root){
-      const rawLinks = await chainItemLinksRaw(seed);
-      for (const r of [...rawLinks.producers, ...rawLinks.consumers].slice(0, 12)) if (!map.has(r.id)) upsertRecipe(r);
-    }
-  }
-  let layer = [root], seen = new Set([root]);
-  for (let d = 1; d <= depth; d++){
-    const next = [];
-    const items = [];
-    for (const id of layer){
-      const n = map.get(id); if (!n) continue;
-      if (n.kind === 'recipe'){
-        if (dir !== 'downstream') for (const i of n.ingredients) if (!seen.has(i.id)){ seen.add(i.id); next.push(i.id); upsertItem(i.id); }
-        if (dir !== 'upstream') for (const r of n.results) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertItem(r.id); }
-      } else items.push(id);
-    }
-    if (items.length){
-      const links = await chainPool(items.map(id => () => chainItemLinks(id)));
-      for (let i = 0; i < items.length; i++){
-        const l = links[i] || { producers: [], consumers: [] };
-        if (dir !== 'downstream') for (const r of l.producers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
-        if (dir !== 'upstream') for (const r of l.consumers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
-      }
-    }
-    if (!next.length) break;
-    layer = next.slice(0, 14);
-  }
-  deriveLinks(map);
-  return { seed: root, seedKind, nodes: [...map.values()], truncated: false, maxDepth: depth };
-}
-function deriveLinks(map){
-  for (const n of map.values()) if (n.kind === 'item'){ n.producedBy = n.producedBy || []; n.consumedBy = n.consumedBy || []; }
-  for (const n of map.values()) if (n.kind === 'recipe'){
-    for (const r of n.results){ const it = map.get(r.id); if (it && it.kind === 'item' && !it.producedBy.includes(n.id)) it.producedBy.push(n.id); }
-    for (const i of n.ingredients){ const it = map.get(i.id); if (it && it.kind === 'item' && !it.consumedBy.includes(n.id)) it.consumedBy.push(n.id); }
-  }
-}
-async function chainSuggest(seed){
+/* (client-side graph builder removed — the tab consumes analyze_recipe_chain) */async function chainSuggest(seed){
   const c = S.chain;
   try {
     const [ir, rr] = await Promise.all([
@@ -2463,13 +2360,13 @@ function chainGraphHTML(){
     '<div class="chain-canvas'+(c.fs ? ' fs' : '')+'">' +
       '<div class="chain-tools">' +
         '<b class="mono" style="font-size:12.5px">'+esc(L.seed.id)+'</b>' + seedBadge +
-        (c.graph.truncated ? '<span class="badge b-err">depth limit hit</span>' : '') +
+        (c.graph.truncated ? '<span class="badge b-err">truncated</span>' : '') +
         '<span class="badge b-dim">'+(L.up.length + L.dn.length)+' layer(s) · '+c.graph.nodes.length+' node(s)</span>' +
         '<span class="spacer"></span>' +
         '<button class="ibtn" data-act="chain-fit" style="width:34px;height:34px;border-radius:10px" title="Fit view" aria-label="Fit view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomout" style="width:34px;height:34px;border-radius:10px" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomin" style="width:34px;height:34px;border-radius:10px" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
-        '<span class="badge b-dim mono" id="chainZoomVal" style="min-width:46px;text-align:center;font-size:11px">'+Math.round(S.chain.zoom * 100)+'%</span>' +
+        '<span class="badge b-dim mono" id="chainZoomVal" style="min-width:46px;text-align:center;font-size:11px">'+Math.round(chainVisibleZoom() * 100)+'%</span>' +
         '<button class="ibtn" data-act="chain-full" style="width:34px;height:34px;border-radius:10px" title="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'" aria-label="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'">'+(c.fs ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15h-6v-6M3 9h6v6M21 21l-6-6M3 3l6 6"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>')+'</button>' +
       '</div>' +
       '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap" style="height:'+(c.fs ? 'auto' : H)+'px">' +
@@ -2488,7 +2385,7 @@ function chainGraphHTML(){
         '<span><span class="lg-dot" style="background:rgba(34,211,238,.22);border-color:rgba(34,211,238,.65)"></span>item</span>' +
         '<span style="margin-left:auto">drag to pan · ctrl+scroll to zoom</span>' +
       '</div>' +
-      (c.graph.truncated ? '<div class="chain-note">'+ICONS.warn+' The server hit its depth limit — raise <b>Depth</b> to expand the graph further.</div>' : '') +
+      (c.graph.truncated ? '<div class="chain-note">'+ICONS.warn+' The server cut off expansion (depth limit or 500-node cap) — the graph may be incomplete.</div>' : '') +
     (c.fs ? '<div class="glass card panel-card chain-insp-fs" id="chainInspFs">' + (insp ? '<div class="insp-head"><b class="mono" style="font-size:12px;word-break:break-all;min-width:0">'+esc(insp.name || insp.id)+'</b><button class="ibtn" data-act="chain-insp-close" style="width:26px;height:26px;border-radius:8px;margin-left:auto;flex:none" aria-label="Close inspector" title="Close inspector">'+ICONS.x+'</button></div>' + chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node — details appear here.</div>') + '</div>' : '') +
     '</div>' +
     '<aside class="glass card panel-card chain-insp" id="chainInsp"'+(c.fs ? ' hidden' : '')+'>' +
@@ -2570,7 +2467,7 @@ function chainPaint(){
   g.innerHTML = edgeHTML + nodeHTML;
   chainApplyTransform();
   chainHover(null); // repaints wipe .ho/.hl — reset the dim state so it never sticks
-  const zv = $('#chainZoomVal'); if (zv) zv.textContent = Math.round(S.chain.zoom * 100) + '%';
+  const zv = $('#chainZoomVal'); if (zv) zv.textContent = Math.round(chainVisibleZoom() * 100) + '%';
 }
 function chainNodeHTML(n, x, y, extra){
   const cls = n.kind === 'recipe' ? 'r' : n.kind === 'item' ? 'i' : 'u';
@@ -2668,13 +2565,29 @@ function chainApplyGeometry(){
 function chainFullscreen(){
   const c = S.chain; c.fs = !c.fs; c.fitted = false; renderChain();
 }
+function chainVisibleZoom(){
+  // Visible scale = the SVG viewBox base scale (meet-fit of W×H into the
+  // wrap) × the chainG zoom transform. Makes the zoom badge WYSIWYG and the
+  // fit math correct (recipe-chain review).
+  const c = S.chain, L = c.layout; if (!L) return c.zoom;
+  const wrap = $('#chainSvgWrap'); if (!wrap) return c.zoom;
+  const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
+  const H = chainViewH();
+  const sv = Math.max(0.05, Math.min((wrap.clientWidth || 600) / W, (wrap.clientHeight || H) / H));
+  return c.zoom * sv;
+}
 function chainFit(){
   const L = S.chain.layout; if (!L) return;
   const wrap = $('#chainSvgWrap'); if (!wrap) return;
   const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
   const H = chainViewH();
   const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || H;
-  const z = Math.max(0.2, Math.min(2.5, Math.min(cw / W, ch / H) * 0.94));
+  // The SVG viewBox already scales W×H to fit the wrap (preserveAspectRatio
+  // 'meet'), so the graph transform compounds on top of that base scale.
+  // Divide it out — the visible scale after fit is ≈0.94 for any graph size
+  // (the old math made wide graphs render far smaller than the viewport).
+  const sv = Math.max(0.05, Math.min(cw / W, ch / H));
+  const z = Math.max(0.2, Math.min(3, 0.94 / sv));
   S.chain.zoom = z;
   S.chain.pan.x = (cw - W * z) / 2;
   S.chain.pan.y = (ch - H * z) / 2;
@@ -3145,7 +3058,7 @@ document.addEventListener('input', e => {
     return;
   }
   if (t.id === 'chainDepth'){
-    S.chain.depth = Math.max(1, Math.min(6, parseInt(t.value, 10) || 2));
+    S.chain.depth = Math.max(1, Math.min(10, parseInt(t.value, 10) || 2));
     const l = $('#chainDepthVal'); if (l) l.textContent = String(S.chain.depth);
     clearTimeout(S.chain.depthTimer);
     S.chain.depthTimer = setTimeout(() => { if (S.chain.seed) chainRun(); }, 450);
@@ -3213,7 +3126,9 @@ document.addEventListener('keydown', e => {
       else if (e.key === 'Enter'){
         e.preventDefault();
         const items = d && !d.hidden ? $$('.chain-drop-item', d) : [];
-        const pick = S.chain.dropIdx >= 0 && items[S.chain.dropIdx] ? items[S.chain.dropIdx] : items[0];
+        // Only an explicit arrow selection hijacks Enter; otherwise run the
+        // exact typed seed (recipe-chain review: no surprise autocomplete).
+        const pick = S.chain.dropIdx >= 0 && items[S.chain.dropIdx] ? items[S.chain.dropIdx] : null;
         if (pick){ const f = $('#chainSeed'); if (f) f.value = pick.dataset.id; chainRun(pick.dataset.id); }
         else chainRun();
       }

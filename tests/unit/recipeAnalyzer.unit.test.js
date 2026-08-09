@@ -46,6 +46,9 @@ describe('RecipeAnalyzer', () => {
     // AltPlank: Twig -> Plank (conflict with SawPlank on Plank)
     await db.addReference('AltPlank', 'Base.Twig', 'item', 'ingredient');
     await db.addReference('AltPlank', 'Base.Plank', 'item', 'result');
+    // AltPlank also declares Plank through an 'output' context: the same
+    // producer twice. producedBy/conflict lists must dedupe it to one.
+    await db.addReference('AltPlank', 'Base.Plank', 'item', 'output');
 
     analyzer = new RecipeAnalyzer(db);
   });
@@ -92,6 +95,13 @@ describe('RecipeAnalyzer', () => {
     assert.equal(chain.nodes[0].id, 'NoSuchThing');
   });
 
+  test('dedupes a producer that declares both result and output contexts', async () => {
+    const chain = await analyzer.analyzeChain('Base.Plank', 'upstream', 3);
+    const plank = chain.nodes.find((n) => n.id === 'Base.Plank');
+    assert.equal(plank.producedBy.length, 2); // SawPlank + AltPlank, not 3
+    assert.deepEqual(plank.producedBy.sort(), ['AltPlank', 'SawPlank']);
+  });
+
   test('conflict detection finds items produced by multiple recipes', async () => {
     const result = await analyzer.detectConflicts(50);
     assert.equal(result.totalRecipes, 3);
@@ -119,7 +129,8 @@ describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
     return {
       getItemById: async (id) => data.items[id] || null,
       getReferencesFrom: async (id) => data.refsFrom[id] || [],
-      getReferencesTo: async (id) => data.refsTo[id] || [],
+      getReferencesToAny: async (id) => data.refsTo[id] || [],
+      getRecipeRefCounts: async () => [],
     };
   }
 
@@ -220,6 +231,58 @@ describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
       result.nodes.map(n => n.id),
       ['R1', 'Y', 'R2']
     );
+  });
+
+  test('resolves the seed through its candidate spellings', async () => {
+    // Items stored bare ('Flour2'); references use the qualified spelling.
+    const items = {
+      Flour2: { displayName: 'Flour', type: 'item' },
+      R1: { displayName: 'Mill Flour', type: 'recipe' },
+    };
+    const refsFrom = {
+      R1: [{ type: 'item', context: 'result', referenceId: 'Base.Flour2' }],
+    };
+    // Keyed by both spellings: the stub's getReferencesToAny mirrors the
+    // tolerant IN-lookup (bare and qualified forms match the same rows).
+    const refsTo = {
+      Flour2: [{ type: 'item', context: 'result', itemId: 'R1' }],
+      'Base.Flour2': [{ type: 'item', context: 'result', itemId: 'R1' }],
+    };
+    const db = createStubDb({ items, refsFrom, refsTo });
+    const analyzer = new RecipeAnalyzer(db);
+
+    // 'Base.Flour2' seed → canonical node id 'Flour2', resolved as an item.
+    const chain = await analyzer.analyzeChain('Base.Flour2', 'upstream', 3);
+    assert.equal(chain.seed, 'Flour2');
+    assert.equal(chain.seedKind, 'item');
+    assert.notEqual(chain.nodes.find((n) => n.id === 'R1'), undefined);
+    const flour = chain.nodes.find((n) => n.id === 'Flour2');
+    assert.deepEqual(flour.producedBy, ['R1']);
+
+    // Bare spelling works too (exact match is always the first candidate).
+    const chain2 = await analyzer.analyzeChain('Flour2', 'upstream', 3);
+    assert.equal(chain2.seed, 'Flour2');
+    assert.equal(chain2.seedKind, 'item');
+  });
+
+  test('stops at the node-count safety cap and flags truncation', async () => {
+    const N = 700;
+    const items = {
+      R1: { displayName: 'Wide Recipe', type: 'recipe' },
+    };
+    const refsFrom = {
+      R1: Array.from({ length: N }, (_, i) => ({
+        type: 'item',
+        context: 'ingredient',
+        referenceId: 'Ing' + i,
+      })),
+    };
+    const db = createStubDb({ items, refsFrom, refsTo: {} });
+    const analyzer = new RecipeAnalyzer(db);
+
+    const result = await analyzer.analyzeChain('R1', 'both', 10);
+    assert.ok(result.nodes.length <= 500, 'node cap respected');
+    assert.equal(result.truncated, true, 'cap hit reports truncation');
   });
 
   test('maintains behavior for a simple linear chain', async () => {
