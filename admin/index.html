@@ -1630,7 +1630,6 @@ function wsCardHTML(it){
     '</span></button>';
 }
 function workshopHTML(){
-  const d = S.ws.detail;
   let html = '<div class="sec-title" style="margin-top:0">Steam Workshop · Project Zomboid (AppID 108600)</div>' +
     '<section class="glass card panel-card" style="margin-bottom:16px">' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
@@ -1645,13 +1644,13 @@ function workshopHTML(){
       '<div class="f-hint" style="margin:8px 2px 0">Browse is best-effort (Steam HTML scrape). Pasting a URL or id is the guaranteed path — use it when search misses.</div>' +
     '</section>' +
     '<div id="wsBody"></div>';
-  if (d) html += wsDetailHTML(d);
   return html;
 }
 function renderWorkshopResults(){
   const body = $('#wsBody'); if (!body) return;
   if (S.ws.busy){ body.innerHTML = '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> querying Steam…</div>'; return; }
   if (S.ws.error){ body.innerHTML = '<div class="md-out" style="color:#FDA4AF">✖ '+esc(S.ws.error)+'</div>'; return; }
+  if (S.ws.detail){ body.innerHTML = wsDetailHTML(S.ws.detail); return; }
   const r = S.ws.results || [];
   if (!r.length){ body.innerHTML = '<div class="md-out" style="color:var(--faint)">No results yet — search above, or paste a workshop URL/id for guaranteed metadata.</div>'; return; }
   body.innerHTML = '<div class="sec-title" style="margin:0 2px 10px">'+r.length+' result(s) · click a card to fetch details</div>' +
@@ -1750,7 +1749,7 @@ function wsDetailHTML(d){
       (d.thumbnailUrl ? '<img class="ws-detail-thumb" src="'+esc(d.thumbnailUrl)+'" alt="'+esc(d.title)+'" loading="lazy">' : '<div class="ws-thumb-ph">no preview</div>') +
       '<div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
-          '<span class="badge '+(isPz?'b-ok':'b-warn')+'">'+(isPz?'Project Zomboid ✓':'not PZ — app '+esc(d.appId||'?')+'</span>') +
+          '<span class="badge '+(isPz?'b-ok':'b-warn')+'">'+(isPz?'Project Zomboid ✓':'not PZ — app '+esc(d.appId||'?'))+'</span>' +
           '<span class="badge b-dim">#'+esc(d.id)+'</span>' +
           (d.workspaceAccepted ? '<span class="badge b-info">workshop accepted</span>' : '<span class="badge b-err">not accepted</span>') +
         '</div>' +
