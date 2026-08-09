@@ -1,0 +1,51 @@
+---
+title: "PZ Spiffo's Workshop - Build 42"
+source: "PZwiki (cleaned)"
+build: '42.20'
+tags: [pz, modding, build42]
+---
+
+# Spiffo's Workshop - Build 42
+
+*Source: PZwiki — https://pzwiki.net/wiki/Spiffo's_Workshop*
+
+Spiffo's Workshop is the home of Project Zomboid mods on Steam, more generally known as the Steam Workshop. It serves as a platform for modders to share their creations and for players to discover and install mods for the game. It provides a central hub where you can see the trending mods, access your own mods, downloaded mods, and favorites, as well as list mods based on search terms and categories via the use of tags or filters.
+
+Currently the Workshop page features items as well as collections of mods created by the community. The trending mods section showcases a total of 9 of the most popular mods in the past week or two. Mods can be upvoted and downvoted, providing a rating score via 5 stars. This rating score calculation is a bit special and unclear, as the number of stars for a mod is limited by the number of votes it has received and not by its rating of positive and negative votes.
+
+Individual mod pages can hold mod previews, descriptions, comment and discussion sections, and a change note section. They can indicate other necessary mods for their mod to work, as well as add contributors to the list of creators of the mod. You can also award a mod with badges via the use of Steam points and favorite mods to easily find them later or add them in a collection.
+
+## Installation folder
+
+The game files are located inside a subfolder named `steamapps/common`, this `steamapps` folder also holds the content downloaded on the Steam Workshop, located inside the `steamapps/workshop` subfolder. Inside this subfolder, different numbers called App ID are associated to their respective game, with Project Zomboid having the app ID `108600`. Each workshop content downloaded have an associated Workshop ID as identifier.
+
+Steam/
+└── steamapps/
+    ├── common/
+    │   └── ProjectZomboid/
+    │       └── ... <-- game files
+    └── workshop/
+        └── 108600/
+            └── ... <-- workshop IDs
+
+Local mods should not be put inside this folder. For that, see the Mods page.
+
+## Rating system
+
+The Steam Workshop features a review system where players can give an upvote or a downvote to a mod. A star rating system comes along, allowing mods to be rated from 1 to 5 stars. In theory, 1 to 5 stars could be shown but in practice this is actually impossible and only a minimum of 3 stars can be achieved, up to 5 stars.
+
+Based on a study by the PZ Modding Community[1], it was determined that the number of stars requires a set specific amount of upvotes and downvotes to reach a certain star rating, **not based on the ratio of upvotes to downvotes**. Below are some of the results of the study for the amount of upvotes for no downvotes to reach each star rating:
+
+* 3 stars: 25 upvotes
+* 4 stars: 26 upvotes
+* 5 stars: 150 upvotes
+
+The exact impact of downvotes is unclear, but it seems as a rule of thumb that one downvote adds 2 upvotes to the required amount to reach the next star rating. This theory doesn't seem to work for the 3 stars rating and in some cases of large amounts of downvotes.
+
+## See also
+
+* https://thejaviertc.github.io/steam-workshop-stats/user - a tool to check the stats of items from Steam modders.
+
+## References
+
+1. ↑ Science for Steam - Chuckleberry Finn

@@ -1,4 +1,14 @@
-```
-# Temporary markdown files
-qwen_process/deepseek_markdown_*.md
-```
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Runtime SQLite databases (parse_game_files / index_knowledge_base output)
+data/
+
+# Logs
+*.log
+
+# Hermes agent workspace
+.hermes/
