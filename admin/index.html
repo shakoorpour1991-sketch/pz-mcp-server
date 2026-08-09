@@ -304,6 +304,28 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .ws-detail-thumb{width:100%;border-radius:14px;border:1px solid var(--stroke-soft)}
 .ws-desc{font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;max-height:220px;overflow-y:auto;border-top:1px solid var(--stroke-soft);margin-top:12px;padding-top:12px}
 .ws-stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px}
+.ws-alert{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;font-size:13px;margin-bottom:14px;
+  background:rgba(253,164,175,.08);border:1px solid rgba(253,164,175,.35);color:#FDA4AF}
+.ws-alert .ibtn{margin-left:auto;flex:none}
+.ws-pipe{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:11px 13px;margin-bottom:14px;border-radius:12px;
+  background:rgba(255,255,255,.035);border:1px solid var(--stroke-soft)}
+.ws-step{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--faint);white-space:nowrap;
+  padding:5px 11px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.02);transition:border-color .25s ease,color .25s ease,box-shadow .25s ease}
+.ws-step .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2)}
+.ws-step.active{color:var(--text);border-color:rgba(var(--accent-rgb),.6);box-shadow:0 0 14px rgba(var(--accent-rgb),.25)}
+.ws-step.active .dot{background:rgb(var(--accent-rgb));box-shadow:0 0 10px rgb(var(--accent-rgb))}
+.ws-step.done{color:var(--muted)}
+.ws-step.done .dot{background:#34D399}
+.ws-pipe .elapsed{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--faint);white-space:nowrap}
+.ws-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+.ws-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:600;
+  background:rgba(255,255,255,.05);border:1px solid var(--stroke-soft);color:var(--muted)}
+.ws-chip b{color:var(--text);font-weight:700}
+.ws-chip.score{background:rgba(52,211,153,.10);border-color:rgba(52,211,153,.35);color:#6EE7B7}
+.ws-chip.warn{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3);color:#FCD34D}
+.ws-report-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--stroke-soft);font-weight:700}
+.ws-report-body{max-height:360px;overflow-y:auto;transition:max-height .3s var(--easeout)}
+.ws-report-body.expand{max-height:none}
 .md-out{margin:0;padding:16px;border-radius:14px;background:rgba(0,0,0,.30);border:1px solid var(--stroke-soft);
   font-size:13px;line-height:1.75;min-height:120px;max-height:460px;overflow-y:auto}
 
@@ -784,7 +806,7 @@ const S = {
   serverInfo:null, protocol:null,
   tools:[], openTool:null,
   telemetry:null,
-  ws: { results: [], detail: null, busy: false, error: null, downloading: false, download: null, analyzing: false, report: null },
+  ws: { results: [], detail: null, busy: false, error: null, actionError: null, downloading: false, download: null, analyzing: false, report: null, phase: null, startedAt: 0, pipeTimer: 0 },
   logs:[], fid:0, methodById:new Map(), resLatency:new Map(),
   serverLog:[], seq:0,
   lat:{ ema:null, calls:0, spark:[] },
@@ -1659,7 +1681,8 @@ function renderWorkshopResults(){
 async function wsSearch(){
   const q = $('#wsQuery').value.trim();
   if (!q){ toast('Type a search query','warn'); return; }
-  S.ws.busy = true; S.ws.error = null; S.ws.detail = null;
+  clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+  S.ws.busy = true; S.ws.error = null; S.ws.detail = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
   renderWorkshopResults();
   const btn = $('#wsSearchBtn'); if (btn) btn.disabled = true;
   try {
@@ -1675,7 +1698,8 @@ async function wsSearch(){
   } finally { if (btn) btn.disabled = false; }
 }
 async function wsFetchDetails(input, forceRefresh){
-  S.ws.busy = true; S.ws.error = null;
+  clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+  S.ws.busy = true; S.ws.error = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
   renderWorkshopResults();
   try {
     const args = { id: input };
@@ -1688,7 +1712,12 @@ async function wsFetchDetails(input, forceRefresh){
     if (S.ws.detail && sc?.isProjectZomboid === false) toast('Not a Project Zomboid item — app ' + S.ws.detail.appId, 'warn');
     else if (S.ws.detail) toast('Details loaded — ' + S.ws.detail.title);
   } catch (e){
-    S.ws.busy = false; S.ws.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    S.ws.busy = false;
+    const msg = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    // A failed refresh on an already-loaded detail card keeps the card visible
+    // (inline alert) instead of replacing the whole view with a bare error.
+    if (forceRefresh && S.ws.detail) S.ws.actionError = msg;
+    else S.ws.error = msg;
     renderWorkshopResults();
   }
 }
@@ -1698,27 +1727,98 @@ function wsDownloadResultHTML(r){
     '<div class="md-p">'+ICONS.db+' '+esc(fmtBytes(r.bytes))+' in '+(r.elapsedMs/1000).toFixed(1)+'s · steamcmd attempts: '+esc(String(r.attempts))+'</div>' +
     '<div class="md-p" style="color:var(--faint)">Next: run the analyze pipeline on this folder (M3).</div></div>';
 }
+/* Live phase detection: the server logs "workshop_analyze: <phase>" via pino,
+ * and the bridge forwards every log line as an SSE `log` event, so the deck
+ * can drive a real pipeline UI instead of a static spinner. */
+function wsPhaseFromLogs(){
+  let phase = null;
+  for (const e of S.serverLog || []){
+    const line = e && e.line;
+    if (!line) continue;
+    // Only phases logged since this analyze started — otherwise a re-run could
+    // instantly inherit a stale phase from the previous run (log is capped, not cleared).
+    if (e.t && S.ws.startedAt && e.t < S.ws.startedAt) continue;
+    let msg = null;
+    try { const j = JSON.parse(line); if (j && typeof j.msg === 'string') msg = j.msg; } catch { /* raw text fallback below */ }
+    if (!msg){ const m = line.match(/"msg":"workshop_analyze:\s*([^"]*)"/); if (m) msg = 'workshop_analyze: ' + m[1]; }
+    if (!msg || !msg.startsWith('workshop_analyze:')) continue;
+    phase = msg.slice('workshop_analyze:'.length).trim();
+  }
+  return phase;
+}
+function wsPipeHTML(){
+  const steps = ['Download','Parse','Analyze'];
+  const ph = S.ws.phase || '';
+  let cur = 0;
+  if (/pars/i.test(ph)) cur = 1;
+  else if (/analys|analyz/i.test(ph)) cur = 2;
+  const secs = Math.max(0, Math.round((Date.now() - (S.ws.startedAt || Date.now())) / 1000));
+  return '<div class="ws-pipe" id="wsPipe">' +
+    steps.map((s, i) =>
+      '<span class="ws-step ' + (i < cur ? 'done' : i === cur ? 'active' : '') + '"><span class="dot"></span>' + s +
+      (i === cur ? '<span class="spinner" style="width:11px;height:11px;margin-left:2px"></span>' : '') + '</span>'
+    ).join('<span style="color:var(--faint);font-size:11px">→</span>') +
+    '<span class="elapsed">' + secs + 's</span>' +
+    (ph ? '<div style="width:100%;font-size:11.5px;color:var(--muted)">' + esc(ph) + '</div>' : '') +
+  '</div>';
+}
+function wsReportHTML(r){
+  const sc = r.sc || {};
+  const an = sc.analysis || {};
+  const q = an.quality || {};
+  const issues = Array.isArray(an.issues) ? an.issues : [];
+  const errN = issues.filter(i => i.severity === 'error').length;
+  const warnN = issues.filter(i => i.severity === 'warning').length;
+  const parse = sc.parse || {};
+  const chips = [];
+  if (typeof q.overall === 'number') chips.push('<span class="ws-chip score">Quality <b>' + q.overall + '/100</b></span>');
+  chips.push('<span class="ws-chip">Items <b>' + esc(String(parse.itemCount ?? '—')) + '</b></span>');
+  chips.push('<span class="ws-chip">Recipes <b>' + esc(String(parse.recipeCount ?? '—')) + '</b></span>');
+  chips.push('<span class="ws-chip">Sounds <b>' + esc(String(parse.soundCount ?? '—')) + '</b></span>');
+  chips.push('<span class="ws-chip">Files <b>' + esc(String(parse.filesProcessed ?? '—')) + '</b></span>');
+  chips.push(errN || warnN
+    ? '<span class="ws-chip warn">Issues <b>' + errN + ' err / ' + warnN + ' warn</b></span>'
+    : '<span class="ws-chip">Issues <b>0</b></span>');
+  if (sc.elapsedMs != null) chips.push('<span class="ws-chip">⏱ ' + (sc.elapsedMs / 1000).toFixed(1) + 's</span>');
+  return '<section class="glass card" style="margin-top:16px;overflow:hidden">' +
+    '<div class="ws-report-head">' + ICONS.scan + ' Mod Report' +
+      '<span class="badge b-dim" style="margin-left:auto">' + esc(sc.title || '') + '</span>' +
+      '<button class="btn sm" data-act="ws-copy-report" title="Copy the full report">' + ICONS.copy + ' Copy</button>' +
+      '<button class="btn sm ghost" data-act="ws-toggle-report" id="wsToggleBtn">Show more</button>' +
+    '</div>' +
+    '<div style="padding:0 16px 4px">' + chips.join('') + '</div>' +
+    '<div class="md-out ws-report-body" id="wsReportBody" style="border-radius:0;border:0;border-top:1px solid var(--stroke-soft)">' + renderMD(r.text) + '</div>' +
+  '</section>';
+}
 async function wsAnalyze(id){
   if (S.ws.analyzing) return;
-  S.ws.analyzing = true; S.ws.report = null; S.ws.download = null; S.ws.error = null;
+  clearInterval(S.ws.pipeTimer);
+  S.ws.analyzing = true; S.ws.report = null; S.ws.download = null; S.ws.error = null; S.ws.actionError = null;
+  S.ws.phase = null; S.ws.startedAt = Date.now();
   renderView();
+  S.ws.pipeTimer = setInterval(() => {
+    S.ws.phase = wsPhaseFromLogs();
+    const el = $('#wsPipe');
+    if (el) el.outerHTML = wsPipeHTML();
+  }, 1000);
   try {
     const reply = await rpc('tools/call', { name:'workshop_analyze', arguments:{ id } });
     const text = reply.result?.content?.map(c => c.text || '').join('\n') || '';
-    S.ws.report = { text };
+    S.ws.report = { text, sc: reply.result?.structuredContent || null };
     if (!text) throw new Error('Empty report from workshop_analyze');
-    addEvent('workshop analyze · ' + id);
+    addEvent('workshop analyze · ' + id + (S.ws.report.sc?.elapsedMs != null ? ' · ' + (S.ws.report.sc.elapsedMs / 1000).toFixed(1) + 's' : ''));
     toast('Analysis complete — Mod Report ready');
   } catch (e){
-    S.ws.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    S.ws.actionError = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
   } finally {
+    clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
     S.ws.analyzing = false;
     renderView();
   }
 }
 async function wsDownload(id){
   if (S.ws.downloading) return;
-  S.ws.downloading = true; S.ws.download = null; S.ws.error = null;
+  S.ws.downloading = true; S.ws.download = null; S.ws.error = null; S.ws.actionError = null;
   renderView();
   try {
     const reply = await rpc('tools/call', { name:'workshop_download', arguments:{ id } });
@@ -1728,7 +1828,7 @@ async function wsDownload(id){
     toast('Downloaded — ' + fmtBytes(S.ws.download.bytes));
     addEvent('workshop download · ' + id + ' · ' + fmtBytes(S.ws.download.bytes));
   } catch (e){
-    S.ws.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    S.ws.actionError = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
   } finally {
     S.ws.downloading = false;
     renderView();
@@ -1762,14 +1862,18 @@ function wsDetailHTML(d){
         '<div class="krow"><span class="k">Last updated</span><span class="v">'+esc(d.timeUpdated ? new Date(d.timeUpdated*1000).toISOString().slice(0,10) : '—')+'</span></div>' +
         '<div class="krow"><span class="k">Created</span><span class="v">'+esc(d.timeCreated ? new Date(d.timeCreated*1000).toISOString().slice(0,10) : '—')+'</span></div>' +
         (tags ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">'+tags+'</div>' : '') +
+        (S.ws.actionError
+          ? '<div class="ws-alert">✖ '+esc(S.ws.actionError)+'<button class="ibtn" data-act="ws-dismiss-err" title="Dismiss" aria-label="Dismiss error">'+ICONS.x+'</button></div>'
+          : '') +
+        (S.ws.analyzing ? wsPipeHTML() : '') +
         '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">' +
           (S.ws.analyzing
-            ? '<span style="display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> Fetching &amp; analyzing — download, parse, analyze…</span>'
+            ? '<span style="display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> '+esc(S.ws.phase || 'Connecting to Steam…')+'</span>'
             : '<button class="btn primary" data-act="ws-analyze" data-id="'+esc(d.id)+'">'+ICONS.scan+' Fetch &amp; Analyze</button>') +
           '<button class="btn" data-act="ws-download" data-id="'+esc(d.id)+'"'+(S.ws.analyzing?' disabled':'')+'>'+ICONS.download+(S.ws.downloading?' Downloading…':' Download mod')+'</button>' +
         '</div>' +
         (S.ws.download ? wsDownloadResultHTML(S.ws.download) : '') +
-        (S.ws.report ? '<section class="glass card" style="margin-top:16px;overflow:hidden"><div id="wsReportHead" style="padding:12px 16px;border-bottom:1px solid var(--stroke-soft);font-weight:700;display:flex;align-items:center;gap:8px">'+ICONS.scan+' Mod Report</div><div class="md-out" style="border-radius:0;border:0;max-height:560px">'+renderMD(S.ws.report.text)+'</div></section>' : '') +
+        (S.ws.report ? wsReportHTML(S.ws.report) : '') +
         (d.description ? '<div class="ws-desc">'+esc(d.description)+'</div>' : '') +
       '</div>' +
     '</div></section>';
@@ -1953,10 +2057,26 @@ document.addEventListener('click', e => {
       wsFetchDetails(v);
     }
     else if (a === 'ws-select') wsFetchDetails(act.dataset.id);
-    else if (a === 'ws-back'){ S.ws.detail = null; S.ws.error = null; renderView(); }
+    else if (a === 'ws-back'){
+      clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+      S.ws.detail = null; S.ws.error = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
+      renderView();
+    }
     else if (a === 'ws-download') wsDownload(act.dataset.id);
     else if (a === 'ws-analyze') wsAnalyze(act.dataset.id);
     else if (a === 'ws-refresh'){ wsFetchDetails(act.dataset.id, true); toast('Refreshing metadata from Steam…'); }
+    else if (a === 'ws-dismiss-err'){ S.ws.actionError = null; renderView(); }
+    else if (a === 'ws-copy-report'){
+      if (S.ws.report?.text) navigator.clipboard?.writeText(S.ws.report.text)
+        .then(() => toast('Mod Report copied to clipboard'))
+        .catch(() => toast('Copy blocked by browser','warn'));
+    }
+    else if (a === 'ws-toggle-report'){
+      const body = $('#wsReportBody'), btn = $('#wsToggleBtn');
+      if (!body || !btn) return;
+      const open = body.classList.toggle('expand');
+      btn.textContent = open ? 'Show less' : 'Show more';
+    }
     else if (a === 'open-term') openTerminal();
     else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); renderAllLogs(); toast('Local wire log cleared'); }
     else if (a === 'restart') restartServer();

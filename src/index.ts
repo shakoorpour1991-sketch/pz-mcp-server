@@ -77,6 +77,7 @@ import {
   formatWorkshopDownload,
   formatWorkshopModReport,
   formatWorkshopSearchResults,
+  type WorkshopModReport,
 } from "./utils/formatters.js";
 
 // Read the server version from package.json (audit minor: was hardcoded '1.1.0')
@@ -941,6 +942,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "workshop_analyze": {
         const { id } = WorkshopAnalyzeSchema.parse(args);
         const resolvedId = parseWorkshopInput(id);
+        const analyzeT0 = Date.now();
         // Confirm the item is a Project Zomboid workshop item before touching disk.
         const details = await workshopClient.getDetails(resolvedId);
         const isPz = details.appId === "108600";
@@ -966,7 +968,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const tmpDbDir = mkdtempSync(join(tmpdir(), "pz-workshop-"));
         const wsDb = new DatabaseManager(join(tmpDbDir, "workshop.db"));
         await wsDb.initialize();
-        let report;
+        let report: WorkshopModReport | null = null;
         try {
           const wsParser = new ProjectZomboidParser(wsDb);
           const wsAnalyzer = new ModAnalyzer(wsDb, wsParser);
@@ -986,6 +988,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             subscribers: details.subscribers,
             downloadedPath: dl.downloadedPath,
             downloadBytes: dl.bytes,
+            elapsedMs: Date.now() - analyzeT0,
             parse: parseResults,
             analysis,
           };
@@ -993,7 +996,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           wsDb.close();
           rmSync(tmpDbDir, { recursive: true, force: true });
         }
-        onPhase("running analysis suite");
+        if (!report) {
+          throw new Error("workshop_analyze produced no report");
+        }
 
         return {
           content: [

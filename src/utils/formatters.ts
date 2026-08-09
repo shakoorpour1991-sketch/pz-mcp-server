@@ -425,7 +425,7 @@ export function formatWorkshopDownload(result: {
   return output;
 }
 
-export function formatWorkshopModReport(report: {
+export interface WorkshopModReport {
   modId: string;
   title: string;
   url: string;
@@ -433,6 +433,8 @@ export function formatWorkshopModReport(report: {
   subscribers: number;
   downloadedPath: string;
   downloadBytes: number;
+  /** Total tool duration (download + parse + analyze), ms. */
+  elapsedMs: number;
   parse: {
     itemCount: number;
     recipeCount: number;
@@ -445,7 +447,9 @@ export function formatWorkshopModReport(report: {
     errors: Array<{ file: string; message: string }>;
   };
   analysis: any;
-}): string {
+}
+
+export function formatWorkshopModReport(report: WorkshopModReport): string {
   const p = report.parse;
   const a = report.analysis ?? {};
   const q = a.quality ?? {};
