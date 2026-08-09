@@ -1,14 +1,31 @@
-# Dependencies
-node_modules/
+# Images and assets (if generated/compressed versions exist)
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.webm
 
-# Build output
-dist/
-
-# Runtime SQLite databases (parse_game_files / index_knowledge_base output)
-data/
-
-# Logs
-*.log
-
-# Hermes agent workspace
-.hermes/
+# Compressed archives
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
