@@ -1248,6 +1248,98 @@ export class DatabaseManager {
   }
 
   /**
+   * Structured recipe mirror row for one recipe id — used by the recipe chain
+   * to enrich recipe nodes with category / time / skill metadata (rich
+   * inspector, recipe-chain roadmap). Returns null when the id has no recipes
+   * mirror row (e.g. legacy B41 recipe item rows parsed before mirroring).
+   */
+  async getRecipeById(id: string): Promise<{
+    id: string;
+    name: string;
+    module: string;
+    category?: string;
+    time?: number;
+    skill?: string;
+    skillLevel?: number;
+    result?: string;
+    resultCount?: number;
+  } | null> {
+    const row = this.db
+      .prepare(
+        "SELECT id, name, module, category, time, skill, skill_level, result, result_count FROM recipes WHERE id = ?",
+      )
+      .get(id) as unknown as
+      | {
+          id: string;
+          name: string;
+          module: string;
+          category: string | null;
+          time: number | null;
+          skill: string | null;
+          skill_level: number | null;
+          result: string | null;
+          result_count: number | null;
+        }
+      | undefined;
+    if (!row) return null;
+    const out: {
+      id: string;
+      name: string;
+      module: string;
+      category?: string;
+      time?: number;
+      skill?: string;
+      skillLevel?: number;
+      result?: string;
+      resultCount?: number;
+    } = { id: row.id, name: row.name, module: row.module };
+    if (row.category) out.category = row.category;
+    if (row.time !== null) out.time = row.time;
+    if (row.skill) out.skill = row.skill;
+    if (row.skill_level !== null) out.skillLevel = row.skill_level;
+    if (row.result) out.result = row.result;
+    if (row.result_count !== null) out.resultCount = row.result_count;
+    return out;
+  }
+
+  /**
+   * Tag-output conflicts: tags multiple recipes claim to output. Tag refs live
+   * only in recipe_ingredients (never the references table), so the exact-item
+   * duplicate query cannot see them — this is the low-severity complement
+   * (recipe-chain roadmap: conflict severity).
+   */
+  async findDuplicateTagOutputs(
+    limit: number,
+  ): Promise<Array<{ tag: string; recipeCount: number }>> {
+    const rows = this.db
+      .prepare(
+        `SELECT ref AS tag, COUNT(DISTINCT recipe_id) AS recipe_count
+         FROM recipe_ingredients
+         WHERE role = 'output' AND ref_type = 'tag'
+         GROUP BY ref
+         HAVING COUNT(DISTINCT recipe_id) > 1
+         ORDER BY recipe_count DESC, tag ASC
+         LIMIT ?`,
+      )
+      .all(limit) as unknown as Array<{ tag: string; recipe_count: number }>;
+    return rows.map((r) => ({ tag: r.tag, recipeCount: r.recipe_count }));
+  }
+
+  /**
+   * Recipe ids that declare `ref` as an output (role='output'). Used to list
+   * the producers of a tag conflict — refs are exact spellings (tags have no
+   * module-qualified variants).
+   */
+  async getRecipesByOutputRef(ref: string): Promise<Array<string>> {
+    const rows = this.db
+      .prepare(
+        "SELECT recipe_id FROM recipe_ingredients WHERE role = 'output' AND ref = ?",
+      )
+      .all(ref) as unknown as Array<{ recipe_id: string }>;
+    return rows.map((r) => r.recipe_id);
+  }
+
+  /**
    * Ingredient/output rows for one recipe (the recipe_ingredients mirror) —
    * used to attach count labels to chain-graph nodes. ref is the exact
    * spelling the script used (may be a tag or mapper ref).

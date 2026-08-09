@@ -531,6 +531,24 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .chain-insp-fs{position:absolute;top:64px;right:16px;width:min(320px,calc(100% - 32px));max-height:calc(100% - 96px);overflow:auto;z-index:2;padding:12px;border-radius:14px}
 .insp-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .chain-rebuild{position:sticky;top:0;z-index:5;margin-top:10px;width:max-content;max-width:100%;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:6px 12px;border-radius:999px;background:rgba(16,20,30,.9);border:1px solid var(--stroke-soft)}
+/* Recipe Chain roadmap: cycles, path, highlight, history */
+.chain-node.cyc rect{stroke:#FB7185;stroke-width:2;stroke-dasharray:5 3}
+.chain-node.pat rect{stroke:var(--emerald);stroke-width:2.4;filter:drop-shadow(0 0 12px rgba(52,211,153,.45))}
+.chain-svg.dim .chain-node{opacity:.14}
+.chain-svg.dim .chain-node.mat{opacity:1}
+.chain-svg.dim .chain-edge,.chain-svg.dim .chain-count{opacity:.1}
+.chain-svg.dim .chain-edge.mat,.chain-svg.dim .chain-count.mat{opacity:1}
+.chain-path{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-radius:12px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.3);font-family:var(--font-mono);font-size:11px;margin-bottom:10px}
+.chain-path .phop{display:inline-flex;align-items:center;gap:6px;color:var(--text)}
+.chain-path .phop b{color:#7EE7B8;font-weight:700}
+.chain-path .parr{color:var(--faint);flex:none}
+.chain-path .pbad{margin-left:auto;flex:none}
+.chain-cycles{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chain-cyc-item{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;
+  border:1px solid rgba(251,113,133,.4);background:rgba(251,113,133,.08);color:#FDA4AF;cursor:pointer;transition:transform .1s ease}
+.chain-cyc-item:active{transform:scale(.97)}
+.chain-insp-note{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#FDA4AF;padding:7px 10px;border-radius:10px;margin-top:8px;flex-wrap:wrap;
+  background:rgba(251,113,133,.08);border:1px solid rgba(251,113,133,.28)}
 </style>
 </head>
 <body>
@@ -731,6 +749,8 @@ const ICONS = {
   warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
   graph:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2.4"/><path d="M7 6h10M6.5 7.5L11 16M17.5 7.5L13 16"/></svg>',
   folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>',
+  fwd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
 };
 const TOOL_ICONS = { validate_script:'shield', generate_script:'spark', search_vanilla:'search', check_references:'link',
   analyze_mod:'scan', parse_game_files:'db', index_knowledge_base:'book', search_knowledge_base:'search', list_knowledge_topics:'book' };
@@ -918,7 +938,10 @@ const S = {
   pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
   chain:{ seed:'', direction:'both', depth:2, busy:false, error:null, graph:null, layout:null, sugg:null,
     conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0,
-    fitted:false, fs:false, dropIdx:-1, _dbSeen:false },
+    fitted:false, fs:false, dropIdx:-1, _dbSeen:false,
+    // Recipe Chain roadmap: expand-in-place, path mode, highlight, history, cycles
+    expandBusy:false, path:null, pathFound:null, pathStash:null, pathTarget:'', pathBusy:false, highlight:'',
+    history:[], histIdx:-1, cycOpen:false },
   settings:{ accent:'#22D3EE', reduceMotion:false, autoScroll:true, follow:false },
 };
 const MEM_BUDGET_MB = 512;
@@ -2182,6 +2205,14 @@ function chainHTML(){
           '<input type="range" id="chainDepth" min="1" max="10" step="1" value="'+S.chain.depth+'" style="width:150px" aria-label="Graph depth">' +
           '<button class="btn sm ghost" id="chainConfBtn" data-act="chain-conflicts" style="border:1px solid var(--stroke)">'+ICONS.warn+' Show recipe conflicts</button></div>' +
       '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--stroke-soft)">' +
+        '<button class="ibtn" id="chainBackBtn" data-act="chain-back" style="width:34px;height:34px;border-radius:10px" title="Back to previous root" aria-label="Back">'+ICONS.back+'</button>' +
+        '<button class="ibtn" id="chainFwdBtn" data-act="chain-fwd" style="width:34px;height:34px;border-radius:10px" title="Forward" aria-label="Forward">'+ICONS.fwd+'</button>' +
+        '<div style="flex:1;min-width:220px;position:relative"><input class="field" id="chainPathTarget" value="'+esc(S.chain.pathTarget)+'" style="padding-right:44px" placeholder="Path to… e.g. Base.Bread — shortest crafting route from the seed" aria-label="Path target" autocomplete="off" spellcheck="false">' +
+          '<button class="ibtn" data-act="chain-path-go" style="position:absolute;right:4px;top:4px;width:36px;height:36px;border-radius:10px" title="Find shortest path" aria-label="Find path">'+ICONS.search+'</button></div>' +
+        '<div style="flex:1;min-width:200px;position:relative"><input class="field" id="chainHighlight" value="'+esc(S.chain.highlight)+'" style="padding-right:44px" placeholder="Highlight… e.g. Nails — dims nodes without it" aria-label="Graph highlight" autocomplete="off" spellcheck="false">' +
+          '<button class="ibtn" data-act="chain-hl-clear" style="position:absolute;right:4px;top:4px;width:36px;height:36px;border-radius:10px" title="Clear highlight" aria-label="Clear highlight">'+ICONS.x+'</button></div>' +
+      '</div>' +
     '</section>' +
     '<div id="chainOut"></div>';
 }
@@ -2193,6 +2224,7 @@ function renderChain(){
   if (emptyDb) html += '<div class="ws-alert" style="margin-bottom:14px">'+ICONS.warn+' The database is empty — run <b>parse_game_files</b> once so the graph has real crafting data. <button class="btn sm primary" style="margin-left:auto" data-act="go-tool" data-tool="parse_game_files">'+ICONS.db+' parse_game_files</button></div>';
   if (c.confBusy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> scanning recipes for conflicts…</div>';
   else if (c.conflicts) html += chainConflictsHTML();
+  if (c.cycOpen && c.graph && c.graph.cycles && c.graph.cycles.length) html += chainCyclesHTML();
   if (c.busy && c.layout) html += chainGraphHTML() + '<div class="chain-rebuild"><span class="spinner" style="width:12px;height:12px"></span> rebuilding graph…</div>';
   else if (c.busy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> expanding crafting graph…</div>';
   else if (c.error) html += '<div class="md-out" style="color:#FDA4AF;margin-top:14px">✖ '+esc(c.error)+'</div>';
@@ -2207,17 +2239,26 @@ function renderChain(){
     // claim the fit — the arriving new graph fits instead.
     if (!c.fitted && !c.busy){ c.fitted = true; requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); }); }
   }
+  chainHistButtons();
 }
 function chainConflictsHTML(){
-  const c = S.chain, cs = c.conflicts || [];
+  const c = S.chain, cs = (c.conflicts || []).slice();
+  // Severity ranking (roadmap #7): exact duplicates (high) first, tag
+  // multi-path (low) after — the game tolerates tag overlap.
+  const high = cs.filter(x => x.severity === 'high').length;
+  cs.sort((a, b) => (a.severity === 'high' ? 0 : 1) - (b.severity === 'high' ? 0 : 1) || a.item.localeCompare(b.item));
+  const sevBadge = x => x.severity === 'high'
+    ? '<span class="badge b-err" style="flex:none" title="Same item id from multiple recipes — can break recipe resolution">high</span>'
+    : '<span class="badge b-warn" style="flex:none" title="Shared '+(x.kind === 'mapper' ? 'mapper output' : 'tag output')+' — the game tolerates the overlap">'+(x.kind === 'mapper' ? 'mapper' : 'tag')+'</span>';
   return '<div class="glass card panel-card" style="margin-bottom:14px">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+ICONS.warn+' <b>Recipe conflicts</b>' +
       '<span class="badge b-dim">'+cs.length+' conflicted item(s) · '+esc(c.confTotal)+' recipes scanned</span>' +
+      (high ? '<span class="badge b-err">'+high+' high</span>' : '') +
       '<span style="flex:1"></span>' +
       '<button class="ibtn" data-act="chain-conf-clear" style="width:32px;height:32px;border-radius:9px" aria-label="Hide conflicts" title="Hide conflicts">'+ICONS.x+'</button>' +
     '</div>' +
-    '<div class="f-hint" style="margin:6px 2px 10px">Items that multiple recipes claim to produce — click one to graph its producers.</div>' +
-    '<div class="chain-chips">'+cs.map(x => '<button class="chain-chip warn" data-act="chain-conf" data-id="'+esc(x.item)+'" title="'+esc(x.item)+' — '+x.recipes.length+' recipes">'+esc(chop(x.item, 26))+' <span class="badge b-err" style="flex:none">'+x.recipes.length+'</span></button>').join('')+'</div>' +
+    '<div class="f-hint" style="margin:6px 2px 10px">Items that multiple recipes claim to produce — <b>high</b> = exact duplicate (real breakage risk), <b>tag</b> = shared tag the game tolerates. Click one to graph its producers.</div>' +
+    '<div class="chain-chips">'+cs.map(x => '<button class="chain-chip'+(x.severity === 'high' ? ' warn' : '')+'" data-act="chain-conf" data-id="'+esc(x.item)+'" title="'+esc(x.item)+' — '+x.recipes.length+' recipes ('+x.kind+')">'+esc(chop(x.item, 26))+' <span class="badge b-dim" style="flex:none">'+x.recipes.length+'</span> '+sevBadge(x)+'</button>').join('')+'</div>' +
   '</div>';
 }
 async function chainConflicts(){
@@ -2254,6 +2295,10 @@ async function chainRun(seedOverride){
   c.seed = seed; c.insp = null; c.sugg = null; c.error = null;
   c.busy = true;
   if (newSeed) c.fitted = false; // new seed re-fits; depth/direction tweaks preserve the current view
+  // A fresh build supersedes any path view / highlight-rooted state.
+  // Any full rebuild supersedes path/highlight-rooted state (a path view is a
+  // different graph; direction/depth tweaks rebuild the whole walk).
+  c.path = null; c.pathFound = null; c.pathStash = null; c.cycOpen = false;
   c.expLayers = {};
   chainDropClose();
   const btn = $('#chainRunBtn');
@@ -2268,6 +2313,14 @@ async function chainRun(seedOverride){
     const g = reply.result?.structuredContent;
     if (!g || !Array.isArray(g.nodes)) throw new Error('empty graph reply');
     if (g.seed !== seed){ c.seed = g.seed; if (f) f.value = g.seed; }
+    // Root history (roadmap #5): each fresh seed roots a new entry; re-rooting
+    // an existing seed just moves back to it (no dupes).
+    const lastRoot = c.history[c.histIdx];
+    if (lastRoot !== g.seed){
+      c.history = c.history.slice(0, c.histIdx + 1);
+      c.history.push(g.seed);
+      c.histIdx = c.history.length - 1;
+    }
     c.busy = false;
     if (g.nodes.length > 1){
       c.graph = g; c.layout = chainLayout();
@@ -2286,6 +2339,178 @@ async function chainRun(seedOverride){
   } finally {
     if (btn){ btn.disabled = false; btn.innerHTML = ICONS.play+' Build graph'; }
   }
+}
+/* ---- Recipe Chain roadmap: expand-in-place, path, cycles, history, export ---- */
+function chainCyclesHTML(){
+  const cyc = (S.chain.graph && S.chain.graph.cycles) || [];
+  return '<div class="glass card panel-card" style="margin-bottom:14px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+ICONS.warn+' <b>Crafting cycles</b>' +
+      '<span class="badge b-err">'+cyc.length+'</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="ibtn" data-act="chain-cyc-close" style="width:32px;height:32px;border-radius:9px" aria-label="Hide cycles" title="Hide cycles">'+ICONS.x+'</button>' +
+    '</div>' +
+    '<div class="f-hint" style="margin:6px 2px 10px">A recipe produces an item it also consumes — a loop that can break crafting IRL. Click to graph the recipe.</div>' +
+    '<div class="chain-cycles">'+cyc.map(x => '<button class="chain-cyc-item" data-act="chain-conf" data-id="'+esc(x.recipe)+'" title="'+esc(x.recipe)+'">🔄 '+esc(chop(x.recipe, 28))+' ⇄ '+esc(chop(x.item, 24))+'</button>').join('')+'</div>' +
+  '</div>';
+}
+async function chainExpand(nodeId){
+  const c = S.chain, g = c.graph;
+  if (!g || !g.seed || c.expandBusy || c.busy) return;
+  c.expandBusy = true; c.busy = true;
+  renderChain();
+  try {
+    // One server round trip: the walk roots at the clicked node with depth 1,
+    // returns a delta the client merges into the existing graph (roadmap #2).
+    const reply = await rpc('tools/call', { name:'analyze_recipe_chain', arguments:{ seed:c.seed, direction:c.direction, maxDepth:c.depth, expandNode:nodeId } });
+    const d = reply.result?.structuredContent;
+    if (!d || !Array.isArray(d.nodes)) throw new Error('empty expand reply');
+    // Merge: replace the expanded node's payload, add any brand-new neighbors.
+    const byId = new Map(g.nodes.map(n => [n.id, n]));
+    for (const n of d.nodes) byId.set(n.id, n);
+    g.nodes = [...byId.values()];
+    // The delta can reach layers beyond the original walk — allow the full
+    // layout depth; chainLayout's column builder stops at empty layers, so
+    // extra headroom costs nothing and merged nodes are never dropped.
+    g.maxDepth = Math.max(g.maxDepth, Math.min(10, c.depth + 2));
+    if (d.cycles && d.cycles.length) g.cycles = d.cycles;
+    if (d.truncated) g.truncated = true;
+    c.busy = false; c.expandBusy = false;
+    c.layout = chainLayout();
+    renderChain();
+    addEvent('recipe chain · expand ' + nodeId + ' → +' + (d.nodes.length - 1) + ' linked');
+    toast('Expanded '+nodeId);
+  } catch (e){
+    c.busy = false; c.expandBusy = false;
+    c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    renderChain();
+  }
+}
+async function chainPathGo(){
+  const c = S.chain, f = $('#chainPathTarget');
+  const target = f ? f.value.trim() : c.pathTarget;
+  if (!target){ toast('Type a target item or recipe id first','warn'); return; }
+  if (c.pathBusy || c.busy) return;
+  c.pathTarget = target;
+  c.pathBusy = true; c.busy = true;
+  renderChain();
+  try {
+    // Shortest crafting pipeline seed → target (roadmap #3). The reply's
+    // nodes ARE the path, so the graph collapses to the pipeline.
+    const reply = await rpc('tools/call', { name:'analyze_recipe_chain', arguments:{ seed:c.seed, direction:c.direction, maxDepth:Math.max(c.depth, 5), target } });
+    const g = reply.result?.structuredContent;
+    if (!g || !Array.isArray(g.nodes)) throw new Error('empty path reply');
+    c.path = g.path || [];
+    c.pathFound = g.pathFound;
+    c.busy = false; c.pathBusy = false;
+    if (c.pathFound){
+      // Stash the full graph so "Back to full graph" can restore it — the
+      // path reply carries only the pipeline nodes (reviewer fix). The stash
+      // is only taken from a non-path view (never from a previous path view).
+      if (!c.pathStash) c.pathStash = c.graph;
+      c.graph = g; c.layout = chainLayout();
+      renderChain();
+      addEvent('recipe path · ' + c.seed + ' → ' + target + ' · ' + (c.path.length - 1) + ' step(s)');
+      toast('Path found: '+c.path.join(' → '));
+    } else {
+      renderChain();
+      toast('No crafting path from '+c.seed+' to '+target,'warn');
+    }
+  } catch (e){
+    c.busy = false; c.pathBusy = false;
+    c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    renderChain();
+  }
+}
+function chainBack(){
+  const c = S.chain;
+  if (c.histIdx <= 0) return;
+  c.histIdx--;
+  const seed = c.history[c.histIdx];
+  if (seed) chainRun(seed);
+  chainHistButtons();
+}
+function chainFwd(){
+  const c = S.chain;
+  if (c.histIdx >= c.history.length - 1) return;
+  c.histIdx++;
+  const seed = c.history[c.histIdx];
+  if (seed) chainRun(seed);
+  chainHistButtons();
+}
+function chainHistButtons(){
+  const c = S.chain;
+  const b = $('#chainBackBtn'), fw = $('#chainFwdBtn');
+  if (b) b.disabled = c.histIdx <= 0;
+  if (fw) fw.disabled = c.histIdx >= c.history.length - 1;
+}
+function chainExportMd(){
+  const c = S.chain, g = c.graph;
+  if (!g) return;
+  let md = '# Recipe Chain: ' + g.seed + '\n\n';
+  md += '- **Seed**: ' + g.seed + ' (' + g.seedKind + ')\n';
+  md += '- **Nodes**: ' + g.nodes.length + (g.truncated ? ' (truncated)' : '') + '\n';
+  if (c.path && c.pathFound) md += '- **Path**: ' + c.path.join(' → ') + '\n';
+  if (g.cycles && g.cycles.length) md += '- **Cycles**: ' + g.cycles.map(x => x.recipe + '⇄' + x.item).join(', ') + '\n';
+  md += '\n';
+  for (const n of g.nodes){
+    const icon = n.kind === 'recipe' ? '🔧' : n.kind === 'item' ? '📦' : '❓';
+    md += icon + ' **' + n.id + '** (' + n.kind + (n.itemType ? ', ' + n.itemType : '') + ')' + (n.cycle ? ' 🔄' : '') + '\n';
+    if (n.props && Object.keys(n.props).length){
+      const bits = [];
+      if (n.props.category) bits.push('category ' + n.props.category);
+      if (typeof n.props.weight === 'number') bits.push('weight ' + n.props.weight);
+      if (typeof n.props.calories === 'number') bits.push(n.props.calories + ' cal');
+      if (typeof n.props.hunger === 'number') bits.push('hunger ' + n.props.hunger);
+      if (n.props.tags && n.props.tags.length) bits.push('tags ' + n.props.tags.join(';'));
+      if (bits.length) md += '  - ' + bits.join(' · ') + '\n';
+    }
+    if (n.meta){
+      const bits = [];
+      if (n.meta.category) bits.push('category ' + n.meta.category);
+      if (typeof n.meta.time === 'number') bits.push(n.meta.time + 's');
+      if (n.meta.skill) bits.push(n.meta.skill + (n.meta.skillLevel !== undefined ? ' ' + n.meta.skillLevel : ''));
+      if (n.meta.tools && n.meta.tools.length) bits.push('tools ' + n.meta.tools.map(t => t.id).join(', '));
+      if (bits.length) md += '  - ' + bits.join(' · ') + '\n';
+    }
+    if (n.ingredients.length) md += '  - consumes: ' + n.ingredients.map(i => i.id + (i.count ? ' ×' + i.count : '')).join(', ') + '\n';
+    if (n.results.length) md += '  - produces: ' + n.results.map(r => r.id + (r.count ? ' ×' + r.count : '')).join(', ') + '\n';
+    if (n.producedBy.length) md += '  - made by: ' + n.producedBy.join(', ') + '\n';
+    if (n.consumedBy.length) md += '  - used by: ' + n.consumedBy.join(', ') + '\n';
+    md += '\n';
+  }
+  md += '---\nGenerated by pz-mcp-server Control Deck · analyze_recipe_chain\n';
+  navigator.clipboard?.writeText(md)
+    .then(() => toast('Chain copied as markdown'))
+    .catch(() => toast('Copy blocked by browser','warn'));
+}
+function chainExportSvg(){
+  const svg = $('#chainSvg');
+  if (!svg) return;
+  const clone = svg.cloneNode(true);
+  const width = svg.viewBox.baseVal.width, height = svg.viewBox.baseVal.height;
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', width); clone.setAttribute('height', height);
+  const css = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+  const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = css;
+  clone.insertBefore(style, clone.firstChild);
+  const blob = new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'recipe-chain-' + (S.chain.graph ? S.chain.graph.seed.replace(/[^\w.-]+/g, '_') : 'graph') + '.svg';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('SVG exported');
+}
+function chainHighlightApply(){
+  const f = $('#chainHighlight');
+  const v = f ? f.value.trim() : '';
+  if (S.chain.highlight === v) return;
+  S.chain.highlight = v;
+  // Debounce repaints on big graphs (reviewer): the seed/depth inputs use the
+  // same 220ms pattern; a full chainPaint per keystroke is wasteful at 500 nodes.
+  clearTimeout(S.chain._hlTimer);
+  S.chain._hlTimer = setTimeout(chainPaint, 160);
 }
 /* (client-side graph builder removed — the tab consumes analyze_recipe_chain) */async function chainSuggest(seed){
   const c = S.chain;
@@ -2365,13 +2590,22 @@ function chainGraphHTML(){
         '<b class="mono" style="font-size:12.5px">'+esc(L.seed.id)+'</b>' + seedBadge +
         (c.graph.truncated ? '<span class="badge b-err">truncated</span>' : '') +
         '<span class="badge b-dim">'+(L.up.length + L.dn.length)+' layer(s) · '+c.graph.nodes.length+' node(s)</span>' +
+        ((c.graph.cycles && c.graph.cycles.length) ? '<button class="chain-chip" data-act="chain-cyc-toggle" style="border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.08);color:#FDA4AF" title="Show crafting cycles">🔄 '+c.graph.cycles.length+' cycle(s)</button>' : '') +
+        (c.pathFound && c.path ? '<button class="chain-chip" data-act="chain-path-clear" style="border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08);color:#7EE7B8" title="Back to the full graph">'+ICONS.x+' path view</button>' : '') +
         '<span class="spacer"></span>' +
+        '<button class="ibtn" data-act="chain-export-md" style="width:34px;height:34px;border-radius:10px" title="Copy chain as markdown" aria-label="Copy markdown"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></button>' +
+        '<button class="ibtn" data-act="chain-export-svg" style="width:34px;height:34px;border-radius:10px" title="Export SVG" aria-label="Export SVG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>' +
         '<button class="ibtn" data-act="chain-fit" style="width:34px;height:34px;border-radius:10px" title="Fit view" aria-label="Fit view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomout" style="width:34px;height:34px;border-radius:10px" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomin" style="width:34px;height:34px;border-radius:10px" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
         '<span class="badge b-dim mono" id="chainZoomVal" style="min-width:46px;text-align:center;font-size:11px">'+Math.round(chainVisibleZoom() * 100)+'%</span>' +
         '<button class="ibtn" data-act="chain-full" style="width:34px;height:34px;border-radius:10px" title="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'" aria-label="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'">'+(c.fs ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15h-6v-6M3 9h6v6M21 21l-6-6M3 3l6 6"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>')+'</button>' +
       '</div>' +
+      (c.pathFound && c.path && c.path.length
+        ? '<div class="chain-path">' + c.path.map((id, i) =>
+            '<span class="phop'+(i === 0 ? '" style="color:#7EE7B8;font-weight:700"' : '"')+' data-act="chain-path-hop" data-id="'+esc(id)+'" title="Click to inspect '+esc(id)+'">'+esc(chop(id, 24))+'</span>' + (i < c.path.length - 1 ? '<span class="parr">→</span>' : '')
+          ).join('') + '<span class="pbad"><span class="badge b-ok" style="flex:none">shortest path · '+(c.path.length - 1)+' step(s)</span></span></div>'
+        : '') +
       '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap" style="height:'+(c.fs ? 'auto' : H)+'px">' +
         '<svg class="chain-svg" id="chainSvg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">' +
           '<defs>' +
@@ -2400,6 +2634,29 @@ function chainPaint(){
   const g = $('#chainG'); if (!g) return;
   const c = S.chain, L = c.layout;
   chainApplyGeometry();
+  // Roadmap #4: graph-wide highlight. When set, nodes are dimmed unless their
+  // id/name, props/tags, meta, ingredients or results mention the term.
+  const hl = (c.highlight || '').trim().toLowerCase();
+  const hlSet = new Set();
+  const hlEdge = new Set();
+  if (hl){
+    for (const n of L.byId.values()){
+      const hay = [n.id, n.name || '',
+        n.props ? JSON.stringify(n.props) : '',
+        n.meta ? JSON.stringify(n.meta) : '',
+        (n.ingredients || []).map(i => i.id).join(' '),
+        (n.results || []).map(r => r.id).join(' '),
+        (n.producedBy || []).join(' '),
+        (n.consumedBy || []).join(' ')].join(' ').toLowerCase();
+      if (hay.includes(hl)){
+        hlSet.add(n.id);
+        for (const i of n.ingredients || []) hlEdge.add(n.id + '|' + i.id);
+        for (const r of n.results || []) hlEdge.add(n.id + '|' + r.id);
+        for (const p of n.producedBy || []) hlEdge.add(n.id + '|' + p);
+        for (const cid of n.consumedBy || []) hlEdge.add(n.id + '|' + cid);
+      }
+    }
+  }
   const colX = idx => 40 + idx * CHAIN_COLW + (CHAIN_COLW - CHAIN_NODE_W) / 2;
   const colYs = col => { const n = col.length, pad = 70, span = chainViewH() - 2 * pad; return col.map((id, i) => pad + (n === 1 ? span / 2 : span * (i + 0.5) / n)); };
   const seedCol = L.up.length;
@@ -2454,12 +2711,14 @@ function chainPaint(){
   if (up0) layerEdges('up', up0.show, [L.seed.id]);
   if (dn0) layerEdges('dn', dn0.show, [L.seed.id]);
   shown.forEach(s => { if (s.d === 0) return; const prev = shown.find(x => x.side === s.side && x.d === s.d - 1); if (prev) layerEdges(s.side, s.show, prev.show); });
-  const edgeHTML = edges.map(e => '<path class="chain-edge" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+e.d+'" stroke="'+e.color+'" stroke-width="1.6" marker-end="url(#mk'+(e.color === '#34D399' ? 'G' : 'A')+')"/>' +
-    (e.count ? '<text class="chain-count" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" x="'+e.lx+'" y="'+e.ly+'" text-anchor="middle">'+e.count+'×</text>' : '')).join('');
-  let nodeHTML = chainNodeHTML(L.seed, seedPos.x, seedPos.y, 'seed');
+  const edgeHTML = edges.map(e => '<path class="chain-edge'+(hlEdge.has(e.a + '|' + e.b) || hlEdge.has(e.b + '|' + e.a) ? ' mat' : '')+'" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+e.d+'" stroke="'+e.color+'" stroke-width="1.6" marker-end="url(#mk'+(e.color === '#34D399' ? 'G' : 'A')+')"/>' +
+    (e.count ? '<text class="chain-count'+(hlEdge.has(e.a + '|' + e.b) || hlEdge.has(e.b + '|' + e.a) ? ' mat' : '')+'" data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" x="'+e.lx+'" y="'+e.ly+'" text-anchor="middle">'+e.count+'×</text>' : '')).join('');
+  const svgEl = $('#chainSvg');
+  if (svgEl) svgEl.classList.toggle('dim', hl.length > 0);
+  let nodeHTML = chainNodeHTML(L.seed, seedPos.x, seedPos.y, 'seed' + (hlSet.has(L.seed.id) ? ' mat' : ''));
   shown.forEach(s => {
     nodeHTML += '<text class="chain-lvl" x="'+(s.xs + CHAIN_NODE_W / 2)+'" y="30" text-anchor="middle">level '+(s.d + 1)+'</text>';
-    s.show.forEach((id, i) => nodeHTML += chainNodeHTML(L.byId.get(id), s.xs, s.ys[i], ''));
+    s.show.forEach((id, i) => nodeHTML += chainNodeHTML(L.byId.get(id), s.xs, s.ys[i], hlSet.has(id) ? 'mat' : ''));
     if (s.col.length > s.show.length){
       const gy = Math.max.apply(null, s.ys) + CHAIN_NODE_H + 20;
       nodeHTML += '<g class="chain-ghost" data-act="chain-more" data-key="'+s.key+'" transform="translate('+s.xs+','+gy+')">' +
@@ -2475,15 +2734,18 @@ function chainPaint(){
 function chainNodeHTML(n, x, y, extra){
   const cls = n.kind === 'recipe' ? 'r' : n.kind === 'item' ? 'i' : 'u';
   const sel = S.chain.insp === n.id;
+  const cyc = n.cycle ? ' cyc' : '';
+  const pat = S.chain.pathFound && S.chain.path && S.chain.path.includes(n.id) ? ' pat' : '';
   const gy = Math.round(CHAIN_NODE_H / 2 - 7);
   const glyph = n.kind === 'recipe'
     ? '<svg x="12" y="'+gy+'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h6M6 2v3L3.4 9.4A2.6 2.6 0 0 0 5.4 13h5.2a2.6 2.6 0 0 0 2-4.1L10 5V2"/><path d="M4.6 10h6.8"/></svg>'
     : n.kind === 'item'
     ? '<svg x="12" y="'+gy+'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2" y="2.5" width="12" height="11" rx="2.5"/><path d="M2 6.5h12"/></svg>'
     : '<text class="cn-glyph" x="18" y="'+CHAIN_NODE_H/2+'" dominant-baseline="central">?</text>';
+  const cycBadge = n.cycle ? '<text x="'+CHAIN_NODE_W+'" y="8" text-anchor="end" style="font-size:13px;pointer-events:none">🔄</text>' : '';
   const tip = n.name && n.name !== n.id ? n.name + ' · ' + n.id : n.id;
-  return '<g class="chain-node '+cls+(sel ? ' sel' : '')+(extra ? ' '+extra : '')+'" data-act="chain-node" data-id="'+esc(n.id)+'" title="'+esc(tip)+'" transform="translate('+x+','+y+')">' +
-    '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12"/>' + glyph +
+  return '<g class="chain-node '+cls+(sel ? ' sel' : '')+(extra ? ' '+extra : '')+cyc+pat+'" data-act="chain-node" data-id="'+esc(n.id)+'" title="'+esc(tip)+(n.cycle ? ' — self-loop: produces its own ingredient' : '')+'" transform="translate('+x+','+y+')">' +
+    '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12"/>' + glyph + cycBadge +
     '<text class="cn-name" x="32" y="'+Math.round(CHAIN_NODE_H/2 - 7)+'">'+esc(chop(n.name || n.id, 16))+'</text>' +
     '<text class="cn-id" x="32" y="'+Math.round(CHAIN_NODE_H/2 + 9)+'">'+esc(chop(n.id, 20))+'</text>' +
   '</g>';
@@ -2491,6 +2753,16 @@ function chainNodeHTML(n, x, y, extra){
 function chainInspHTML(n){
   const rows = [];
   if (n.kind === 'recipe'){
+    // Roadmap #1: recipe metadata (category/time/skill/tools) from the mirror.
+    if (n.meta){
+      const bits = [];
+      if (n.meta.category) bits.push('category <b>'+esc(n.meta.category)+'</b>');
+      if (typeof n.meta.time === 'number') bits.push('<b>'+esc(n.meta.time)+'s</b>');
+      if (n.meta.skill) bits.push('requires <b>'+esc(n.meta.skill)+(n.meta.skillLevel !== undefined ? ' '+esc(n.meta.skillLevel) : '')+'</b>');
+      if (bits.length) rows.push('<div class="insp-row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">'+bits.join(' · ')+'</div>');
+      if (n.meta.tools && n.meta.tools.length)
+        rows.push('<div class="insp-row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap"><span style="color:var(--faint)">tools</span> '+n.meta.tools.map(t => '<span class="badge b-dim" style="flex:none">'+esc(t.id)+(t.count ? ' ×'+esc(t.count) : '')+'</span>').join(' ')+'</div>');
+    }
     const ing = n.ingredients || [], res = n.results || [];
     rows.push('<div class="insp-sec"><div class="insp-title">Ingredients · '+ing.length+'</div>' +
       (ing.length ? ing.map(i => '<div class="insp-row"><span>'+esc(i.id)+'</span>'+(i.count ? '<span class="badge b-dim" style="flex:none">×'+esc(i.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
@@ -2499,17 +2771,32 @@ function chainInspHTML(n){
   } else {
     const pb = n.producedBy || [], cb = n.consumedBy || [];
     rows.push('<div class="insp-row" style="justify-content:flex-start"><span class="badge '+(n.kind === 'item' ? 'b-info' : 'b-dim')+'">'+esc(n.kind === 'item' ? 'Item' : 'Unknown')+'</span>'+(n.itemType ? '<span class="badge b-dim" style="flex:none">'+esc(n.itemType)+'</span>' : '')+'</div>');
+    // Roadmap #1: item stats (weight/calories/hunger/thirst/tags).
+    if (n.props){
+      const bits = [];
+      if (n.props.Type) bits.push('Type <b>'+esc(n.props.Type)+'</b>');
+      if (n.props.category) bits.push('category <b>'+esc(n.props.category)+'</b>');
+      if (typeof n.props.weight === 'number') bits.push('weight <b>'+esc(n.props.weight)+'</b>');
+      if (typeof n.props.calories === 'number') bits.push('<b>'+esc(n.props.calories)+'</b> cal');
+      if (typeof n.props.hunger === 'number') bits.push('hunger <b>'+esc(n.props.hunger)+'</b>');
+      if (typeof n.props.thirst === 'number') bits.push('thirst <b>'+esc(n.props.thirst)+'</b>');
+      if (n.props.tags && n.props.tags.length) bits.push('tags ' + n.props.tags.map(t => '<span class="badge b-dim" style="flex:none">'+esc(t)+'</span>').join(' '));
+      if (bits.length) rows.push('<div class="insp-row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">'+bits.join(' · ')+'</div>');
+    }
     rows.push('<div class="insp-sec"><div class="insp-title">Produced by · '+pb.length+'</div>' +
       (pb.length ? pb.map(id => '<div class="insp-row"><span>'+esc(id)+'</span></div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">nothing crafts this</span></div>') + '</div>');
     rows.push('<div class="insp-sec"><div class="insp-title">Consumed by · '+cb.length+'</div>' +
       (cb.length ? cb.map(id => '<div class="insp-row"><span>'+esc(id)+'</span></div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">used by nothing</span></div>') + '</div>');
   }
   return '<div style="display:flex;flex-direction:column;gap:6px">' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b class="mono" style="font-size:12.5px;word-break:break-all">'+esc(n.id)+'</b></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b class="mono" style="font-size:12.5px;word-break:break-all">'+esc(n.id)+'</b>' +
+      (n.cycle ? '<span class="badge b-err" style="flex:none">🔄 self-loop</span>' : '') + '</div>' +
     '<div style="font-size:11px;color:var(--faint);font-family:var(--font-mono)">'+(n.name && n.name !== n.id ? esc(n.name) : '—')+'</div>' +
+    (n.cycle ? '<div class="chain-insp-note">This recipe produces an item it also consumes — a crafting loop that can break recipes IRL.</div>' : '') +
     rows.join('') +
     '<div class="insp-actions">' +
       '<button class="btn sm primary" data-act="chain-root" data-id="'+esc(n.id)+'">'+ICONS.spark+' Root graph here</button>' +
+      '<button class="btn sm" data-act="chain-expand" data-id="'+esc(n.id)+'" style="border:1px solid var(--stroke)">'+ICONS.graph+' Expand</button>' +
       '<button class="btn sm ghost" data-act="chain-copy-id" data-id="'+esc(n.id)+'" style="border:1px solid var(--stroke)">'+ICONS.copy+' Copy id</button>' +
       '<button class="btn sm ghost" data-act="chain-copy-json" data-id="'+esc(n.id)+'" style="border:1px solid var(--stroke)">'+ICONS.doc+' Copy JSON</button>' +
     '</div></div>';
@@ -3041,6 +3328,21 @@ document.addEventListener('click', e => {
     else if (a === 'chain-zoomout') chainZoom(0.8);
     else if (a === 'chain-fit') chainFit();
     else if (a === 'chain-full') chainFullscreen();
+    else if (a === 'chain-expand') chainExpand(act.dataset.id);
+    else if (a === 'chain-path-go') chainPathGo();
+    else if (a === 'chain-path-hop'){ S.chain.insp = act.dataset.id; chainInspPaint(); chainMarkSel(act.dataset.id); }
+    else if (a === 'chain-path-clear'){
+      if (S.chain.pathStash){ S.chain.graph = S.chain.pathStash; S.chain.layout = chainLayout(); }
+      S.chain.path = null; S.chain.pathFound = null; S.chain.pathStash = null;
+      renderChain(); toast('Back to full graph');
+    }
+    else if (a === 'chain-hl-clear'){ const f = $('#chainHighlight'); if (f) f.value = ''; S.chain.highlight = ''; chainPaint(); }
+    else if (a === 'chain-back') chainBack();
+    else if (a === 'chain-fwd') chainFwd();
+    else if (a === 'chain-cyc-toggle'){ S.chain.cycOpen = !S.chain.cycOpen; renderChain(); }
+    else if (a === 'chain-cyc-close'){ S.chain.cycOpen = false; renderChain(); }
+    else if (a === 'chain-export-md') chainExportMd();
+    else if (a === 'chain-export-svg') chainExportSvg();
     return;
   }
   if (t.id === 'helpModal'){ closeHelp(); return; }
@@ -3068,13 +3370,16 @@ document.addEventListener('input', e => {
     S.chain.seed = v; S.chain.dropIdx = -1;
     if (v.length < 3){ chainDropClose(); return; }
     S.chain.dropTimer = setTimeout(() => chainDropSearch(v), 220);
-    return;
-  }
-  if (t.id === 'chainDepth'){
-    S.chain.depth = Math.max(1, Math.min(10, parseInt(t.value, 10) || 2));
-    const l = $('#chainDepthVal'); if (l) l.textContent = String(S.chain.depth);
-    clearTimeout(S.chain.depthTimer);
-    S.chain.depthTimer = setTimeout(() => { if (S.chain.seed) chainRun(); }, 450);
+  } else if (t.id === 'chainHighlight'){
+    chainHighlightApply();
+  } else if (t.id === 'chainPathTarget'){
+    S.chain.pathTarget = t.value.trim();
+  } else if (t.id === 'chainDepth'){
+    const c = S.chain;
+    c.depth = parseInt(t.value, 10) || 2;
+    const dv = $('#chainDepthVal'); if (dv) dv.textContent = c.depth;
+    clearTimeout(c.depthTimer);
+    c.depthTimer = setTimeout(() => { if (c.seed) chainRun(); }, 500);
     return;
   }
   if (t.id === 'pgFilter'){
@@ -3153,6 +3458,7 @@ document.addEventListener('keydown', e => {
       const toolEl = walkUp(inField, '.tool');
       if (toolEl) runTool(toolEl.dataset.tool);
     }
+    else if (e.key === 'Enter' && inField.id === 'chainPathTarget'){ e.preventDefault(); chainPathGo(); }
     return;
   }
   if (e.key === 'Escape'){ const d = $('#chainDrop'); if (d && !d.hidden){ chainDropClose(); return; } }

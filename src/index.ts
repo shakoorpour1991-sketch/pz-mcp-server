@@ -755,12 +755,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "analyze_recipe_chain": {
-        const { seed, direction, maxDepth } =
+        const { seed, direction, maxDepth, expandNode, target } =
           AnalyzeRecipeChainSchema.parse(args);
+        // Build options conditionally (exactOptionalPropertyTypes: absent,
+        // not undefined) — expandNode/target are optional modes.
+        const chainOptions: { expandNode?: string; target?: string } = {};
+        if (expandNode !== undefined) chainOptions.expandNode = expandNode;
+        if (target !== undefined) chainOptions.target = target;
         const chain = await recipeAnalyzer.analyzeChain(
           seed,
           direction,
           maxDepth,
+          chainOptions,
         );
         return {
           content: [

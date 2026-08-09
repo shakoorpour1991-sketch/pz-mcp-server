@@ -128,8 +128,14 @@ Walk the recipe dependency graph built during parsing.
 | `seed` | string | Yes | Item or recipe id to start from |
 | `direction` | enum | No | `upstream`, `downstream`, `both` (default) |
 | `maxDepth` | number | No | Chain depth, 1–10 (default: 3) |
+| `expandNode` | string | No | Grow in place: return only the one-hop neighborhood around this node id (already present in a previous result) so clients merge a delta instead of re-walking from the seed |
+| `target` | string | No | Find the shortest crafting path from `seed` to this item/recipe id — the reply carries the ordered node ids in `path` (`pathFound: false` when unreachable) |
 
 **Output:** Ordered chain of nodes — recipes with ingredients/results, items with producers/consumers. Node ids are canonicalized to the stored item id, and `seed` accepts bare (`Axe`), module-qualified (`Base.Axe`) or tag (`base:axe`) spellings. `truncated` is true when the depth limit or the 500-node safety cap cut the walk short.
+
+**Rich payloads:** every node also carries what the Control Deck inspector shows — item nodes have `props` (Type/category/weight/calories/hunger/thirst/tags), recipe nodes have `meta` (category/time/skill/skillLevel) and `tools` (tool refs with counts). Recipe nodes that produce one of their own ingredients are flagged `cycle: true`, and the walk returns a `cycles` list (`{recipe, item}`). In `target`/`expandNode` mode the result also carries `path`/`pathFound` and `expandedNode` respectively.
+
+**Conflict severity:** `detect_recipe_conflicts` now ranks each duplicate — `severity: "high"` when the output resolves to a real item row (one recipe silently wins), `severity: "low"` for tag multi-path and `mapper:X` virtual outputs the game tolerates. `kind` is `exact` / `tag` / `mapper`.
 
 ---
 
@@ -140,7 +146,7 @@ Find items produced by more than one recipe — duplicate crafting paths the gam
 |---|---|---|---|
 | `limit` | number | No | Max conflicts, 1–200 (default: 50) |
 
-**Output:** List of conflicting items and the recipes that produce each.
+**Output:** List of conflicting items and the recipes that produce each — each conflict carries `severity` (`high` for exact duplicates on a real item row, `low` for tag/mapper multi-path the game tolerates) and `kind` (`exact` / `tag` / `mapper`).
 
 ---
 

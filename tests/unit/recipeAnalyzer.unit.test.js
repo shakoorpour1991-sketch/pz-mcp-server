@@ -131,6 +131,8 @@ describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
       getReferencesFrom: async (id) => data.refsFrom[id] || [],
       getReferencesToAny: async (id) => data.refsTo[id] || [],
       getRecipeRefCounts: async () => [],
+      // buildNode queries the structured recipes mirror for recipe metadata.
+      getRecipeById: async () => null,
     };
   }
 
@@ -310,5 +312,201 @@ describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
       ['I', 'R', 'O']
     );
     assert.strictEqual(result.truncated, false);
+  });
+});
+
+describe('RecipeAnalyzer roadmap: rich payloads, cycles, expand, path, severity', () => {
+  let tmpDir;
+  let db;
+  let analyzer;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-roadmap-'));
+    db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
+    await db.initialize();
+
+    // Items with stats (weight/calories/hunger) + tags, plus recipes with
+    // structured metadata (category/time/skill) and mirror rows (counts,
+    // tools) — the shape parse_game_files produces via insertRecipes /
+    // insertRecipeIngredients.
+    await db.insertItems([
+      { id: 'Base.Wheat', name: 'Wheat', displayName: 'Wheat', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.2, calories: 50, tags: ['Cereal'] },
+      { id: 'Base.Flour', name: 'Flour', displayName: 'Flour', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.5, calories: 300, tags: ['Cereal'] },
+      { id: 'Base.Dough', name: 'Dough', displayName: 'Dough', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.4, calories: 400, tags: ['Cereal'] },
+      { id: 'Base.Bread', name: 'Bread', displayName: 'Bread', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 500, tags: ['Cereal'] },
+      { id: 'Base.CookedBread', name: 'CookedBread', displayName: 'Cooked Bread', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 600, tags: ['Cereal'] },
+      // Recipes (item rows with type='recipe')
+      { id: 'MillFlour', name: 'MillFlour', displayName: 'Mill Flour', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'MakeDough', name: 'MakeDough', displayName: 'Make Dough', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'BakeBread', name: 'BakeBread', displayName: 'Bake Bread', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'SlowBread', name: 'SlowBread', displayName: 'Slow Bread', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+    ]);
+
+    // Structured recipes mirror (metadata: category/time/skill).
+    await db.insertRecipes([
+      { id: 'MillFlour', name: 'MillFlour', module: 'Base', category: 'Cooking', time: 60, skill: 'Cooking', skillLevel: 3, result: 'Base.Flour', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'MakeDough', name: 'MakeDough', module: 'Base', category: 'Cooking', time: 30, result: 'Base.Dough', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'BakeBread', name: 'BakeBread', module: 'Base', category: 'Cooking', time: 120, skill: 'Cooking', skillLevel: 5, result: 'Base.Bread', resultCount: 2, properties: {}, filePath: 'x.txt' },
+      { id: 'SlowBread', name: 'SlowBread', module: 'Base', category: 'Cooking', time: 300, result: 'Base.Bread', resultCount: 1, properties: {}, filePath: 'x.txt' },
+    ]);
+
+    // Mirror rows: ingredient/output counts + tool refs.
+    await db.insertRecipeIngredients([
+      { recipeId: 'MillFlour', ref: 'Base.Wheat', refType: 'item', count: 2, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'MillFlour', ref: 'Base.Flour', refType: 'item', count: 1, role: 'output', sortOrder: 1 },
+      { recipeId: 'MillFlour', ref: 'base:mill', refType: 'tag', count: 1, role: 'tool', sortOrder: 2 },
+      { recipeId: 'MakeDough', ref: 'Base.Flour', refType: 'item', count: 3, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'MakeDough', ref: 'Base.Water', refType: 'item', count: 1, role: 'ingredient', sortOrder: 1 },
+      { recipeId: 'MakeDough', ref: 'Base.Dough', refType: 'item', count: 1, role: 'output', sortOrder: 2 },
+      { recipeId: 'BakeBread', ref: 'Base.Dough', refType: 'item', count: 1, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'BakeBread', ref: 'Base.Bread', refType: 'item', count: 2, role: 'output', sortOrder: 1 },
+      { recipeId: 'SlowBread', ref: 'Base.Dough', refType: 'item', count: 1, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'SlowBread', ref: 'Base.Bread', refType: 'item', count: 1, role: 'output', sortOrder: 1 },
+      // A tag-output duplicate: both recipes output the same tag.
+      { recipeId: 'BakeBread', ref: 'base:bakery', refType: 'tag', count: 1, role: 'output', sortOrder: 2 },
+      { recipeId: 'SlowBread', ref: 'base:bakery', refType: 'tag', count: 1, role: 'output', sortOrder: 2 },
+    ]);
+
+    // References (the graph edges the walk follows).
+    await db.addReference('MillFlour', 'Base.Wheat', 'item', 'ingredient');
+    await db.addReference('MillFlour', 'Base.Flour', 'item', 'result');
+    await db.addReference('MakeDough', 'Base.Flour', 'item', 'ingredient');
+    await db.addReference('MakeDough', 'Base.Dough', 'item', 'output');
+    await db.addReference('BakeBread', 'Base.Dough', 'item', 'ingredient');
+    await db.addReference('BakeBread', 'Base.Bread', 'item', 'output');
+    await db.addReference('SlowBread', 'Base.Dough', 'item', 'ingredient');
+    await db.addReference('SlowBread', 'Base.Bread', 'item', 'output');
+
+    analyzer = new RecipeAnalyzer(db);
+  });
+
+  after(() => {
+    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('item nodes carry curated props (weight, calories, category, tags)', async () => {
+    const chain = await analyzer.analyzeChain('Base.Bread', 'upstream', 3);
+    const bread = chain.nodes.find((n) => n.id === 'Base.Bread');
+    assert.equal(bread.props.weight, 0.3);
+    assert.equal(bread.props.calories, 500);
+    assert.equal(bread.props.category, 'Food');
+    assert.deepEqual(bread.props.tags, ['Cereal']);
+    assert.equal(bread.props.Type, 'Food');
+  });
+
+  test('recipe nodes carry meta (category, time, skill) and tools', async () => {
+    const chain = await analyzer.analyzeChain('Base.Bread', 'upstream', 3);
+    const bake = chain.nodes.find((n) => n.id === 'BakeBread');
+    assert.equal(bake.meta.category, 'Cooking');
+    assert.equal(bake.meta.time, 120);
+    assert.equal(bake.meta.skill, 'Cooking');
+    assert.equal(bake.meta.skillLevel, 5);
+    assert.equal(bake.meta.tools, undefined); // BakeBread declares no tool
+    // Counts from the mirror attach to ingredients/results.
+    const mill = chain.nodes.find((n) => n.id === 'MillFlour');
+    const wheat = mill.ingredients.find((i) => i.id === 'Base.Wheat');
+    assert.equal(wheat.count, 2);
+    assert.deepEqual(mill.meta.tools, [{ id: 'base:mill', count: 1 }]);
+  });
+
+  test('cycle detection flags recipes producing their own ingredients', async () => {
+    // Build a self-loop: recipe R uses and produces the same item.
+    await db.insertItem({
+      id: 'LoopR', name: 'LoopR', displayName: 'Loop Recipe', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt',
+    });
+    await db.addReference('LoopR', 'Base.Flour', 'item', 'ingredient');
+    await db.addReference('LoopR', 'Base.Flour', 'item', 'output');
+
+    const chain = await analyzer.analyzeChain('LoopR', 'both', 3);
+    const loop = chain.nodes.find((n) => n.id === 'LoopR');
+    assert.equal(loop.cycle, true);
+    assert.ok(chain.cycles.some((c) => c.recipe === 'LoopR' && c.item === 'Base.Flour'));
+  });
+
+  test('expandNode returns a one-hop delta around the requested node', async () => {
+    const delta = await analyzer.analyzeChain('Base.Wheat', 'both', 3, {
+      expandNode: 'Base.Dough',
+    });
+    assert.equal(delta.expandedNode, 'Base.Dough');
+    // Seed identity is preserved for client-side merge.
+    assert.equal(delta.seed, 'Base.Wheat');
+    // The delta is the one-hop neighborhood: Dough + its two producers.
+    const ids = delta.nodes.map((n) => n.id);
+    assert.ok(ids.includes('Base.Dough'));
+    assert.ok(ids.includes('MakeDough'));
+    assert.ok(ids.includes('BakeBread'));
+    assert.ok(ids.includes('SlowBread'));
+    // Two hops away: Wheat must NOT appear in the delta.
+    assert.ok(!ids.includes('Base.Wheat'));
+  });
+
+  test('target mode returns the shortest crafting path seed → target', async () => {
+    const chain = await analyzer.analyzeChain('Base.Wheat', 'both', 10, {
+      target: 'Base.Bread',
+    });
+    assert.equal(chain.pathFound, true);
+    // Two equal-length paths exist (BakeBread or SlowBread) — assert shape,
+    // not the exact route: it must alternate item → recipe → item.
+    const path = chain.path;
+    assert.equal(path[0], 'Base.Wheat');
+    assert.equal(path[path.length - 1], 'Base.Bread');
+    assert.equal(path.length, 7); // Wheat → R → Flour → R → Dough → R → Bread
+    assert.ok(path.includes('Base.Flour'));
+    assert.ok(path.includes('Base.Dough'));
+    // Path-mode nodes are exactly the path nodes.
+    assert.deepEqual(chain.nodes.map((n) => n.id), path);
+  });
+
+  test('target mode reports pathFound=false when unreachable', async () => {
+    const chain = await analyzer.analyzeChain('Base.Wheat', 'both', 5, {
+      target: 'Base.CookedBread',
+    });
+    assert.equal(chain.pathFound, false);
+    assert.deepEqual(chain.path, []);
+  });
+
+  test('conflict severity: exact duplicates high, tag multi-path low', async () => {
+    const result = await analyzer.detectConflicts(50);
+    // Base.Bread is produced by BakeBread + SlowBread (exact) → high.
+    const exact = result.conflicts.find((c) => c.item === 'Base.Bread');
+    assert.equal(exact.severity, 'high');
+    assert.equal(exact.kind, 'exact');
+    assert.deepEqual(exact.recipes.map((r) => r.id).sort(), ['BakeBread', 'SlowBread']);
+    // base:bakery tag output shared by both → low severity.
+    const tag = result.conflicts.find((c) => c.item === 'base:bakery');
+    assert.equal(tag.severity, 'low');
+    assert.equal(tag.kind, 'tag');
+  });
+
+  test('conflict severity: mapper virtual outputs are low (no items row)', async () => {
+    // Two recipes output the same mapper:X virtual ref; no items row exists
+    // for it — the game resolves mappers per recipe, so severity must be low
+    // (regression from real-game data: mapper:metalType had 20 producers).
+    // Recipe item rows first (references.item_id FK), then the structured
+    // mirror rows, then the references (as the real parser does).
+    await db.insertItems([
+      { id: 'MapOutA', name: 'MapOutA', displayName: 'MapOutA', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'MapOutB', name: 'MapOutB', displayName: 'MapOutB', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+    ]);
+    await db.insertRecipes([
+      { id: 'MapOutA', name: 'MapOutA', module: 'Base', category: 'Cooking', result: 'mapper:bakeryMapper', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'MapOutB', name: 'MapOutB', module: 'Base', category: 'Cooking', result: 'mapper:bakeryMapper', resultCount: 1, properties: {}, filePath: 'x.txt' },
+    ]);
+    await db.insertRecipeIngredients([
+      { recipeId: 'MapOutA', ref: 'mapper:bakeryMapper', refType: 'mapper', count: 1, role: 'output', sortOrder: 0 },
+      { recipeId: 'MapOutB', ref: 'mapper:bakeryMapper', refType: 'mapper', count: 1, role: 'output', sortOrder: 0 },
+    ]);
+    // The conflict query reads the references table (mirror rows alone do not
+    // drive findDuplicateRecipeOutputs) — the parser writes mapper outputs
+    // there with reference_type 'item' + context 'output'.
+    await db.addReference('MapOutA', 'mapper:bakeryMapper', 'item', 'output');
+    await db.addReference('MapOutB', 'mapper:bakeryMapper', 'item', 'output');
+
+    const result = await analyzer.detectConflicts(50);
+    const m = result.conflicts.find((c) => c.item === 'mapper:bakeryMapper');
+    assert.notEqual(m, undefined);
+    assert.equal(m.severity, 'low');
+    assert.equal(m.kind, 'mapper');
   });
 });

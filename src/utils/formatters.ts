@@ -153,10 +153,57 @@ export function formatRecipeChain(chain: any): string {
   output += `- **Depth**: ${chain.maxDepth}${chain.truncated ? " (truncated)" : ""}\n`;
   output += `- **Nodes**: ${chain.nodes.length}\n\n`;
 
+  // Path mode: the shortest crafting pipeline seed → target.
+  if (chain.pathFound) {
+    output += `## Shortest path to ${chain.path?.at(-1) ?? "target"}\n\n`;
+    output += `${chain.path?.join(" → ") ?? "(none)"}\n\n`;
+  } else if (chain.path && chain.path.length === 0) {
+    output += `No path found from ${chain.seed} to the requested target.\n\n`;
+  }
+
+  // Crafting cycles (A→B→A loops) flagged during the walk.
+  if (chain.cycles && chain.cycles.length > 0) {
+    output += `## ⚠️ Crafting cycles (${chain.cycles.length})\n\n`;
+    for (const cyc of chain.cycles) {
+      output += `- 🔄 **${cyc.recipe}** produces **${cyc.item}**, which it also consumes\n`;
+    }
+    output += "\n";
+  }
+
   for (const node of chain.nodes) {
     const icon =
       node.kind === "recipe" ? "🔧" : node.kind === "item" ? "📦" : "❓";
-    output += `${icon} **${node.id}** (${node.kind}${node.itemType ? `, ${node.itemType}` : ""})\n`;
+    const cycleTag = node.cycle ? " 🔄" : "";
+    output += `${icon} **${node.id}** (${node.kind}${node.itemType ? `, ${node.itemType}` : ""})${cycleTag}\n`;
+    // Rich-inspector payloads: item stats + recipe metadata/tools.
+    if (node.props) {
+      const bits = [];
+      if (node.props.Type) bits.push(`Type ${node.props.Type}`);
+      if (node.props.category) bits.push(`Category ${node.props.category}`);
+      if (typeof node.props.weight === "number")
+        bits.push(`Weight ${node.props.weight}`);
+      if (typeof node.props.calories === "number")
+        bits.push(`${node.props.calories} cal`);
+      if (typeof node.props.hunger === "number")
+        bits.push(`Hunger ${node.props.hunger}`);
+      if (typeof node.props.thirst === "number")
+        bits.push(`Thirst ${node.props.thirst}`);
+      if (Array.isArray(node.props.tags) && node.props.tags.length > 0)
+        bits.push(`Tags ${node.props.tags.join(";")}`);
+      if (bits.length > 0) output += `  📊 ${bits.join(" · ")}\n`;
+    }
+    if (node.meta) {
+      const bits = [];
+      if (node.meta.category) bits.push(`Category ${node.meta.category}`);
+      if (typeof node.meta.time === "number") bits.push(`${node.meta.time}s`);
+      if (node.meta.skill)
+        bits.push(
+          `${node.meta.skill}${node.meta.skillLevel !== undefined ? " " + node.meta.skillLevel : ""}`,
+        );
+      if (node.meta.tools && node.meta.tools.length > 0)
+        bits.push(`Tools ${node.meta.tools.map((t: any) => t.id).join(", ")}`);
+      if (bits.length > 0) output += `  ⚙️ ${bits.join(" · ")}\n`;
+    }
     if (node.ingredients.length > 0) {
       output += `  ⬆️ consumes: ${node.ingredients.map((i: any) => i.id).join(", ")}\n`;
     }
@@ -186,7 +233,19 @@ export function formatRecipeConflicts(result: any): string {
   }
 
   result.conflicts.forEach((conflict: any, index: number) => {
-    output += `${index + 1}. ⚠️ **${conflict.item}** is produced by ${conflict.recipes.length} recipes:\n`;
+    const sev =
+      conflict.severity === "high"
+        ? "🔴"
+        : conflict.severity === "low"
+          ? "🟡"
+          : "⚪";
+    const kind =
+      conflict.kind === "tag"
+        ? " (tag multi-path — game tolerates)"
+        : conflict.kind === "mapper"
+          ? " (mapper output — resolved per recipe in-game)"
+          : "";
+    output += `${index + 1}. ${sev} **${conflict.item}** is produced by ${conflict.recipes.length} recipes${kind}:\n`;
     conflict.recipes.forEach((r: any) => {
       output += `   - ${r.id} (${r.context})\n`;
     });

@@ -184,6 +184,20 @@ export const AnalyzeRecipeChainSchema = z.object({
     .max(10)
     .default(3)
     .describe("Maximum chain depth to traverse"),
+  expandNode: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe(
+      "Grow the graph in place: return only the one-hop neighborhood around this node id (already present in a previous result) so clients merge a delta instead of re-walking from the seed",
+    ),
+  target: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe(
+      "Find the shortest crafting path from seed to this item/recipe id — the reply carries the ordered node ids in `path`",
+    ),
 });
 
 export const DetectRecipeConflictsSchema = z.object({

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Recipe Chain roadmap (7 items)** — richer chain browsing in `analyze_recipe_chain` + the Control Deck Chain tab:
+  - **Rich node payloads**: every chain node now carries item stats (`props`: Type/category/weight/calories/hunger/thirst/tags) and recipe metadata (`meta`: category/time/skill/skillLevel/tools) straight from the DB — one round trip, no extra tool calls; the admin inspector shows them
+  - **Expand-in-place**: new `expandNode` param returns a one-hop delta around any node — the dashboard merges it into the existing graph instead of re-walking from the seed (no more rebuild-everything on big graphs)
+  - **Path finding**: new `target` param returns the shortest crafting pipeline seed → target (BFS over the walked graph; `path` + `pathFound` in the reply); the Chain tab renders it as a clickable pipeline strip with path nodes glowing
+  - **Graph-wide highlight**: the Chain tab dims every node/edge not matching a filter term (id, name, props, tags, ingredients, results)
+  - **Export & history**: copy the chain as markdown, export the graph as SVG, and back/forward navigation through rooted seeds
+  - **Cycle detection**: the walk flags recipes producing their own ingredients (`cycles` list + per-node `cycle` flag); the tab badges them 🔄 and lists them in a panel
+  - **Conflict severity**: `detect_recipe_conflicts` ranks duplicates — exact outputs resolving to a real item row are `high` (real breakage risk), while tag multi-path and `mapper:X` virtual outputs are `low` (the game tolerates them); the tab sorts high-first with severity badges
 - **Workshop browser (M1–M4)** — browse/search the Project Zomboid Steam Workshop (AppID 108600) from the Control Deck dashboard and dissect mods without leaving the UI:
   - `workshop_search` — best-effort keyless browse of the community page (parses the React SSR item cards)
   - `workshop_get_details` — keyless Steam Web API metadata resolution (id or URL) with a 24h cache (`data/workshop_metadata.json`); `forceRefresh` bypasses the cache
