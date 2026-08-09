@@ -1,5 +1,0 @@
-ContextMenu_FR = {
-    ContextMenu_TakePropaneFromStorageTank = "Remplir la bonbonne de propane",
-    ContextMenu_TakePropaneFromTank = "Remplissage en cours...",
-    ContextMenu_FillTorchFromStorageTank = "Remplir le chalumeau",
-}

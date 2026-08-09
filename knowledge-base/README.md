@@ -20,7 +20,21 @@ Project Zomboid Build 42 modding research, organized from analysis of the game f
 | `Build42_Vehicle_Mechanics_Research.md` | NEW | TBD | Part templates, repair timed actions, mechanics skill, distributions, fuel |
 | `Build42_File_Map.md` | 112 | 8 KB | Directory structure map with mod usage notes per directory |
 | `Vanilla_Barricade_Research.md` | 280 | 14 KB | 3 barricade types, entity recipes, sprites, skills, XP |
-| `Barricade_Mod_Notes.md` | 143 | 5.6 KB | Mod ideas: reinforced, barbed wire, HESCO, composite |
+
+## Mod Analyses (10 community mods)
+
+| File | What It Covers |
+|------|----------------|
+| `Mods_Analysis/Bandits.md` | Hostile NPC AI factions: behavior trees, squad tactics, cover system, reputation |
+| `Mods_Analysis/BeyondTen.md` | Skill extension 10→15: mastery system, perk mapping, condition-tracked upgrades |
+| `Mods_Analysis/Excavation.md` | Underground basements/tunnels: digging, custom wall structures, MapObjects |
+| `Mods_Analysis/Neat_Rocco.md` | NeatUI-themed overhaul of ~15 vanilla menus |
+| `Mods_Analysis/NeatUI_Framework.md` | Client-side UI framework: reusable components, styling, compat support |
+| `Mods_Analysis/Project_Seasons.md` | Erosion/rust progression rework for dynamic seasonal changes |
+| `Mods_Analysis/Railroader.md` | Physics-based trains: spline track graphs, server-authoritative simulation, carriages |
+| `Mods_Analysis/RepairableWindows.md` | QoL: remove/reinstall window glass without destruction |
+| `Mods_Analysis/StarlitLibrary.md` | Foundational utility library: reusable components for common modding tasks |
+| `Mods_Analysis/TanksHavePropane.md` | Refill propane tanks/blowtorches at Fossoil storage tanks |
 
 ## Wiki References (Cleaned)
 
