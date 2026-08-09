@@ -1,0 +1,10 @@
+VERSION = 1,
+
+option TanksHavePropane.AllowGasPumps
+{type = boolean, default = false, page = TanksHavePropane, translation = TanksHavePropane_AllowGasPumps,}
+
+option TanksHavePropane.AllowSmallIndustrialTanks
+{type = boolean, default = false, page = TanksHavePropane, translation = TanksHavePropane_AllowSmallIndustrialTanks,}
+
+option TanksHavePropane.SearchRadius
+{type = integer, min = 1, max = 10, default = 2, page = TanksHavePropane, translation = TanksHavePropane_SearchRadius,}

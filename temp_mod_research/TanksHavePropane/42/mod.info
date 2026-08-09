@@ -1,0 +1,7 @@
+name=Tanks Have Propane (B42)
+id=TanksHavePropane42
+poster=poster.png
+icon=icon.png
+author=Azexor
+modversion=1.2.0
+description=Allows propane tanks and blowtorches to be refilled at propane storage tanks (Fossoil & Gas2Go). Modified from Pumps Have Propane.
