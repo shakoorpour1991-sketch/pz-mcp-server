@@ -475,6 +475,7 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
   background:rgba(16,20,30,.96);border:1px solid var(--stroke);box-shadow:0 18px 40px rgba(0,0,0,.45);backdrop-filter:blur(14px)}
 .chain-drop-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 14px;border:0;background:transparent;color:var(--text);cursor:pointer;font-size:12.5px}
 .chain-drop-item:hover,.chain-drop-item:focus-visible{background:rgba(var(--accent-rgb),.1)}
+.chain-drop-item.sel{background:rgba(var(--accent-rgb),.16);box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.4)}
 .chain-drop-item + .chain-drop-item{border-top:1px solid var(--stroke-soft)}
 .chain-drop-empty{padding:12px 14px;font-size:12.5px;color:var(--muted)}
 .chain-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start;margin-top:14px}
@@ -899,7 +900,8 @@ const S = {
   events:[], lastResult:null,
   pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
   chain:{ seed:'', direction:'both', depth:2, busy:false, error:null, graph:null, layout:null, sugg:null,
-    conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0 },
+    conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0,
+    fitted:false, dropIdx:-1, _dbSeen:false },
   settings:{ accent:'#22D3EE', reduceMotion:false, autoScroll:true, follow:false },
 };
 const MEM_BUDGET_MB = 512;
@@ -1026,6 +1028,7 @@ function applyTelemetry(t){
   S.upSpark.push(t.uptime ?? 0); if (S.upSpark.length > 24) S.upSpark.shift();
   $('#upChip').textContent = '⏱ ' + fmtUp(t.uptime);
   updateStatusDom(); renderDbStats();
+  if (S.view === 'chain' && t && t.db && !S.chain._dbSeen){ S.chain._dbSeen = true; renderChain(); }
 }
 function addEvent(txt){
   S.events.unshift({ t:Date.now(), txt });
@@ -2124,29 +2127,29 @@ function wsDetailHTML(d){
 const CHAIN_CHIPS = [
   { id:'MillFlour', label:'Mill Flour', hint:'recipe' },
   { id:'MakeCoffeeMug', label:'Coffee Mug', hint:'recipe' },
-  { id:'WeaveCloth', label:'Weave Cloth', hint:'recipe' },
-  { id:'RippleFlax', label:'Ripple Flax', hint:'recipe' },
-  { id:'ScutchFibre', label:'Scutch Fibre', hint:'recipe' },
-  { id:'MillCornmeal', label:'Mill Cornmeal', hint:'recipe' },
+  { id:'SawSteelBlockIntoChunks', label:'Saw Steel Chunk', hint:'recipe' },
+  { id:'RipDenimClothing', label:'Rip Denim', hint:'recipe' },
   { id:'Axe', label:'Axe', hint:'item' },
-  { id:'Log', label:'Log', hint:'item' },
-  { id:'Saw', label:'Saw', hint:'item' },
-  { id:'CannedBeans', label:'Canned Beans', hint:'item' },
+  { id:'Plank', label:'Plank', hint:'item' },
+  { id:'Flour2', label:'Flour', hint:'item' },
+  { id:'SteelChunk', label:'Steel Chunk', hint:'item' },
 ];
 const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14;
 const chop = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+/* The DB stores items bare ("Flour2") but recipes reference them as "Base.Flour2"
+ * (or "base:flour2" tags). bare() bridges the two so graph ids stay consistent. */
+const bare = id => String(id).replace(/^[A-Za-z]+[.:]/, '');
+const mergeRefs = (a, b) => { const m = new Map(); [...(a || []), ...(b || [])].forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; };
 function chainHTML(){
-  const emptyDb = !S.telemetry?.db || !S.telemetry.db.total;
   const segs = ['both','upstream','downstream'];
   return '<div class="sec-title" style="margin-top:0">'+ICONS.graph+' Recipe Chain · crafting graph browser</div>' +
-    (emptyDb ? '<div class="ws-alert" style="margin-bottom:14px">'+ICONS.warn+' The database is empty — run <b>parse_game_files</b> once so the graph has real crafting data. <button class="btn sm primary" style="margin-left:auto" data-act="go-tool" data-tool="parse_game_files">'+ICONS.db+' parse_game_files</button></div>' : '') +
     '<section class="glass card panel-card">' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
         '<div style="flex:1;min-width:230px;position:relative">' +
           '<input class="field" id="chainSeed" value="'+esc(S.chain.seed)+'" style="padding-right:44px" placeholder="Search any item or recipe… e.g. MillFlour, Flour, Axe" aria-label="Seed item or recipe" autocomplete="off" spellcheck="false">' +
           '<div class="chain-drop" id="chainDrop" hidden></div>' +
         '</div>' +
-        '<button class="btn primary" data-act="chain-run">'+ICONS.play+' Build graph</button>' +
+        '<button class="btn primary" id="chainRunBtn" data-act="chain-run">'+ICONS.play+' Build graph</button>' +
       '</div>' +
       '<div class="f-hint" style="margin:8px 2px 0">Recipe ids craft the best graphs — type 3+ letters to autocomplete, or paste an exact id and press <b>Enter</b>. Most plain items (Axe, Log…) are found in the world, not crafted.</div>' +
       '<div class="chain-chips">'+CHAIN_CHIPS.map(ch => '<button class="chain-chip" data-act="chain-chip" data-id="'+esc(ch.id)+'" title="'+esc(ch.id)+'">'+esc(ch.label)+' <span class="badge b-dim" style="flex:none">'+esc(ch.hint)+'</span></button>').join('')+'</div>' +
@@ -2163,7 +2166,9 @@ function chainHTML(){
 function renderChain(){
   const out = $('#chainOut'); if (!out) return;
   const c = S.chain;
+  const emptyDb = !S.telemetry?.db || !S.telemetry.db.total;
   let html = '';
+  if (emptyDb) html += '<div class="ws-alert" style="margin-bottom:14px">'+ICONS.warn+' The database is empty — run <b>parse_game_files</b> once so the graph has real crafting data. <button class="btn sm primary" style="margin-left:auto" data-act="go-tool" data-tool="parse_game_files">'+ICONS.db+' parse_game_files</button></div>';
   if (c.confBusy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> scanning recipes for conflicts…</div>';
   else if (c.conflicts) html += chainConflictsHTML();
   if (c.busy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> expanding crafting graph…</div>';
@@ -2175,7 +2180,7 @@ function renderChain(){
   if (c.layout){
     chainPaint();
     bindChainSvg();
-    requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); });
+    if (!c.fitted){ c.fitted = true; requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); }); }
   }
 }
 function chainConflictsHTML(){
@@ -2187,7 +2192,7 @@ function chainConflictsHTML(){
       '<button class="ibtn" data-act="chain-conf-clear" style="width:32px;height:32px;border-radius:9px" aria-label="Hide conflicts" title="Hide conflicts">'+ICONS.x+'</button>' +
     '</div>' +
     '<div class="f-hint" style="margin:6px 2px 10px">Items that multiple recipes claim to produce — click one to graph its producers.</div>' +
-    '<div class="chain-chips">'+cs.map(x => '<button class="chain-chip warn" data-act="chain-conf" data-id="'+esc(x.item)+'" title="'+esc(x.item)+' — '+x.recipes.length+' recipes">'+esc(x.item)+' <span class="badge b-err" style="flex:none">'+x.recipes.length+'</span></button>').join('')+'</div>' +
+    '<div class="chain-chips">'+cs.map(x => '<button class="chain-chip warn" data-act="chain-conf" data-id="'+esc(x.item)+'" title="'+esc(x.item)+' — '+x.recipes.length+' recipes">'+esc(chop(x.item, 26))+' <span class="badge b-err" style="flex:none">'+x.recipes.length+'</span></button>').join('')+'</div>' +
   '</div>';
 }
 async function chainConflicts(){
@@ -2221,28 +2226,121 @@ async function chainRun(seedOverride){
   if (!seed){ toast('Type an item or recipe id first','warn'); return; }
   if (f) f.value = seed;
   c.seed = seed; c.insp = null; c.sugg = null; c.error = null;
-  c.busy = true; c.graph = null; c.layout = null; c.expLayers = {};
+  c.busy = true; c.graph = null; c.layout = null; c.expLayers = {}; c.fitted = false;
   chainDropClose();
+  const btn = $('#chainRunBtn');
+  if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> Building…'; }
   renderChain();
   try {
-    const reply = await rpc('tools/call', { name:'analyze_recipe_chain', arguments:{ seed, direction:c.direction, maxDepth:c.depth } });
-    const sc = reply.result?.structuredContent;
-    const nodes = Array.isArray(sc?.nodes) ? sc.nodes : [];
-    c.graph = { seed, seedKind: sc?.seedKind || 'unknown', nodes, truncated: !!sc?.truncated, maxDepth: sc?.maxDepth ?? c.depth };
-    c.layout = chainLayout();
+    const g = await chainBuildGraph(seed, c.direction, c.depth);
+    if (g.seed !== seed){ c.seed = g.seed; if (f) f.value = g.seed; }
     c.busy = false;
-    const hasEdges = c.layout && (c.layout.up.length || c.layout.dn.length);
-    if (!hasEdges && nodes.length <= 1 && (sc?.seedKind || 'unknown') !== 'recipe'){
-      c.sugg = { seed, kind: sc?.seedKind || 'unknown', results: [] };
-      chainSuggest(seed);
-    } else if (!hasEdges && nodes.length === 1){
-      toast('Seed resolves but nothing crafts it in this database','warn');
+    if (g.nodes.length > 1){
+      c.graph = g; c.layout = chainLayout();
+      renderChain();
+      addEvent('recipe chain · ' + g.seed + ' → ' + (g.nodes.length - 1) + ' linked');
+    } else {
+      c.sugg = { seed: g.seed, kind: g.seedKind, results: [] };
+      renderChain();
+      chainSuggest(g.seed);
     }
-    renderChain();
-    addEvent('recipe chain · ' + seed + ' → ' + Math.max(0, nodes.length - 1) + ' linked');
   } catch (e){
     c.busy = false; c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
     renderChain();
+  } finally {
+    if (btn){ btn.disabled = false; btn.innerHTML = ICONS.play+' Build graph'; }
+  }
+}
+const chainItemCache = new Map();
+const chainRecipeCache = new Map();
+async function chainRecipeById(id){
+  if (chainRecipeCache.has(id)) return chainRecipeCache.get(id);
+  const r = await rpc('tools/call', { name:'search_recipes', arguments:{ query:id, limit:10 } }).catch(() => null);
+  const list = (r && r.result && r.result.structuredContent && r.result.structuredContent.recipes) || [];
+  const hit = list.find(x => x.id === id) || null; // exact recipe-id match only
+  chainRecipeCache.set(id, hit);
+  return hit;
+}
+async function chainItemLinksRaw(id){
+  const [pr, cr] = await Promise.all([
+    rpc('tools/call', { name:'search_recipes', arguments:{ result:id, limit:20 } }).catch(() => null),
+    rpc('tools/call', { name:'search_recipes', arguments:{ ingredient:id, limit:20 } }).catch(() => null),
+  ]);
+  return {
+    producers: (pr && pr.result && pr.result.structuredContent && pr.result.structuredContent.recipes) || [],
+    consumers: (cr && cr.result && cr.result.structuredContent && cr.result.structuredContent.recipes) || [],
+  };
+}
+async function chainItemLinks(id){
+  if (chainItemCache.has(id)) return chainItemCache.get(id);
+  const links = await chainItemLinksRaw(id);
+  chainItemCache.set(id, links);
+  return links;
+}
+/* Build an accurate crafting graph entirely from search_recipes (which indexes
+ * real ingredients/outputs per recipe). Both recipe seeds and item seeds expand
+ * through producing/consuming recipes — every selection yields a genuine graph. */
+async function chainBuildGraph(seed, dir, depth){
+  const map = new Map();
+  chainItemCache.clear(); chainRecipeCache.clear();
+  const upsertItem = id => {
+    const key = bare(id);
+    if (!map.has(key)) map.set(key, { id:key, kind:'item', name:key, itemType:null, ingredients:[], results:[], producedBy:[], consumedBy:[] });
+    return map.get(key);
+  };
+  const upsertRecipe = r => {
+    const node = {
+      id: r.id, kind:'recipe', name: r.name || r.id, itemType: null,
+      ingredients: (r.ingredients || []).filter(i => i.role === 'ingredient').map(i => ({ id: bare(i.ref), count: i.count })),
+      results: ((r.properties && r.properties.outputs) || []).map(o => ({ id: bare(o.item), count: o.count })),
+      producedBy: [], consumedBy: [],
+    };
+    if (!node.results.length && r.result) node.results.push({ id: bare(r.result), count: r.resultCount || 1 });
+    const ex = map.get(node.id);
+    if (!ex) map.set(node.id, node);
+    else if (ex.kind === 'recipe'){ ex.ingredients = mergeRefs(ex.ingredients, node.ingredients); ex.results = mergeRefs(ex.results, node.results); }
+    else map.set(node.id, node); // a recipe with a matching id wins over an item placeholder
+    return map.get(node.id);
+  };
+  const root = bare(seed);
+  let seedKind = 'unknown';
+  const seedRecipe = await chainRecipeById(seed);
+  if (seedRecipe){ seedKind = 'recipe'; upsertRecipe(seedRecipe); }
+  else {
+    seedKind = 'item'; upsertItem(root);
+    // Module/namespace-qualified inputs (e.g. Base.SteelChunk, mapper:metalType from
+    // the conflicts list) also resolve through their exact raw ref — search_recipes
+    // treats ':'/'.'-qualified refs as exact, so the raw id reaches those recipes.
+    if (seed !== root){
+      const rawLinks = await chainItemLinksRaw(seed);
+      for (const r of [...rawLinks.producers, ...rawLinks.consumers].slice(0, 12)) if (!map.has(r.id)) upsertRecipe(r);
+    }
+  }
+  let layer = [root], seen = new Set([root]);
+  for (let d = 1; d <= depth; d++){
+    const next = [];
+    for (const id of layer){
+      const n = map.get(id); if (!n) continue;
+      if (n.kind === 'recipe'){
+        if (dir !== 'downstream') for (const i of n.ingredients) if (!seen.has(i.id)){ seen.add(i.id); next.push(i.id); upsertItem(i.id); }
+        if (dir !== 'upstream') for (const r of n.results) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertItem(r.id); }
+      } else {
+        const links = await chainItemLinks(id);
+        if (dir !== 'downstream') for (const r of links.producers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
+        if (dir !== 'upstream') for (const r of links.consumers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
+      }
+    }
+    if (!next.length) break;
+    layer = next.slice(0, 14);
+  }
+  deriveLinks(map);
+  return { seed: root, seedKind, nodes: [...map.values()], truncated: false, maxDepth: depth };
+}
+function deriveLinks(map){
+  for (const n of map.values()) if (n.kind === 'item'){ n.producedBy = n.producedBy || []; n.consumedBy = n.consumedBy || []; }
+  for (const n of map.values()) if (n.kind === 'recipe'){
+    for (const r of n.results){ const it = map.get(r.id); if (it && it.kind === 'item' && !it.producedBy.includes(n.id)) it.producedBy.push(n.id); }
+    for (const i of n.ingredients){ const it = map.get(i.id); if (it && it.kind === 'item' && !it.consumedBy.includes(n.id)) it.consumedBy.push(n.id); }
   }
 }
 async function chainSuggest(seed){
@@ -2431,10 +2529,11 @@ function chainNodeHTML(n, x, y, extra){
     : n.kind === 'item'
     ? '<svg x="12" y="'+gy+'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2" y="2.5" width="12" height="11" rx="2.5"/><path d="M2 6.5h12"/></svg>'
     : '<text class="cn-glyph" x="18" y="'+CHAIN_NODE_H/2+'" dominant-baseline="central">?</text>';
-  return '<g class="chain-node '+cls+(sel ? ' sel' : '')+(extra ? ' '+extra : '')+'" data-act="chain-node" data-id="'+esc(n.id)+'" transform="translate('+x+','+y+')">' +
+  const tip = n.name && n.name !== n.id ? n.name + ' · ' + n.id : n.id;
+  return '<g class="chain-node '+cls+(sel ? ' sel' : '')+(extra ? ' '+extra : '')+'" data-act="chain-node" data-id="'+esc(n.id)+'" title="'+esc(tip)+'" transform="translate('+x+','+y+')">' +
     '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12"/>' + glyph +
-    '<text class="cn-name" x="32" y="'+Math.round(CHAIN_NODE_H/2 - 7)+'">'+esc(chop(n.name || n.id, 21))+'</text>' +
-    '<text class="cn-id" x="32" y="'+Math.round(CHAIN_NODE_H/2 + 9)+'">'+esc(chop(n.id, 25))+'</text>' +
+    '<text class="cn-name" x="32" y="'+Math.round(CHAIN_NODE_H/2 - 7)+'">'+esc(chop(n.name || n.id, 16))+'</text>' +
+    '<text class="cn-id" x="32" y="'+Math.round(CHAIN_NODE_H/2 + 9)+'">'+esc(chop(n.id, 20))+'</text>' +
   '</g>';
 }
 function chainInspHTML(n){
@@ -2508,6 +2607,7 @@ function bindChainSvg(){
     if (!drag) return;
     S.chain.pan.x = drag.px + e.clientX - drag.x;
     S.chain.pan.y = drag.py + e.clientY - drag.y;
+    chainClampPan();
     const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
   });
   const endDrag = () => { drag = null; svg.classList.remove('dragging'); };
@@ -2528,9 +2628,17 @@ function bindChainSvg(){
       e.preventDefault();
       S.chain.pan.x -= e.shiftKey ? e.deltaY : 0;
       S.chain.pan.y += e.shiftKey ? 0 : e.deltaY;
+      chainClampPan();
       const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
     }
   }, { passive:false });
+}
+function chainClampPan(){
+  const wrap = $('#chainSvgWrap'), L = S.chain.layout; if (!wrap || !L) return;
+  const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
+  S.chain.pan.x = Math.max(Math.min(0, cw - W * S.chain.zoom), Math.min(0, S.chain.pan.x));
+  S.chain.pan.y = Math.max(Math.min(0, ch - CHAIN_H * S.chain.zoom), Math.min(0, S.chain.pan.y));
 }
 async function chainDropSearch(v){
   try {
@@ -2551,8 +2659,14 @@ async function chainDropSearch(v){
       return;
     }
     drop.innerHTML = list.map(x => '<button type="button" class="chain-drop-item" data-act="chain-sel" data-id="'+esc(x.id)+'"><span class="mono">'+esc(x.id)+'</span><span class="badge '+(x.type === 'recipe' ? 'b-info' : 'b-dim')+'" style="margin-left:auto;flex:none">'+esc(x.type)+'</span></button>').join('');
+    S.chain.dropIdx = -1;
     drop.hidden = false;
   } catch (e){ /* autocomplete is best-effort */ }
+}
+function chainDropHighlight(idx){
+  S.chain.dropIdx = idx;
+  const d = $('#chainDrop'); if (!d) return;
+  $$('.chain-drop-item', d).forEach((el, i) => el.classList.toggle('sel', i === idx));
 }
 function chainDropClose(){ const d = $('#chainDrop'); if (d) d.hidden = true; }
 
@@ -2725,6 +2839,8 @@ function bindTerminal(){
 /* ==================== GLOBAL EVENTS ==================== */
 document.addEventListener('click', e => {
   const t = e.target;
+  const dropEl = $('#chainDrop');
+  if (dropEl && !dropEl.hidden && t.id !== 'chainSeed' && !t.closest('#chainDrop')) chainDropClose();
   const tab = walkUp(t, '.tab');
   if (tab){ switchView(tab.dataset.view); return; }
   const act = walkUp(t, '[data-act]');
@@ -2872,7 +2988,7 @@ document.addEventListener('click', e => {
       if (n) navigator.clipboard?.writeText(JSON.stringify(n, null, 2)).then(() => toast('Node JSON copied')).catch(() => toast('Copy blocked by browser','warn'));
       else toast('Node data not available','warn');
     }
-    else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); }
+    else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); chainFit(); }
     else if (a === 'chain-zoomin') chainZoom(1.25);
     else if (a === 'chain-zoomout') chainZoom(0.8);
     else if (a === 'chain-fit') chainFit();
@@ -2900,6 +3016,7 @@ document.addEventListener('input', e => {
   if (t.id === 'chainSeed'){
     clearTimeout(S.chain.dropTimer);
     const v = t.value.trim();
+    S.chain.seed = v; S.chain.dropIdx = -1;
     if (v.length < 3){ chainDropClose(); return; }
     S.chain.dropTimer = setTimeout(() => chainDropSearch(v), 220);
     return;
@@ -2959,14 +3076,24 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inField.id === 'dbQuery'){ e.preventDefault(); dbSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsQuery'){ e.preventDefault(); wsSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsId'){ e.preventDefault(); wsFetchDetails(inField.value.trim()); }
-    else if (e.key === 'Enter' && inField.id === 'chainSeed'){
-      e.preventDefault();
+    else if (inField.id === 'chainSeed'){
       const d = $('#chainDrop');
-      const first = d && !d.hidden ? d.querySelector('[data-act="chain-sel"]') : null;
-      if (first){ const f = $('#chainSeed'); if (f) f.value = first.dataset.id; chainRun(first.dataset.id); }
-      else chainRun();
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+        if (d && !d.hidden){
+          e.preventDefault();
+          const n = $$('.chain-drop-item', d).length;
+          if (n) chainDropHighlight(e.key === 'ArrowDown' ? (S.chain.dropIdx + 1) % n : (S.chain.dropIdx - 1 + n) % n);
+        }
+      }
+      else if (e.key === 'Enter'){
+        e.preventDefault();
+        const items = d && !d.hidden ? $$('.chain-drop-item', d) : [];
+        const pick = S.chain.dropIdx >= 0 && items[S.chain.dropIdx] ? items[S.chain.dropIdx] : items[0];
+        if (pick){ const f = $('#chainSeed'); if (f) f.value = pick.dataset.id; chainRun(pick.dataset.id); }
+        else chainRun();
+      }
+      else if (e.key === 'Escape') chainDropClose();
     }
-    else if (e.key === 'Escape' && inField.id === 'chainSeed'){ chainDropClose(); }
     else if (e.key === 'Enter' && inField.id && inField.id.startsWith('pf-')){
       if (inField.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
