@@ -1,74 +1,120 @@
-<div align="center">
+<p align="center">
+  <img src="assets/banner.svg" alt="PZ MCP Server — Stop making your AI guess" width="100%">
+</p>
 
-![PZ MCP Server](assets/banner-workflow.svg)
+# PZ MCP Server
 
-</div>
+> **Project Zomboid modding tools for an AI that can inspect the same local material you do.**
 
+Vanilla game data, modding documentation, script generation, validation, mod analysis, recipe analysis, and Workshop inspection are exposed through one MCP server.
+
+**The hook:** instead of asking an AI to remember Project Zomboid internals, give it tools to query the material, generate against it, and check the result.
+
+[Start here](#start-here) · [Tool map](#tool-map) · [System flow](#system-flow) · [Configuration](#configuration)
+
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
+
+## System flow
+
+<p align="center">
+  <img src="assets/terminal-flow.svg" alt="Animated terminal workflow: parse, search, generate, validate, analyze" width="100%">
+</p>
+
+```text
+Project Zomboid install        Modding documentation        Existing mod / Workshop mod
+          │                            │                              │
+          └──────────────┬─────────────┴──────────────┬───────────────┘
+                         ▼                            ▼
+                   parse / index                  inspect / analyze
+                         \                            /
+                          ▼                          ▼
+                   ┌────────────────────────────────────┐
+                   │           PZ MCP SERVER            │
+                   │                                    │
+                   │ SEARCH · GENERATE · VALIDATE       │
+                   │ ANALYZE · TRACE RECIPE CHAINS      │
+                   └─────────────────┬──────────────────┘
+                                     │ MCP / stdio
+                                     ▼
+                              Your MCP client
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  PZ_MCP_SERVER — Local vanilla data interface for AI modding       │
-│  ██████╗ ██╗    ██╗███████╗███████╗     ██╗ ██████╗ ██╗   ██╗███████╗│
-│  ██╔══██╗██║    ██║██╔════╝██╔════╝     ██║██╔═══██╗██║   ██║██╔════╝│
-│  ██████╔╝██║ █╗ ██║█████╗  ███████╗     ██║██║   ██║██║   ██║█████╗  │
-│  ██╔══██╗██║███╗██║██╔══╝  ╚════██║     ██║██║   ██║██║   ██║██╔══╝  │
-│  ██████╔╝╚███╔███╔╝███████╗███████║     ██║╚██████╔╝╚██████╔╝███████╗│
-│  ╚═════╝  ╚══╝╚══╝ ╚══════╝╚══════╝     ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝
-└─────────────────────────────────────────────────────────────────────┘
-```
 
-**Give your AI assistant direct access to Project Zomboid's vanilla data — local, offline, indexed.**
+A typical path is:
 
-[Quick Start](#-quick-start) • [Tools](#-tools) • [Workflow](#-workflow) • [Architecture](#-architecture)
+**parse game files → search references → generate a script → validate it → analyze the mod → export**
 
----
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
-## 🎯 The Problem
+## What the server actually does
 
-Modding Project Zomboid means drowning in **thousands of vanilla script files**. You need to know:
+### `[ SEARCH ]` Find the source material
 
-- What properties `Base.Axe` actually has (and there *are* dozens of axes)
-- Which recipes consume `Base.Plank` (**all 36 of them**)
-- Whether `KatanaSwing` exists before referencing it in your sound script
-- How `tags[base:flour]` resolves in B42's bracket ingredient syntax
+- Search parsed vanilla **items, recipes, sounds, and vehicles**.
+- Index Markdown modding documentation into a searchable knowledge base.
+- List indexed knowledge topics.
+- Search the Project Zomboid Steam Workshop and retrieve item details.
 
-This server puts a **local, indexed copy of the game's data** behind an MCP interface. Claude Desktop (or any MCP client) can search, generate, validate, and analyze mods directly in your workflow. No cloud calls. No API keys. Nothing leaves your machine.
+### `[ BUILD ]` Generate and check scripts
 
----
+The script generator covers:
 
-## 📊 The Numbers
+`item` · `recipe` · `fixing` · `sound` · `evolvedrecipe` · `vehicle`
 
-| Metric | Value |
-|--------|-------|
-| Vanilla items indexed | ~3,800+ |
-| Recipe ingredient rows | 3,848 (includes 758 tag-based inputs) |
-| Knowledge base topics | 13 research docs (~280 KB) |
-| MCP tools | 16 |
-| Tests passing | 205 |
-| Node.js required | ≥ 22.5 |
+Generated scripts can then be:
 
----
+- syntax-validated,
+- checked against parsed references,
+- exported into a mod folder, with dry-run behavior available.
 
-<div align="center">
+### `[ ANALYZE ]` Inspect the mod, not just the text
 
-![Capabilities](assets/capability-cards.svg)
+The analysis tools cover:
 
-</div>
+- mod structure,
+- Lua syntax,
+- balance and compatibility checks,
+- recipe dependency traversal,
+- duplicate crafting-path detection,
+- Workshop download and analysis through SteamCMD.
 
----
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
-## 🔧 Quick Start
+## Tool map
+
+| Channel | Tools |
+|---|---|
+| `DISCOVERY` | `search_vanilla` · `search_knowledge_base` · `list_knowledge_topics` |
+| `SCRIPT` | `generate_script` · `validate_script` · `check_references` · `export_mod_script` |
+| `LOCAL DATA` | `parse_game_files` · `index_knowledge_base` |
+| `ANALYSIS` | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts` |
+| `WORKSHOP` | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze` |
+
+Tools are documented as returning human-readable text alongside machine-readable MCP `structuredContent`.
+
+For parameters and examples: [`TOOLS.md`](TOOLS.md).
+
+## Why this exists
+
+Project Zomboid modding requires moving between vanilla definitions, references, local notes, script templates, generated content, validation results, and mod-level analysis.
+
+PZ MCP Server puts those operations behind one MCP interface. The client can request information and actions through tools rather than relying only on whatever text was manually placed into its context.
+
+The repository describes the core game-data and documentation workflow as local/offline. Workshop operations are separate because they interact with Steam Workshop and SteamCMD.
+
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
+
+## Start here
 
 ```bash
 git clone https://github.com/shakoorpour1991-sketch/pz-mcp-server.git
 cd pz-mcp-server
 npm install
 npm run build
-npm start
 ```
 
-### Connect to Claude Desktop
+The repository documentation specifies **Node.js ≥ 22.5**.
 
-Add to `claude_desktop_config.json`, then restart:
+A stdio MCP configuration has this shape:
 
 ```json
 {
@@ -81,177 +127,71 @@ Add to `claude_desktop_config.json`, then restart:
 }
 ```
 
----
+Run the compiled server with:
 
-## 🔄 Workflow
+```bash
+npm start
+```
 
-<div align="center">
-
-![Workflow Diagram](assets/workflow-diagram.svg)
-
-</div>
-
-**Data flow:** `parse_game_files` → populate SQLite → `search_vanilla` / `analyze_recipe_chain` → `generate_script` → `validate_script` → `export_mod_script`
-
----
-
-## 🛠️ Tools
-
-Every tool returns human-readable text **and** machine-readable JSON via MCP's `structuredContent` field.
-
-### Discovery
-
-| Tool | Purpose |
-|------|---------|
-| `search_vanilla` | Full-text search over parsed items, recipes, sounds, vehicles with filters (category, weight, calories, tags, type) |
-| `search_recipes` | Search structured craft recipes by ingredient, tool, skill requirement, category, or result |
-| `search_knowledge_base` | Ranked search over your indexed modding docs (BM25 scoring) |
-| `list_knowledge_topics` | List all indexed doc topics with line/word/char stats |
-| `workshop_search` | Browse the PZ Steam Workshop (AppID 108600) — best-effort keyless scrape |
-| `workshop_get_details` | Resolve full metadata for a Workshop item from id or URL (Steam Web API, 24h cache) |
-
-### Generation
-
-| Tool | Purpose |
-|------|---------|
-| `generate_script` | Generate balanced scripts: `item`, `recipe`, `fixing`, `sound`, `evolvedrecipe`, `vehicle` |
-| `export_mod_script` | Generate + write into a mod's `media/scripts` folder (dry-run by default) |
-
-### Validation
-
-| Tool | Purpose |
-|------|---------|
-| `validate_script` | Syntax + reference validation with line-level error reporting and suggestions |
-| `check_references` | Validate item/sound/sprite refs against the parsed database; reports `defined`, `referenced-only`, or `missing` |
-
-### Analysis
-
-| Tool | Purpose |
-|------|---------|
-| `analyze_mod` | Structure, Lua syntax, balance outliers, and compatibility audit |
-| `parse_game_files` | Parse PZ install into the local SQLite database |
-| `index_knowledge_base` | Index markdown docs into a searchable FTS store (mtime-based incremental sync) |
-| `analyze_recipe_chain` | Walk the recipe dependency graph: upstream (what makes this), downstream (what this makes). Supports `expandNode` for delta updates and `target` for shortest-path finding |
-| `detect_recipe_conflicts` | Find items produced by multiple recipes — ranked by severity (`high` for exact duplicates on real item rows, `low` for tag/mapper multi-paths the game tolerates) |
-| `workshop_download` | Fetch a Workshop mod via SteamCMD into `PZ_WORKSHOP_DIR` or `<Steam>/steamapps/workshop/content/108600` |
-| `workshop_analyze` | Download → parse → run full analysis suite → return Mod Report (what it adds, quality score, issues, recommendations) |
-
-Full parameter reference lives in [`TOOLS.md`](TOOLS.md).
-
----
-
-## 🏗️ Architecture
+## Internal map
 
 ```mermaid
-graph TD
-    A[MCP Client<br/>Claude Desktop] -->|STDIO| B[PZ MCP Server]
-    B --> C[PathManager<br/>Auto-detect PZ install]
-    B --> D[DatabaseManager<br/>SQLite + FTS5]
-    B --> E[KnowledgeBaseManager<br/>FTS index]
-    B --> F[ProjectZomboidParser<br/>Items, recipes, sounds, vehicles]
-    B --> G[ScriptGenerator<br/>6 template types]
-    B --> H[ValidationEngine<br/>Syntax + refs]
-    B --> I[ModAnalyzer<br/>Balance + compat]
-    B --> J[RecipeAnalyzer<br/>Dependency graphs]
-    B --> K[SteamWorkshopClient<br/>Keyless metadata]
-    B --> L[SteamCmdDownloader<br/>Workshop fetch]
-    
-    D --> M[(items<br/>recipes<br/>sounds<br/>vehicles<br/>references)]
-    E --> N[(knowledge_docs FTS)]
-    F --> D
-    J --> D
+flowchart LR
+    C[MCP client] <-->|stdio| S[PZ MCP Server]
+
+    S --> P[PathManager]
+    S --> D[(SQLite + FTS5)]
+    S --> K[KnowledgeBaseManager]
+    S --> G[ProjectZomboidParser]
+
+    S --> SG[ScriptGenerator]
+    S --> V[ValidationEngine]
+    S --> M[ModAnalyzer]
+    S --> R[RecipeAnalyzer]
 ```
 
----
+The server is therefore not only a search index: the same MCP surface also reaches generation, validation, analysis, and export-oriented operations.
 
-## ⚙️ Configuration
-
-All configuration is read from environment variables at startup.
+## Configuration
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
+|---|---|---|
 | `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
-| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Knowledge base docs path |
-| `PZ_MCP_LOG_LEVEL` | `info` | Log verbosity (`debug`/`info`/`warn`/`error`) |
+| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Knowledge-base documentation path |
+| `PZ_MCP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 | `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
-| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override the PZ install path |
-| `PZ_DECK_PORT` | `8787` | Admin dashboard (Control Deck) port |
+| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override Project Zomboid installation detection |
+| `PZ_DECK_PORT` | `8787` | Admin dashboard port |
 
-Game path detection covers standard Windows install locations and WSL automatically — set `PROJECTZOMBOID_PATH` only if auto-detect misses your setup.
+The documented game-path detection covers standard Windows locations and WSL; set `PROJECTZOMBOID_PATH` when automatic detection misses the installation.
 
----
+## Development
 
-## 🧪 Development
-
-| Command | Description |
-|---------|-------------|
+| Command | Purpose |
+|---|---|
 | `npm run build` | Compile TypeScript |
-| `npm run dev` | Run with `tsx` (dev mode) |
+| `npm run dev` | Run with `tsx` in development mode |
 | `npm start` | Run the compiled server |
-| `npm run lint` | ESLint (covers `src/`, `tests/`, `admin/`, `scripts/`) |
-| `npm run format:check` | Prettier check |
-| `npm test` | Full test suite (205 tests via `node:test`) |
-| `npm run verify:deck` | Dashboard smoke test |
-| `npm run dashboard` | Launch the Control Deck admin UI |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run the test suite |
 
-**Supported file formats:** `mod.info`, script `.txt` files (items, recipes, fixings, sounds), and `.lua` files (syntax + deprecated API checks).
+## Current boundaries
 
----
+This README does **not** claim that the server can automatically create, launch, or play-test a Project Zomboid mod. That is not established by the supplied repository documentation.
 
-## 📁 What's Inside
+It also avoids unsupported performance claims and compatibility promises.
 
-```
-pz-mcp-server/
-├── src/
-│   ├── analyzers/        # ModAnalyzer, RecipeAnalyzer
-│   ├── database/         # DatabaseManager (SQLite + FTS5)
-│   ├── generators/       # ScriptGenerator (6 template types)
-│   ├── knowledge/        # KnowledgeBaseManager
-│   ├── parsers/          # ProjectZomboidParser
-│   ├── utils/            # PathManager, formatters, FTS util
-│   ├── validation/       # ValidationEngine
-│   ├── workshop/         # SteamWorkshopClient, SteamCmdDownloader
-│   └── index.ts          # MCP server entry point
-├── admin/
-│   ├── bridge.mjs        # RPC bridge for Control Deck
-│   └── index.html        # Control Deck UI (live monitoring + tool playground)
-├── knowledge-base/       # 13 Build 42 research docs
-├── tests/                # 205 unit + integration tests
-└── tools/                # TOOL.md (full parameter reference)
-```
+<p align="center">
+  <img src="assets/divider.svg" width="100%" height="34" alt="">
+</p>
 
----
+<p align="center">
+  <strong>LOCAL DATA → MCP TOOLS → CONTEXTUAL AI ACTION</strong>
+</p>
 
-## 💀 Why This Exists
-
-I was tired of:
-
-1. Opening 20 vanilla script files to find one property value
-2. Guessing whether a sound reference existed
-3. Manually tracing recipe chains through bracket syntax
-4. Writing boilerplate item definitions by hand
-
-So I built a local index of the game's data and exposed it through MCP. Now I ask Claude:
-
-> "Show me all recipes that consume Base.Plank, sorted by skill requirement"
-
-And get an answer in seconds — no manual grep, no spreadsheet, no tab-hopping.
-
----
-
-## ⚠️ Limitations
-
-- **Windows-first**: Auto-detection targets Steam/Epic/GOG on Windows. WSL works; Linux/Mac may need `PROJECTZOMBOID_PATH` set manually.
-- **Workshop scraping is best-effort**: `workshop_search` parses the community browse page HTML. For guaranteed resolution, use `workshop_get_details` with a URL or id.
-- **Build 42 focus**: Tested against 42.18 / 42.20. B41 support is not a goal.
-- **No cloud, no magic**: Everything runs locally. You need a PZ install and (for Workshop features) SteamCMD.
-
----
-
-<div align="center">
-
-**Built for the Project Zomboid modding community** 🧟
-
-[Report an Issue](https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues) · [Changelog](CHANGELOG.md) · [Tool Reference](TOOLS.md)
-
-</div>
+<p align="center">
+  <a href="TOOLS.md">Tool reference</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues">Issues</a> ·
+  <a href="https://github.com/shakoorpour1991-sketch/pz-mcp-server/discussions">Discussions</a>
+</p>
