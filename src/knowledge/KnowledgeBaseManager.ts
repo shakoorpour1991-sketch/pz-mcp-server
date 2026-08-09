@@ -18,7 +18,7 @@ export class KnowledgeBaseManager {
   ) {
     // Directories/files skipped by collectMdFiles (qwen audit G5: were
     // hard-coded to ["wiki", "AdvancedGenerators"] + "README.md").
-    this.skipDirs = options?.skipDirs ?? ["wiki", "AdvancedGenerators"];
+    this.skipDirs = options?.skipDirs ?? ["AdvancedGenerators"];
     this.skipFiles = options?.skipFiles ?? ["README.md"];
     if (dataDir) {
       this.dbPath = join(dataDir, "pz_knowledge.db");
