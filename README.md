@@ -1,163 +1,168 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="PZ MCP Server — Stop making your AI guess" width="100%">
+</p>
+
+# PZ MCP Server
+
+> **Project Zomboid modding tools for an AI that can inspect the same local material you do.**
+
+Vanilla game data, modding documentation, script generation, validation, mod analysis, recipe analysis, and Workshop inspection are exposed through one MCP server.
+
+**The hook:** instead of asking an AI to remember Project Zomboid internals, give it tools to query the material, generate against it, and check the result.
+
+[Start here](#start-here) · [Tool map](#tool-map) · [System flow](#system-flow) · [Configuration](#configuration)
+
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
+
 <div align="center">
 
 ```text
-██████╗ ███████╗     ███╗   ███╗ ██████╗██████╗
-██╔══██╗╚══███╔╝     ████╗ ████║██╔════╝██╔══██╗
-██████╔╝  ███╔╝█████╗██╔████╔██║██║     ██████╔╝
-██╔═══╝  ███╔╝ ╚════╝██║╚██╔╝██║██║     ██╔═══╝
-██║     ███████╗     ██║ ╚═╝ ██║╚██████╗██║
-╚═╝     ╚══════╝     ╚═╝     ╚═╝ ╚═════╝╚═╝
+🟢 ═════════════════════════════════════════════════════════════════════ 🟢
 
-      ███╗   ███╗ ██████╗██████╗
-      ████╗ ████║██╔════╝██╔══██╗
-      ██╔████╔██║██║     ██████╔╝
-      ██║╚██╔╝██║██║     ██╔═══╝
-      ██║ ╚═╝ ██║╚██████╗██║
-      ╚═╝     ╚═╝ ╚═════╝╚═╝
+        ██████╗ ███████╗     ███╗   ███╗ ██████╗██████╗
+        ██╔══██╗╚══███╔╝     ████╗ ████║██╔════╝██╔══██╗
+        ██████╔╝  ███╔╝█████╗██╔████╔██║██║     ██████╔╝
+        ██╔═══╝  ███╔╝ ╚════╝██║╚██╔╝██║██║     ██╔═══╝
+        ██║     ███████╗     ██║ ╚═╝ ██║╚██████╗██║
+        ╚═╝     ╚══════╝     ╚═╝     ╚═╝ ╚═════╝╚═╝
+
+                 ███╗   ███╗ ██████╗██████╗
+                 ████╗ ████║██╔════╝██╔══██╗
+                 ██╔████╔██║██║     ██████╔╝
+                 ██║╚██╔╝██║██║     ██╔═══╝
+                 ██║ ╚═╝ ██║╚██████╗██║
+                 ╚═╝     ╚═╝ ╚═════╝╚═╝
+
+             [ LOCAL INTELLIGENCE // GHOST PROTOCOL ]
+
+🟢 ═════════════════════════════════════════════════════════════════════ 🟢
 ```
-
-# `> PZ_MCP_SERVER // GHOST MODE`
-
-**PROJECT ZOMBOID MODDING INTELLIGENCE FOR MCP CLIENTS**
-
-[![Node](https://img.shields.io/badge/Node.js-%3E%3D22.5-00ff41?style=for-the-badge&logo=node.js&logoColor=00ff41&labelColor=050505)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-00ff41?style=for-the-badge&logo=typescript&logoColor=00ff41&labelColor=050505)](https://www.typescriptlang.org/)
-[![MCP](https://img.shields.io/badge/MCP-stdio-00ff41?style=for-the-badge&labelColor=050505)](https://modelcontextprotocol.io/)
-[![SQLite](https://img.shields.io/badge/SQLite-FTS5-00ff41?style=for-the-badge&logo=sqlite&logoColor=00ff41&labelColor=050505)](https://www.sqlite.org/)
-[![Build 42](https://img.shields.io/badge/Project_Zomboid-Build_42-00ff41?style=for-the-badge&labelColor=050505)](https://projectzomboid.com/)
-
-`[ STATUS: ONLINE ]` · `[ MODE: LOCAL-FIRST ]` · `[ SIGNAL: MCP/STDIO ]` · `[ THREAT: ZERO TRUST ]`
 
 </div>
 
-```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                                                                              │
-│   [SYSTEM BOOT]                                                             │
-│                                                                              │
-│   > connecting to Project Zomboid data...                                   │
-│   > indexing vanilla definitions...                                         │
-│   > loading modding knowledge...                                            │
-│   > mounting MCP toolchain...                                               │
-│   > validating payload boundaries...                                        │
-│   > ghost mode: ACTIVE                                                      │
-│                                                                              │
-│   ██████╗ ███████╗███████╗██████╗ ██████╗  █████╗ ████████╗██╗              │
-│   ██╔══██╗╚══███╔╝██╔════╝██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██║              │
-│   ██████╔╝  ███╔╝ █████╗  ██████╔╝██████╔╝███████║   ██║   ██║              │
-│   ██╔═══╝  ███╔╝  ██╔══╝  ██╔══██╗██╔══██╗██╔══██║   ██║   ██║              │
-│   ██║     ███████╗███████╗██║  ██║██║  ██║██║  ██║   ██║   ██║              │
-│   ╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝              │
-│                                                                              │
-│   STOP MAKING YOUR AI GUESS. GIVE IT THE SOURCE.                            │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+## System flow
 
-> **PZ MCP Server** turns Project Zomboid's local game data, documentation, scripts, recipes, mods, and Workshop metadata into an MCP-accessible intelligence layer. Search the source. Generate against it. Validate the payload. Analyze the result. 🟢
-
----
-
-## `> MATRIX // SYSTEM FLOW`
+<p align="center">
+  <img src="assets/terminal-flow.svg" alt="Animated terminal workflow: parse, search, generate, validate, analyze" width="100%">
+</p>
 
 ```text
-              ┌───────────────────────┐
-              │ PROJECT ZOMBOID       │
-              │ INSTALL / VANILLA     │
-              └───────────┬───────────┘
-                          │ parse / index
-                          ▼
-┌─────────────────┐   ┌──────────────────────┐   ┌─────────────────┐
-│ MODDING DOCS    │──▶│   PZ MCP SERVER      │◀──│ EXISTING MODS   │
-│ markdown / refs │   │                      │   │ / WORKSHOP      │
-└─────────────────┘   │ SEARCH               │   └─────────────────┘
-                      │ GENERATE             │
-                      │ VALIDATE             │
-                      │ ANALYZE              │
-                      │ TRACE                │
-                      └──────────┬───────────┘
-                                 │ MCP / stdio
-                                 ▼
-                      ┌──────────────────────┐
-                      │ YOUR AI CLIENT       │
-                      │                       │
-                      │ inspect → inject     │
-                      │ build → verify       │
-                      │ analyze → export     │
-                      └──────────────────────┘
+Project Zomboid install        Modding documentation        Existing mod / Workshop mod
+          │                            │                              │
+          └──────────────┬─────────────┴──────────────┬───────────────┘
+                         ▼                            ▼
+                   parse / index                  inspect / analyze
+                         \                            /
+                          ▼                          ▼
+                   ┌────────────────────────────────────┐
+                   │           PZ MCP SERVER            │
+                   │                                    │
+                   │ SEARCH · GENERATE · VALIDATE       │
+                   │ ANALYZE · TRACE RECIPE CHAINS      │
+                   └─────────────────┬──────────────────┘
+                                     │ MCP / stdio
+                                     ▼
+                              Your MCP client
 ```
 
-**Core loop:** `PARSE → SEARCH → GENERATE → VALIDATE → ANALYZE → EXPORT`
+A typical path is:
 
----
+**parse game files → search references → generate a script → validate it → analyze the mod → export**
 
-## `> CAPABILITIES // PAYLOAD MATRIX`
-
-| Channel | Capability | Signal |
-|---|---|---|
-| 🔥 `DISCOVERY` | Search vanilla items, recipes, sounds, vehicles | `HIGH` |
-| ⚡ `KNOWLEDGE` | Index and search Markdown modding documentation | `HIGH` |
-| 💀 `SCRIPT` | Generate item/recipe/fixing/sound/evolvedrecipe/vehicle scripts | `HIGH` |
-| 🛡️ `VALIDATION` | Syntax and reference validation | `HIGH` |
-| 🔥 `ANALYSIS` | Inspect mod structure, Lua, balance, compatibility | `HIGH` |
-| ⚡ `RECIPES` | Trace dependencies and detect crafting conflicts | `HIGH` |
-| 💀 `WORKSHOP` | Search, inspect, download, and analyze Workshop items | `EXTERNAL` |
-| 🛡️ `EXPORT` | Export generated scripts with safety-oriented dry-run support | `LOCAL` |
-
-### Tool map
+<div align="center">
 
 ```text
-DISCOVERY
-├── search_vanilla
-├── search_knowledge_base
-└── list_knowledge_topics
+🟢 ────────────────────────[ SIGNAL DIVIDER ]──────────────────────── 🟢
 
-SCRIPT
-├── generate_script
-├── validate_script
-├── check_references
-└── export_mod_script
+              ░▒▓█  ACCESSING THE MODDING GRID  █▓▒░
 
-LOCAL DATA
-├── parse_game_files
-└── index_knowledge_base
+                 ┌───────────────────────────┐
+                 │  > parse                  │
+                 │  > search                 │
+                 │  > generate               │
+                 │  > validate               │
+                 │  > analyze                │
+                 │  > export                 │
+                 └───────────────────────────┘
+                         │
+                         ▼
+                    [ MCP / STDIO ]
 
-ANALYSIS
-├── analyze_mod
-├── analyze_recipe_chain
-└── detect_recipe_conflicts
-
-WORKSHOP
-├── workshop_search
-├── workshop_get_details
-├── workshop_download
-└── workshop_analyze
+🟢 ───────────────────────────────────────────────────────────────── 🟢
 ```
 
-Full parameters and examples: [`TOOLS.md`](TOOLS.md).
+</div>
 
----
+## What the server actually does
 
-## `> INSTALL // JACK IN`
+### `[ SEARCH ]` Find the source material
+
+- Search parsed vanilla **items, recipes, sounds, and vehicles**.
+- Index Markdown modding documentation into a searchable knowledge base.
+- List indexed knowledge topics.
+- Search the Project Zomboid Steam Workshop and retrieve item details.
+
+### `[ BUILD ]` Generate and check scripts
+
+The script generator covers:
+
+`item` · `recipe` · `fixing` · `sound` · `evolvedrecipe` · `vehicle`
+
+Generated scripts can then be:
+
+- syntax-validated,
+- checked against parsed references,
+- exported into a mod folder, with dry-run behavior available.
+
+### `[ ANALYZE ]` Inspect the mod, not just the text
+
+The analysis tools cover:
+
+- mod structure,
+- Lua syntax,
+- balance and compatibility checks,
+- recipe dependency traversal,
+- duplicate crafting-path detection,
+- Workshop download and analysis through SteamCMD.
+
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
+
+## Tool map
+
+| Channel | Tools |
+|---|---|
+| `DISCOVERY` | `search_vanilla` · `search_knowledge_base` · `list_knowledge_topics` |
+| `SCRIPT` | `generate_script` · `validate_script` · `check_references` · `export_mod_script` |
+| `LOCAL DATA` | `parse_game_files` · `index_knowledge_base` |
+| `ANALYSIS` | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts` |
+| `WORKSHOP` | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze` |
+
+Tools are documented as returning human-readable text alongside machine-readable MCP `structuredContent`.
+
+For parameters and examples: [`TOOLS.md`](TOOLS.md).
+
+## Why this exists
+
+Project Zomboid modding requires moving between vanilla definitions, references, local notes, script templates, generated content, validation results, and mod-level analysis.
+
+PZ MCP Server puts those operations behind one MCP interface. The client can request information and actions through tools rather than relying only on whatever text was manually placed into its context.
+
+The repository describes the core game-data and documentation workflow as local/offline. Workshop operations are separate because they interact with Steam Workshop and SteamCMD.
+
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
+
+## Start here
 
 ```bash
-# clone the payload
 git clone https://github.com/shakoorpour1991-sketch/pz-mcp-server.git
 cd pz-mcp-server
-
-# install dependencies
 npm install
-
-# compile the signal
 npm run build
-
-# launch the node
-npm start
 ```
 
-**Runtime:** Node.js `>= 22.5`.
+The repository documentation specifies **Node.js ≥ 22.5**.
 
-### MCP configuration
+A stdio MCP configuration has this shape:
 
 ```json
 {
@@ -170,168 +175,97 @@ npm start
 }
 ```
 
----
+Run the compiled server with:
 
-## `> CONFIG // ENVIRONMENT`
-
-| Variable | Default | Function |
-|---|---|---|
-| `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
-| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Documentation source |
-| `PZ_MCP_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
-| `PZ_GAME_VERSION` | `42.20` | Compatibility target |
-| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Game installation override |
-| `PZ_DECK_PORT` | `8787` | Admin dashboard port |
-
----
-
-## `> STREAM // LIVE TRACE`
-
-```text
-[07:41:02.013] [BOOT]       establishing MCP transport ............ OK
-[07:41:02.087] [DB]         SQLite + FTS5 mounted ................ OK
-[07:41:02.194] [PARSER]     vanilla definitions discovered ........ OK
-[07:41:02.351] [KB]         documentation index online ............ OK
-[07:41:02.418] [TOOLS]      capability registry loaded ........... OK
-[07:41:02.420] [SECURITY]   boundary checks armed ................ OK
-[07:41:02.421] [GHOST]      local-first mode ........................ ON
-
-> incoming payload: search_vanilla
-> resolving reference: Base.WoodenPlank
-> querying FTS index...
-> result: MATCH
-> returning structuredContent...
-
-[TRACE] signal complete // no hallucinated source required.
+```bash
+npm start
 ```
 
----
-
-## `> ARCHITECTURE // THE GRID`
+## Internal map
 
 ```mermaid
 flowchart LR
-    C[MCP Client] <-->|stdio| S[PZ MCP Server]
+    C[MCP client] <-->|stdio| S[PZ MCP Server]
+
     S --> P[PathManager]
     S --> D[(SQLite + FTS5)]
     S --> K[KnowledgeBaseManager]
     S --> G[ProjectZomboidParser]
+
     S --> SG[ScriptGenerator]
     S --> V[ValidationEngine]
     S --> M[ModAnalyzer]
     S --> R[RecipeAnalyzer]
 ```
 
-The core game-data/documentation workflow is local-first. Workshop functionality is a separate external boundary because it interacts with Steam Workshop and SteamCMD.
+The server is therefore not only a search index: the same MCP surface also reaches generation, validation, analysis, and export-oriented operations.
 
----
+## Configuration
 
-## `> OPERATIONS // COMMAND DECK`
+| Variable | Default | Purpose |
+|---|---|---|
+| `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
+| `PZ_MCP_KB_PATH` | `D:\PZ-Modding\Documentation` | Knowledge-base documentation path |
+| `PZ_MCP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
+| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override Project Zomboid installation detection |
+| `PZ_DECK_PORT` | `8787` | Admin dashboard port |
 
-| Command | Function |
+The documented game-path detection covers standard Windows locations and WSL; set `PROJECTZOMBOID_PATH` when automatic detection misses the installation.
+
+## Development
+
+| Command | Purpose |
 |---|---|
 | `npm run build` | Compile TypeScript |
-| `npm run dev` | Development mode via `tsx` |
-| `npm start` | Run compiled server |
-| `npm run lint` | ESLint |
-| `npm test` | Test suite |
+| `npm run dev` | Run with `tsx` in development mode |
+| `npm start` | Run the compiled server |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run the test suite |
 
----
+## Current boundaries
 
-## `> SECURITY // ZERO TRUST`
+This README does **not** claim that the server can automatically create, launch, or play-test a Project Zomboid mod. That is not established by the supplied repository documentation.
 
-Treat MCP inputs as hostile payloads until validated.
-
-- 🔒 Validate tool arguments at the boundary.
-- 🔒 Canonicalize filesystem paths before writes.
-- 🔒 Keep generated exports inside an intended workspace.
-- 🔒 Treat SteamCMD and downloaded Workshop data as external/untrusted.
-- 🔒 Use dry-run behavior where mutation is unnecessary.
-- 🔒 Keep external side effects visibly separated from read-only analysis.
-
-The server does **not** claim automatic game launch, gameplay, or automated mod play-testing merely because those capabilities would be useful. The documented surface is the source of truth.
-
----
-
-## `> DEV // BUILD THE NEXT PAYLOAD`
-
-```bash
-npm install
-npm run build
-npm run lint
-npm test
-```
-
-### Contribution protocol
-
-```text
-[01] FORK THE NODE
-[02] CREATE YOUR BRANCH
-[03] ISOLATE THE PAYLOAD
-[04] TEST BEFORE TRANSMISSION
-[05] KEEP THE DIFF CLEAN
-[06] OPEN THE PR
-[07] WAIT FOR THE GRID TO VERIFY
-```
-
-Contribution rules:
-
-- Keep changes scoped. One breach, one payload.
-- Add tests when changing behavior.
-- Do not silently change public MCP tool semantics.
-- Do not commit generated noise or local game data.
-- Document new tools and configuration.
-- Run build, lint, and tests before transmission.
-
----
-
-## `> CURRENT BOUNDARIES // READ THE SIGNAL`
-
-PZ MCP Server currently focuses on **local data intelligence, MCP tooling, generation, validation, analysis, recipe reasoning, and Workshop inspection**.
-
-It does **not** establish automatic:
-
-- Project Zomboid game launching
-- gameplay automation
-- automated in-game mod play-testing
-
-Those are future expansion targets, not claims about the current tool surface.
-
----
-
-## `> LICENSE // OPEN THE GATE`
-
-See the repository license and documentation for the authoritative project terms.
-
----
+It also avoids unsupported performance claims and compatibility promises.
 
 <div align="center">
 
 ```text
-                 .-=========-.
-                 \'-=======-'/
-                 _|   .=.   |_
-                ((|  {{1}}  |))
-                 \|   /|\   |/
-                  \__ '`' __/
-                    _`) (`_
-                  _/_______\_
-                 /___________\
+                         ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+                    ▄██▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀██▄
+                  ▄█▀   ███████████████   ▀█▄
+                 █▀    ██  ▄▄▄▄▄▄▄  ██     ▀█
+                █     ██  █▀     ▀█  ██      █
+                █     ██  █  ◉ ◉  █  ██      █
+                █     ██  █   ▄   █  ██      █
+                █      ██  ███████  ██       █
+                 █      ▀██▄▄▄▄▄▄▄██▀       █
+                  ▀█▄                         █
+                    ▀██▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▀
 
-          ██████╗ ██╗  ██╗███████╗██████╗
-          ██╔══██╗╚██╗██╔╝██╔════╝██╔══██╗
-          ██████╔╝ ╚███╔╝ █████╗  ██████╔╝
-          ██╔══██╗ ██╔██╗ ██╔══╝  ██╔══██╗
-          ██████╔╝██╔╝ ██╗███████╗██║  ██║
-          ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+                    [ CONNECTION SECURED ]
+                    [ SOURCE > CONTEXT ]
+                    [ CONTEXT > CREATION ]
 
-                 > SIGNAL LOST_
-                 > CONNECTION CLOSED_
-                 > GHOST REMAINS.
+                         ░▒▓█ PZ-MCP █▓▒░
+
+🟢 ═════════════════════════════════════════════════════════════════════ 🟢
 ```
 
-**LOCAL DATA → MCP TOOLS → CONTEXTUAL AI ACTION**
-
-[`TOOLS.md`](TOOLS.md) · [`CHANGELOG.md`](CHANGELOG.md) · [Issues](https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues) · [Discussions](https://github.com/shakoorpour1991-sketch/pz-mcp-server/discussions)
-
 </div>
+
+<p align="center">
+  <img src="assets/divider.svg" width="100%" height="34" alt="">
+</p>
+
+<p align="center">
+  <strong>LOCAL DATA → MCP TOOLS → CONTEXTUAL AI ACTION</strong>
+</p>
+
+<p align="center">
+  <a href="TOOLS.md">Tool reference</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues">Issues</a> ·
+  <a href="https://github.com/shakoorpour1991-sketch/pz-mcp-server/discussions">Discussions</a>
+</p>
