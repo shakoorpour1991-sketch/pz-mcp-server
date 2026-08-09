@@ -472,6 +472,25 @@ const server = http.createServer(async (req, res) => {
       return json(res, { ok: true, configured: p });
     }
 
+    // Pause an in-flight workshop_download: steamcmd.exe is force-killed (the
+    // server's downloader downloads into a temp dir and only renames it into
+    // place on success, so a killed run leaves nothing behind and Resume just
+    // re-invokes the tool). No new MCP tool needed.
+    if (req.method === 'POST' && url.pathname === '/api/workshop/pause') {
+      if (process.platform !== 'win32') {
+        return json(res, { ok: false, error: 'Pause is only supported on Windows' }, 400);
+      }
+      execFile('taskkill', ['/IM', 'steamcmd.exe', '/T', '/F'], (err) => {
+        const msg = err ? String(err.message || '') : '';
+        if (err && !/not found|no running instance/i.test(msg)) {
+          return json(res, { ok: false, error: 'Could not pause: ' + msg }, 500);
+        }
+        pushLog('⏸ workshop download pause requested — killed steamcmd');
+        return json(res, { ok: true });
+      });
+      return; // response is sent from the taskkill callback
+    }
+
     if (req.method === 'POST' && url.pathname === '/rpc') {
       let msg;
       try { msg = JSON.parse(await readBody(req)); }

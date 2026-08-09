@@ -47,6 +47,16 @@ export interface DownloadResult {
   note?: string;
 }
 
+export interface DownloadProgress {
+  /** Bytes on disk in the (still-temp) download folder so far. */
+  bytes: number;
+  /** Expected total bytes (from workshop metadata); 0 when unknown. */
+  expectedBytes: number;
+  /** 0-99 while in flight (never 100 — completion is signalled separately). */
+  pct: number;
+  elapsedMs: number;
+}
+
 export interface SteamCmdDownloaderOptions {
   /** Explicit steamcmd binary path (else env STEAMCMD_PATH, else common paths). */
   steamCmdPath?: string;
@@ -190,7 +200,10 @@ export class SteamCmdDownloader {
   async download(
     id: string,
     onPhase?: (phase: string) => void,
-    opts: { expectedBytes?: number } = {},
+    opts: {
+      expectedBytes?: number;
+      onProgress?: (p: DownloadProgress) => void;
+    } = {},
   ): Promise<DownloadResult> {
     if (!/^\d{6,15}$/.test(id)) {
       throw new Error(`Invalid workshop item id "${id}": must be 6-15 digits.`);
@@ -261,11 +274,36 @@ export class SteamCmdDownloader {
 
     // Temp dir beside the output: same filesystem for the final rename.
     let tempDir = "";
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
 
     const maxAttempts = 3;
     let attempts = 0;
     try {
       tempDir = mkdtempSync(join(dirname(workshopDir), ".steamcmd-tmp-"));
+      // Live progress: poll the size of the in-progress download folder (the
+      // temp dir steamcmd writes into) against the known item size. Robust
+      // even when steamcmd's own progress output is not parseable.
+      const dlDir = join(
+        tempDir,
+        "steamapps",
+        "workshop",
+        "content",
+        PZ_APPID,
+        id,
+      );
+      progressTimer = setInterval(() => {
+        const bytes = this.dirSize(dlDir);
+        const pct =
+          expectedBytes > 0
+            ? Math.min(99, Math.round((bytes / expectedBytes) * 100))
+            : 0;
+        opts.onProgress?.({
+          bytes,
+          expectedBytes,
+          pct,
+          elapsedMs: this.now() - t0,
+        });
+      }, 700);
       const loginArgs = this.loginArgs();
       const baseArgs = [
         "+force_install_dir",
@@ -334,6 +372,7 @@ export class SteamCmdDownloader {
         );
       }
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       if (tempDir) {
         try {
           rmSync(tempDir, { recursive: true, force: true });

@@ -86,6 +86,9 @@ const SERVER_VERSION =
   JSON.parse(readFileSync(resolve(__dirname, "..", "package.json"), "utf-8"))
     .version || "1.1.0";
 
+// Workshop item ids with a download in flight (dedupe concurrent calls).
+const activeWorkshopDownloads = new Set<string>();
+
 const server = new Server(
   {
     name: "pz-mcp-server",
@@ -909,34 +912,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "workshop_download": {
         const { id } = WorkshopDownloadSchema.parse(args);
         const resolvedId = parseWorkshopInput(id);
-        // Confirm the item is a Project Zomboid workshop item before touching disk.
-        const details = await workshopClient.getDetails(resolvedId);
-        const isPz = details.appId === "108600";
-        if (!isPz) {
+        // Guard against concurrent downloads of the same item (e.g. double
+        // clicks / parallel clients) — steamcmd runs would race on disk.
+        if (activeWorkshopDownloads.has(resolvedId)) {
           throw new McpError(
             ErrorCode.InvalidParams,
-            `Item ${resolvedId} belongs to app ${details.appId || "unknown"}, not Project Zomboid (108600). Refusing to download.`,
+            `Item ${resolvedId} is already downloading — wait for it to finish or pause it first.`,
           );
         }
-        const result = await steamCmdDownloader.download(
-          resolvedId,
-          (phase) =>
-            logger.info(
-              { workshopId: resolvedId },
-              "workshop_download: %s",
-              phase,
-            ),
-          { expectedBytes: details.fileSize },
-        );
-        return {
-          content: [
+        activeWorkshopDownloads.add(resolvedId);
+        try {
+          // Confirm the item is a Project Zomboid workshop item before touching disk.
+          const details = await workshopClient.getDetails(resolvedId);
+          const isPz = details.appId === "108600";
+          if (!isPz) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Item ${resolvedId} belongs to app ${details.appId || "unknown"}, not Project Zomboid (108600). Refusing to download.`,
+            );
+          }
+          let lastPct = -1;
+          const result = await steamCmdDownloader.download(
+            resolvedId,
+            (phase) =>
+              logger.info(
+                { workshopId: resolvedId },
+                "workshop_download: %s",
+                phase,
+              ),
             {
-              type: "text",
-              text: formatWorkshopDownload(result),
+              expectedBytes: details.fileSize,
+              // Streamed to the Control Deck as `workshop_download: progress …`
+              // log lines (bridge forwards them over SSE). Deduped by whole-%
+              // point so a long download can't flood the log.
+              onProgress: (info) => {
+                const pct =
+                  info.expectedBytes > 0
+                    ? Math.min(99, Math.round(info.pct))
+                    : 0;
+                if (pct === lastPct) return;
+                lastPct = pct;
+                logger.info(
+                  { workshopId: resolvedId },
+                  "workshop_download: progress %d%% (%d/%d bytes)",
+                  pct,
+                  info.bytes,
+                  info.expectedBytes,
+                );
+              },
             },
-          ],
-          structuredContent: structuredClone(result),
-        };
+          );
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatWorkshopDownload(result),
+              },
+            ],
+            structuredContent: structuredClone(result),
+          };
+        } finally {
+          activeWorkshopDownloads.delete(resolvedId);
+        }
       }
 
       case "workshop_analyze": {

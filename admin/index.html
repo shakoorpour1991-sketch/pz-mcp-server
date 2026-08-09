@@ -317,6 +317,10 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .ws-step.done{color:var(--muted)}
 .ws-step.done .dot{background:#34D399}
 .ws-pipe .elapsed{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--faint);white-space:nowrap}
+.ws-dl-bar{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;border:1px solid var(--stroke-soft)}
+.ws-dl-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,rgba(var(--accent-rgb),.75),rgb(var(--accent-rgb)));transition:width .35s var(--easeout)}
+.ws-dl-meta{display:flex;gap:12px;font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.ws-dl-phase{font-size:11.5px;color:var(--muted);margin-top:2px}
 .ws-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
 .ws-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:600;
   background:rgba(255,255,255,.05);border:1px solid var(--stroke-soft);color:var(--muted)}
@@ -806,7 +810,8 @@ const S = {
   serverInfo:null, protocol:null,
   tools:[], openTool:null,
   telemetry:null,
-  ws: { results: [], detail: null, busy: false, error: null, actionError: null, downloading: false, download: null, analyzing: false, report: null, phase: null, startedAt: 0, pipeTimer: 0 },
+  ws: { results: [], detail: null, busy: false, error: null, actionError: null, downloading: false, download: null, analyzing: false, report: null, phase: null, startedAt: 0, pipeTimer: 0,
+    dl: { active:false, paused:false, reqPaused:false, pct:0, bytes:0, expected:0, elapsed:0, phase:null, startedAt:0, timer:0 } },
   wsDir: null,
   logs:[], fid:0, methodById:new Map(), resLatency:new Map(),
   serverLog:[], seq:0,
@@ -1689,6 +1694,7 @@ async function wsSearch(){
   const q = $('#wsQuery').value.trim();
   if (!q){ toast('Type a search query','warn'); return; }
   clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+  wsDlReset();
   S.ws.busy = true; S.ws.error = null; S.ws.detail = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
   renderWorkshopResults();
   const btn = $('#wsSearchBtn'); if (btn) btn.disabled = true;
@@ -1706,6 +1712,7 @@ async function wsSearch(){
 }
 async function wsFetchDetails(input, forceRefresh){
   clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+  wsDlReset();
   S.ws.busy = true; S.ws.error = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
   renderWorkshopResults();
   try {
@@ -1733,6 +1740,56 @@ function wsDownloadResultHTML(r){
     '<div class="md-h">✅ Downloaded — '+esc(r.downloadedPath)+'</div>' +
     '<div class="md-p">'+ICONS.db+' '+esc(fmtBytes(r.bytes))+' in '+(r.elapsedMs/1000).toFixed(1)+'s · steamcmd attempts: '+esc(String(r.attempts))+'</div>' +
     '<div class="md-p" style="color:var(--faint)">Next: run the analyze pipeline on this folder (M3).</div></div>';
+}
+/* Progress for workshop_download: the server streams
+ * "workshop_download: progress N% (b/e bytes)" + phase lines via pino → SSE. */
+function wsDlFromLogs(){
+  let hit = null;
+  for (const e of S.serverLog || []){
+    const line = e && e.line;
+    if (!line) continue;
+    if (e.t && S.ws.dl.startedAt && e.t < S.ws.dl.startedAt) continue;
+    let msg = null;
+    try { const j = JSON.parse(line); if (j && typeof j.msg === 'string') msg = j.msg; } catch { /* raw */ }
+    if (!msg){ const m = line.match(/"msg":"workshop_download: progress ([^"]*)"/); if (m) msg = 'workshop_download: progress ' + m[1]; }
+    if (!msg || !msg.startsWith('workshop_download: progress')) continue;
+    const m2 = msg.match(/(\d+(?:\.\d+)?)%\s*\((\d+)\/(\d+)\s*bytes\)/);
+    if (m2) hit = { pct: Math.min(99, Math.round(+m2[1])), bytes: +m2[2], expected: +m2[3] };
+  }
+  return hit;
+}
+function wsDlPhaseFromLogs(){
+  let phase = null;
+  for (const e of S.serverLog || []){
+    const line = e && e.line;
+    if (!line) continue;
+    if (e.t && S.ws.dl.startedAt && e.t < S.ws.dl.startedAt) continue;
+    let msg = null;
+    try { const j = JSON.parse(line); if (j && typeof j.msg === 'string') msg = j.msg; } catch { /* raw */ }
+    if (!msg){ const m = line.match(/"msg":"workshop_download: ([^"]*)"/); if (m) msg = 'workshop_download: ' + m[1]; }
+    if (!msg || !msg.startsWith('workshop_download:') || /^workshop_download: progress/.test(msg)) continue;
+    phase = msg.slice('workshop_download:'.length).trim();
+  }
+  return phase;
+}
+function wsDlMeterHTML(id){
+  const dl = S.ws.dl;
+  const pct = dl.expected > 0 ? Math.min(100, Math.round(dl.pct || 0)) : 0;
+  const got = fmtBytes(dl.bytes || 0);
+  const total = dl.expected > 0 ? fmtBytes(dl.expected) : '…';
+  return '<div class="ws-pipe" id="wsDlMeter" style="margin-top:12px;align-items:center">' +
+    '<div style="flex:1;min-width:180px">' +
+      '<div class="ws-dl-bar"><i style="width:'+pct+'%"></i></div>' +
+      '<div class="ws-dl-meta"><span>'+got+' / '+total+'</span>'+(dl.expected>0?'<span>'+pct+'%</span>':'')+'<span>⏱ '+Math.round(dl.elapsed||0)+'s</span></div>' +
+    '</div>' +
+    '<button class="btn sm danger" data-act="ws-pause-dl" data-id="'+esc(id)+'" title="Pause the download">'+ICONS.x+' Pause</button>' +
+    (dl.phase ? '<div class="ws-dl-phase" style="width:100%">'+esc(dl.phase)+'</div>' : '') +
+  '</div>';
+}
+function wsDlReset(){
+  clearInterval(S.ws.dl.timer); S.ws.dl.timer = 0;
+  Object.assign(S.ws.dl, { active:false, paused:false, reqPaused:false, pct:0, bytes:0, expected:0, elapsed:0, phase:null });
+  S.ws.downloading = false;
 }
 /* Live phase detection: the server logs "workshop_analyze: <phase>" via pino,
  * and the bridge forwards every log line as an SSE `log` event, so the deck
@@ -1825,8 +1882,20 @@ async function wsAnalyze(id){
 }
 async function wsDownload(id){
   if (S.ws.downloading) return;
+  clearInterval(S.ws.dl.timer);
+  const dl = S.ws.dl;
+  Object.assign(dl, { active:true, paused:false, reqPaused:false, pct:0, bytes:0, expected:0, elapsed:0, phase:null, startedAt:Date.now() });
   S.ws.downloading = true; S.ws.download = null; S.ws.error = null; S.ws.actionError = null;
   renderView();
+  dl.timer = setInterval(() => {
+    const p = wsDlFromLogs();
+    if (p){ dl.pct = p.pct; dl.bytes = p.bytes; dl.expected = p.expected; }
+    dl.elapsed = (Date.now() - dl.startedAt) / 1000;
+    const ph = wsDlPhaseFromLogs();
+    if (ph) dl.phase = ph;
+    const el = $('#wsDlMeter');
+    if (el) el.outerHTML = wsDlMeterHTML(id);
+  }, 500);
   try {
     const reply = await rpc('tools/call', { name:'workshop_download', arguments:{ id } });
     const sc = reply.result?.structuredContent;
@@ -1835,11 +1904,31 @@ async function wsDownload(id){
     toast('Downloaded — ' + fmtBytes(S.ws.download.bytes));
     addEvent('workshop download · ' + id + ' · ' + fmtBytes(S.ws.download.bytes));
   } catch (e){
-    S.ws.actionError = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    if (dl.reqPaused) dl.paused = true;
+    else S.ws.actionError = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
   } finally {
+    clearInterval(dl.timer); dl.timer = 0;
+    Object.assign(dl, { active:false, reqPaused:false });
     S.ws.downloading = false;
     renderView();
   }
+}
+async function wsPauseDownload(id){
+  const dl = S.ws.dl;
+  dl.reqPaused = true;
+  try {
+    const r = await fetch('/api/workshop/pause', { method:'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) toast(d.error || 'Could not pause the download','warn');
+  } catch { /* the download call itself will surface the interrupted state */ }
+}
+function wsResumeDownload(id){
+  S.ws.dl.paused = false;
+  wsDownload(id);
+}
+function wsCancelDownload(){
+  wsDlReset();
+  renderView();
 }
 function wsDetailHTML(d){
   const isPz = d.appId === '108600';
@@ -1873,12 +1962,18 @@ function wsDetailHTML(d){
           ? '<div class="ws-alert">✖ '+esc(S.ws.actionError)+'<button class="ibtn" data-act="ws-dismiss-err" title="Dismiss" aria-label="Dismiss error">'+ICONS.x+'</button></div>'
           : '') +
         (S.ws.analyzing ? wsPipeHTML() : '') +
+        (S.ws.dl.paused
+          ? '<div class="ws-alert" style="border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.07);color:#FCD34D">⏸ Download paused — steamcmd was stopped. Resume to continue, or discard.' +
+              '<button class="btn sm" style="margin-left:auto" data-act="ws-resume-dl" data-id="'+esc(d.id)+'">'+ICONS.play+' Resume</button>' +
+              '<button class="ibtn" data-act="ws-cancel-dl" title="Discard paused download" aria-label="Discard paused download">'+ICONS.x+'</button>' +
+            '</div>' : '') +
         '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">' +
           (S.ws.analyzing
             ? '<span style="display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px"><span class="spinner"></span> '+esc(S.ws.phase || 'Connecting to Steam…')+'</span>'
             : '<button class="btn primary" data-act="ws-analyze" data-id="'+esc(d.id)+'">'+ICONS.scan+' Fetch &amp; Analyze</button>') +
           '<button class="btn" data-act="ws-download" data-id="'+esc(d.id)+'"'+(S.ws.analyzing?' disabled':'')+'>'+ICONS.download+(S.ws.downloading?' Downloading…':' Download mod')+'</button>' +
         '</div>' +
+        (S.ws.dl.active && !S.ws.dl.paused ? wsDlMeterHTML(d.id) : '') +
         (S.ws.download ? wsDownloadResultHTML(S.ws.download) : '') +
         (S.ws.report ? wsReportHTML(S.ws.report) : '') +
         (d.description ? '<div class="ws-desc">'+esc(d.description)+'</div>' : '') +
@@ -2096,6 +2191,7 @@ document.addEventListener('click', e => {
     else if (a === 'ws-select') wsFetchDetails(act.dataset.id);
     else if (a === 'ws-back'){
       clearInterval(S.ws.pipeTimer); S.ws.pipeTimer = 0;
+      wsDlReset();
       S.ws.detail = null; S.ws.error = null; S.ws.actionError = null; S.ws.report = null; S.ws.download = null;
       renderView();
     }
@@ -2108,6 +2204,9 @@ document.addEventListener('click', e => {
       setWorkshopDir(v);
     }
     else if (a === 'ws-clear-dir'){ setWorkshopDir(null, true); }
+    else if (a === 'ws-pause-dl'){ wsPauseDownload(act.dataset.id); }
+    else if (a === 'ws-resume-dl'){ wsResumeDownload(act.dataset.id); }
+    else if (a === 'ws-cancel-dl'){ wsCancelDownload(); }
     else if (a === 'ws-dismiss-err'){ S.ws.actionError = null; renderView(); }
     else if (a === 'ws-copy-report'){
       if (S.ws.report?.text) navigator.clipboard?.writeText(S.ws.report.text)
