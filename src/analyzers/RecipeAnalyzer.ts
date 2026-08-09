@@ -37,8 +37,10 @@ export interface ChainNode {
   name: string;
   /** items.type when the node resolves to an item row. */
   itemType?: string;
-  /** For recipes: ingredient item ids (reference context 'ingredient'). */
-  ingredients: Array<{ id: string; count?: number }>;
+  /** For recipes: ingredient item ids (reference context 'ingredient').
+   * `tag: true` marks an entry resolved from a `tags[base:flour]` input —
+   * any item carrying that tag is a valid substitute. */
+  ingredients: Array<{ id: string; count?: number; tag?: boolean }>;
   /** For recipes: result/output item ids (context 'result' | 'output'). */
   results: Array<{ id: string; count?: number }>;
   /** Recipe ids that produce this item (context result/output). */
@@ -102,8 +104,49 @@ export interface ConflictResult {
 
 const RESULT_CONTEXTS = new Set(["result", "output"]);
 
+/**
+ * Per-walk graph index (chain-graph fix: consumers for every item). The
+ * recipe_ingredients mirror is the authoritative edge store — it captures
+ * B42 bracket alternatives (`item 1 [Base.Plank;...]`) and tag inputs
+ * (`item 1 tags[base:plank]`) that the references table never receives — so
+ * one batch load of the mirror + items + references edges powers every
+ * node/edge lookup in a walk, in memory, instead of per-node SQL.
+ *
+ * Maps are keyed by canonical items.id (resolved through candidate
+ * spellings: bare / "Base."-qualified / "base:"-tag), or by the raw tag for
+ * tag refs — matching the node ids the walk emits.
+ */
+interface WalkGraphIndex {
+  /** item id → recipes that OUTPUT it (mirror role='output', ref_type='item'). */
+  producers: Map<string, Set<string>>;
+  /** item id → recipes that ingest it directly (mirror role='ingredient', ref_type='item'). */
+  ingestors: Map<string, Set<string>>;
+  /** tag → recipes that ingest `tags[tag]` (mirror role='ingredient', ref_type='tag'). */
+  tagIngestors: Map<string, Set<string>>;
+  /** item id → recipes producing it via the legacy references table. */
+  refProducers: Map<string, Set<string>>;
+  /** item id → recipes consuming it via the legacy references table. */
+  refConsumers: Map<string, Set<string>>;
+  /** recipe id → ingredient entries (tag-resolved entries carry tag: true). */
+  ingredientsByRecipe: Map<
+    string,
+    Array<{ id: string; count: number; tag?: boolean }>
+  >;
+  /** recipe id → output entries. */
+  outputsByRecipe: Map<string, Array<{ id: string; count: number }>>;
+  /** recipe id → tool entries (mirror role='tool'). */
+  toolsByRecipe: Map<string, Array<{ id: string; count: number }>>;
+  /** item id → its tag set. */
+  itemTags: Map<string, Set<string>>;
+  /** tag → item ids carrying it (the tag→item resolution bridge). */
+  tagToItems: Map<string, string[]>;
+}
+
 export class RecipeAnalyzer {
   constructor(private db: DatabaseManager) {}
+
+  /** The per-walk graph index (built once per analyzeChain call). */
+  private idx: WalkGraphIndex | null = null;
 
   /**
    * Resolve `id` to its canonical items row (the id as stored in the DB).
@@ -134,6 +177,141 @@ export class RecipeAnalyzer {
   private clearCaches() {
     this.itemCache.clear();
     this.nodeCache.clear();
+    this.idx = null;
+  }
+
+  /**
+   * Load the mirror + items + references edges once and index them in memory
+   * (see WalkGraphIndex). Canonical ids resolve through the candidate
+   * spellings so "Base.Plank", "Plank" and "base:plank" all land on the same
+   * stored item row; tags stay as written (matched exactly against item tags).
+   */
+  private async buildWalkIndex(db: DatabaseManager): Promise<WalkGraphIndex> {
+    const [mirrorRows, itemRows, refEdges] = await Promise.all([
+      db.getRecipeIngredientIndex(),
+      db.getGraphItems(),
+      db.getReferenceEdges(),
+    ]);
+
+    const itemIds = new Set<string>();
+    const itemTags = new Map<string, Set<string>>();
+    const tagToItems = new Map<string, string[]>();
+    for (const r of itemRows) {
+      itemIds.add(r.id);
+      if (r.tags && r.tags.length > 0) {
+        itemTags.set(r.id, new Set(r.tags));
+        for (const t of r.tags) {
+          const arr = tagToItems.get(t) ?? [];
+          arr.push(r.id);
+          tagToItems.set(t, arr);
+        }
+      }
+    }
+    const canonical = (ref: string): string => {
+      for (const cand of referenceCandidates(ref)) {
+        if (itemIds.has(cand)) return cand;
+      }
+      return ref;
+    };
+
+    const idx: WalkGraphIndex = {
+      producers: new Map(),
+      ingestors: new Map(),
+      tagIngestors: new Map(),
+      refProducers: new Map(),
+      refConsumers: new Map(),
+      ingredientsByRecipe: new Map(),
+      outputsByRecipe: new Map(),
+      toolsByRecipe: new Map(),
+      itemTags,
+      tagToItems,
+    };
+    const addTo = (map: Map<string, Set<string>>, key: string, val: string) => {
+      if (!key) return;
+      let set = map.get(key);
+      if (!set) {
+        set = new Set();
+        map.set(key, set);
+      }
+      set.add(val);
+    };
+    const addList = <T>(map: Map<string, T[]>, key: string, entry: T) => {
+      if (!key) return;
+      const arr = map.get(key) ?? [];
+      arr.push(entry);
+      map.set(key, arr);
+    };
+
+    for (const row of mirrorRows) {
+      if (row.role === "ingredient") {
+        if (row.refType === "item") {
+          const cid = canonical(row.ref);
+          addTo(idx.ingestors, cid, row.recipeId);
+          addList(idx.ingredientsByRecipe, row.recipeId, {
+            id: cid,
+            count: row.count,
+          });
+        } else if (row.refType === "tag") {
+          addTo(idx.tagIngestors, row.ref, row.recipeId);
+          // `tags[base:flour]` = any item carrying the tag is a valid input.
+          for (const itemId of tagToItems.get(row.ref) ?? []) {
+            addList(idx.ingredientsByRecipe, row.recipeId, {
+              id: itemId,
+              count: row.count,
+              tag: true,
+            });
+          }
+        }
+      } else if (row.role === "output" && row.refType === "item") {
+        const cid = canonical(row.ref);
+        addTo(idx.producers, cid, row.recipeId);
+        addList(idx.outputsByRecipe, row.recipeId, {
+          id: cid,
+          count: row.count,
+        });
+      } else if (row.role === "tool") {
+        addList(idx.toolsByRecipe, row.recipeId, {
+          id: row.ref,
+          count: row.count,
+        });
+      }
+    }
+
+    // Legacy supplement: recipes parsed before the mirror (or legacy blocks)
+    // still declare edges in the references table only.
+    for (const e of refEdges) {
+      const cid = canonical(e.referenceId);
+      if (e.context === "ingredient") {
+        addTo(idx.refConsumers, cid, e.itemId);
+      } else if (RESULT_CONTEXTS.has(e.context)) {
+        addTo(idx.refProducers, cid, e.itemId);
+      }
+    }
+    return idx;
+  }
+
+  /** Recipes that produce `id` (mirror outputs ∪ references result/output). */
+  private producersOf(id: string): Set<string> {
+    const idx = this.idx;
+    if (!idx) return new Set();
+    const out = new Set(idx.producers.get(id) ?? []);
+    for (const p of idx.refProducers.get(id) ?? []) out.add(p);
+    return out;
+  }
+
+  /**
+   * Recipes that consume `id` (mirror item-ingestors ∪ references ingredients
+   * ∪ any recipe whose `tags[base:...]` input matches one of the item's tags).
+   */
+  private consumersOf(id: string): Set<string> {
+    const idx = this.idx;
+    if (!idx) return new Set();
+    const out = new Set(idx.ingestors.get(id) ?? []);
+    for (const c of idx.refConsumers.get(id) ?? []) out.add(c);
+    for (const t of idx.itemTags.get(id) ?? []) {
+      for (const c of idx.tagIngestors.get(t) ?? []) out.add(c);
+    }
+    return out;
   }
 
   private async cachedResolveItem(id: string) {
@@ -200,46 +378,61 @@ export class RecipeAnalyzer {
     }
 
     if (kind === "recipe") {
-      const refs = await this.db.getReferencesFrom(id);
-      // Count labels + tools come from the recipe_ingredients mirror (the
-      // references table has no count column); keyed by the exact written
-      // spelling.
-      const refCounts = await this.db.getRecipeRefCounts(id);
-      const counts = new Map<string, number>();
-      const tools: Array<{ id: string; count?: number }> = [];
-      for (const r of refCounts) {
-        if (r.role === "ingredient" || r.role === "output") {
-          counts.set(r.ref, r.count);
-        } else if (r.role === "tool") {
-          tools.push(
-            r.count > 0 ? { id: r.ref, count: r.count } : { id: r.ref },
-          );
+      // Mirror rows first: authoritative for B42 (bracket alternatives + tag
+      // inputs never reach the references table). Tag refs resolve to the
+      // items that carry the tag — the chain-graph consumers fix.
+      const ingMap = new Map<
+        string,
+        { id: string; count?: number; tag?: boolean }
+      >();
+      const addIng = (id: string, count?: number, tag?: boolean) => {
+        const existing = ingMap.get(id);
+        if (existing) {
+          // Prefer the direct item requirement over a tag-resolved substitute:
+          // a recipe listing the same item both ways must render the direct
+          // one, not whichever row happened to sort first (reviewer finding).
+          if (tag && !existing.tag) return; // direct entry already wins
+          if (!tag && existing.tag) {
+            ingMap.set(id, count === undefined ? { id } : { id, count });
+          }
+          return;
         }
-      }
-      const addRef = (
-        arr: Array<{ id: string; count?: number }>,
-        writtenId: string,
-        canonicalId: string,
-      ) => {
-        if (arr.some((x) => x.id === canonicalId)) return;
-        // Built conditionally: exactOptionalPropertyTypes forbids pushing
-        // count: undefined onto an optional property.
-        const count = counts.get(writtenId);
-        arr.push(
-          count === undefined
-            ? { id: canonicalId }
-            : { id: canonicalId, count },
-        );
+        // Built conditionally: exactOptionalPropertyTypes forbids assigning
+        // undefined to an optional property.
+        const entry: { id: string; count?: number; tag?: boolean } = { id };
+        if (count !== undefined) entry.count = count;
+        if (tag) entry.tag = true;
+        ingMap.set(id, entry);
       };
+      const resMap = new Map<string, { id: string; count?: number }>();
+      const addRes = (id: string, count?: number) => {
+        if (resMap.has(id)) return;
+        resMap.set(id, count === undefined ? { id } : { id, count });
+      };
+      for (const ing of this.idx?.ingredientsByRecipe.get(id) ?? []) {
+        addIng(ing.id, ing.count, ing.tag);
+      }
+      for (const out of this.idx?.outputsByRecipe.get(id) ?? []) {
+        addRes(out.id, out.count);
+      }
+      // Legacy supplement: recipes with edges only in the references table.
+      const refs = await this.db.getReferencesFrom(id);
       for (const ref of refs) {
         if (ref.type !== "item") continue;
         const canonical = await this.cachedCanonicalItemId(ref.referenceId);
         if (ref.context === "ingredient") {
-          addRef(node.ingredients, ref.referenceId, canonical);
+          addIng(canonical);
         } else if (RESULT_CONTEXTS.has(ref.context)) {
-          addRef(node.results, ref.referenceId, canonical);
+          addRes(canonical);
         }
       }
+      node.ingredients = [...ingMap.values()];
+      node.results = [...resMap.values()];
+
+      // Tool refs from the mirror (role='tool' rows).
+      const tools: Array<{ id: string; count?: number }> = (
+        this.idx?.toolsByRecipe.get(id) ?? []
+      ).map((t) => (t.count > 0 ? { id: t.id, count: t.count } : { id: t.id }));
 
       // Recipe metadata from the structured recipes mirror (category/time/skill)
       // — the rich inspector's recipe section (recipe-chain roadmap #1).
@@ -260,19 +453,8 @@ export class RecipeAnalyzer {
         node.cycle = true;
       }
     } else if (kind === "item") {
-      const incoming = await this.db.getReferencesToAny(id);
-      for (const ref of incoming) {
-        if (ref.type !== "item") continue;
-        if (RESULT_CONTEXTS.has(ref.context)) {
-          if (!node.producedBy.includes(ref.itemId)) {
-            node.producedBy.push(ref.itemId);
-          }
-        } else if (ref.context === "ingredient") {
-          if (!node.consumedBy.includes(ref.itemId)) {
-            node.consumedBy.push(ref.itemId);
-          }
-        }
-      }
+      node.producedBy = [...this.producersOf(id)].sort();
+      node.consumedBy = [...this.consumersOf(id)].sort();
     }
 
     return node;
@@ -299,9 +481,11 @@ export class RecipeAnalyzer {
     maxDepth: number = 3,
     options: { expandNode?: string; target?: string } = {},
   ): Promise<ChainResult> {
-    // One walk = one set of memo caches; shared ids hit the cache instead of
-    // re-querying the DB per node (reviewer: N+1).
+    // One walk = one set of memo caches + one in-memory graph index; shared
+    // ids hit the cache instead of re-querying the DB per node (reviewer:
+    // N+1). The index is the mirror + references + item-tag edge store.
     this.clearCaches();
+    this.idx = await this.buildWalkIndex(this.db);
     const seedRes = await this.resolveItem(seed);
     const seedId = seedRes ? seedRes.id : seed;
     const seedKind: ChainNode["kind"] = seedRes
@@ -453,14 +637,11 @@ export class RecipeAnalyzer {
         if (direction !== "downstream") {
           // Upstream of a recipe: for each ingredient, who produces it?
           for (const ing of node.ingredients) {
-            const producers = await this.db.getReferencesToAny(ing.id);
-            for (const p of producers) {
-              if (p.type === "item" && RESULT_CONTEXTS.has(p.context)) {
-                const key = `${p.itemId}::recipe`;
-                if (!visited.has(key)) {
-                  neighbors.push({ id: p.itemId, kind: "recipe" });
-                  visited.add(key);
-                }
+            for (const pid of this.producersOf(ing.id)) {
+              const key = `${pid}::recipe`;
+              if (!visited.has(key)) {
+                neighbors.push({ id: pid, kind: "recipe" });
+                visited.add(key);
               }
             }
             const keyItem = `${ing.id}::item`;
@@ -473,14 +654,11 @@ export class RecipeAnalyzer {
         if (direction !== "upstream") {
           // Downstream of a recipe: what consumes its results?
           for (const res of node.results) {
-            const consumers = await this.db.getReferencesToAny(res.id);
-            for (const c of consumers) {
-              if (c.type === "item" && c.context === "ingredient") {
-                const key = `${c.itemId}::recipe`;
-                if (!visited.has(key)) {
-                  neighbors.push({ id: c.itemId, kind: "recipe" });
-                  visited.add(key);
-                }
+            for (const cid of this.consumersOf(res.id)) {
+              const key = `${cid}::recipe`;
+              if (!visited.has(key)) {
+                neighbors.push({ id: cid, kind: "recipe" });
+                visited.add(key);
               }
             }
             const keyItem = `${res.id}::item`;

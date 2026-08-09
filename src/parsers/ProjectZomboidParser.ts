@@ -244,6 +244,32 @@ export class ProjectZomboidParser {
       // The whole per-file batch runs in one transaction (freebuff M2) instead
       // of one autocommit INSERT per reference.
       await this.db.transaction(async () => {
+        // Mirror → references (chain-graph completeness): extractReferences'
+        // ingredient-line regex excludes B42 bracket lists and tag lines, so
+        // those edges only ever exist in recipe_ingredients. Emit them as
+        // references rows too — the chain graph reads both sources, so
+        // consumers/offspring resolve for every item regardless of the input
+        // form the script used. Tools stay mirror-only (they are not graph
+        // edges); INSERT OR IGNORE dedupes against extractReferences rows.
+        for (const record of accumulatedRecipes) {
+          // Non-fatal per recipe, mirroring extractReferences' per-item catch:
+          // one bad row must not roll back the whole file's transaction.
+          try {
+            for (const row of record.ingredients) {
+              if (row.role === "tool") continue;
+              await this.db.addReference(
+                record.recipe.id,
+                row.ref,
+                row.refType,
+                row.role,
+              );
+            }
+          } catch (refError) {
+            logger.warn(
+              `Reference extraction failed for ${record.recipe.id}: ${refError instanceof Error ? refError.message : String(refError)}`,
+            );
+          }
+        }
         for (const item of accumulatedItems) {
           try {
             await this.extractReferences(item);

@@ -2472,7 +2472,7 @@ function chainExportMd(){
       if (n.meta.tools && n.meta.tools.length) bits.push('tools ' + n.meta.tools.map(t => t.id).join(', '));
       if (bits.length) md += '  - ' + bits.join(' · ') + '\n';
     }
-    if (n.ingredients.length) md += '  - consumes: ' + n.ingredients.map(i => i.id + (i.count ? ' ×' + i.count : '')).join(', ') + '\n';
+    if (n.ingredients.length) md += '  - consumes: ' + n.ingredients.map(i => i.id + (i.tag ? ' (tag)' : '') + (i.count ? ' ×' + i.count : '')).join(', ') + '\n';
     if (n.results.length) md += '  - produces: ' + n.results.map(r => r.id + (r.count ? ' ×' + r.count : '')).join(', ') + '\n';
     if (n.producedBy.length) md += '  - made by: ' + n.producedBy.join(', ') + '\n';
     if (n.consumedBy.length) md += '  - used by: ' + n.consumedBy.join(', ') + '\n';
@@ -2765,7 +2765,7 @@ function chainInspHTML(n){
     }
     const ing = n.ingredients || [], res = n.results || [];
     rows.push('<div class="insp-sec"><div class="insp-title">Ingredients · '+ing.length+'</div>' +
-      (ing.length ? ing.map(i => '<div class="insp-row"><span>'+esc(i.id)+'</span>'+(i.count ? '<span class="badge b-dim" style="flex:none">×'+esc(i.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
+      (ing.length ? ing.map(i => '<div class="insp-row"><span>'+esc(i.id)+(i.tag ? ' <span class="badge b-dim" style="flex:none" title="Any item carrying this tag is a valid input">tag</span>' : '')+'</span>'+(i.count ? '<span class="badge b-dim" style="flex:none">×'+esc(i.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
     rows.push('<div class="insp-sec"><div class="insp-title">Results · '+res.length+'</div>' +
       (res.length ? res.map(r => '<div class="insp-row"><span>'+esc(r.id)+'</span>'+(r.count ? '<span class="badge b-dim" style="flex:none">×'+esc(r.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
   } else {

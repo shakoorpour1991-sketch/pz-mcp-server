@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Recipe Chain graph: consumers for every item** — the chain graph read only the `references` table, which B42 bracket (`item 1 [Base.Plank;...]`) and tag (`item 1 tags[base:plank]`) inputs never reach, so items showed producers but no offspring (e.g. Plank had 3 producers, 0 consumers). The walk now loads the `recipe_ingredients` mirror (authoritative) + references + item tags once per call into an in-memory index:
+  - Recipe nodes' ingredients/results/tools come from the mirror first (bracket alternatives + `tags[...]` inputs); tag inputs resolve to the items that actually carry the tag (tagged `tag: true` in the payload — inspector/markdown show a `tag` badge)
+  - Item nodes' `producedBy`/`consumedBy` union mirror rows, legacy references rows, and the tag bridge (recipes consuming any of the item's tags) — live DB: Plank 3→36 consumers, Flour2 now shows 14 dough/baking recipes via `base:flour`
+  - The parser now also emits mirror rows as `references` rows during `parse_game_files`, so fresh parses carry the same edges in both stores
+
 ### Added
 - **Recipe Chain roadmap (7 items)** — richer chain browsing in `analyze_recipe_chain` + the Control Deck Chain tab:
   - **Rich node payloads**: every chain node now carries item stats (`props`: Type/category/weight/calories/hunger/thirst/tags) and recipe metadata (`meta`: category/time/skill/skillLevel/tools) straight from the DB — one round trip, no extra tool calls; the admin inspector shows them

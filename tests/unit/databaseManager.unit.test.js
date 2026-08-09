@@ -769,4 +769,57 @@ describe('DatabaseManager D2/D3 fixes', () => {
       assert.deepEqual(tag, []);
     });
   });
+
+  describe('chain-graph batch index methods (recipe_ingredients mirror)', () => {
+    test('getRecipeIngredientIndex returns every mirror row with roles/counts', async () => {
+      // Recipes first (recipe_ingredients.recipe_id FK → recipes.id).
+      await db.insertRecipes([
+        { id: 'G.R1', name: 'G.R1', module: 'Base', result: 'Base.Plank', properties: {}, filePath: 'x.txt' },
+      ]);
+      await db.insertRecipeIngredients([
+        { recipeId: 'G.R1', ref: 'Base.Plank', refType: 'item', count: 3, role: 'ingredient', sortOrder: 0 },
+        { recipeId: 'G.R1', ref: 'base:saw', refType: 'tag', count: 1, role: 'tool', sortOrder: 1 },
+        { recipeId: 'G.R1', ref: 'Base.Box', refType: 'item', count: 1, role: 'output', sortOrder: 2 },
+      ]);
+      const rows = await db.getRecipeIngredientIndex();
+      const mine = rows.filter((r) => r.recipeId === 'G.R1');
+      assert.equal(mine.length, 3);
+      assert.deepEqual(mine[0], {
+        recipeId: 'G.R1',
+        ref: 'Base.Plank',
+        refType: 'item',
+        role: 'ingredient',
+        count: 3,
+      });
+    });
+
+    test('getReferenceEdges returns only item-type graph edges', async () => {
+      const edges = await db.getReferenceEdges();
+      // From the earlier seeding: recipeA→item1 result, recipeC→item2 ingredient.
+      assert.ok(
+        edges.some(
+          (e) => e.itemId === 'recipeA' && e.referenceId === 'item1' && e.context === 'result',
+        ),
+      );
+      assert.ok(
+        edges.some(
+          (e) => e.itemId === 'recipeC' && e.referenceId === 'item2' && e.context === 'ingredient',
+        ),
+      );
+      // Sprite/other rows are never recipe edges and must be excluded.
+      assert.ok(!edges.some((e) => e.context === 'Icon'));
+    });
+
+    test('getGraphItems parses the tags JSON column', async () => {
+      await db.insertItem({
+        id: 'Base.TagItem', name: 'TagItem', displayName: 'TagItem', type: 'item',
+        module: 'Base', properties: {}, rawContent: 'item TagItem {}', filePath: 'x.txt',
+        tags: ['base:flour', 'base:minoringredient'],
+      });
+      const items = await db.getGraphItems();
+      const tagItem = items.find((i) => i.id === 'Base.TagItem');
+      assert.notEqual(tagItem, undefined);
+      assert.deepEqual(tagItem.tags, ['base:flour', 'base:minoringredient']);
+    });
+  });
 });

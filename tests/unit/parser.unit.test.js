@@ -336,6 +336,49 @@ test('fixing block with dotted material keeps prefix', async () => {
       'Should have Base.Soup baseItem reference'
     );
   });
+
+  test('B42 bracket ingredients land in the references table (chain graph consumers)', async () => {
+    // Regression: extractReferences' line regex excludes bracket lists, so
+    // `item 3 [Base.Plank;...]` inputs used to exist only in the
+    // recipe_ingredients mirror — the chain graph (which reads references)
+    // therefore showed no consumers for Plank. The mirror → references
+    // emission must close that gap.
+    const scriptsDir = path.join(tmpDir, 'media', 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(scriptsDir, 'bracket.txt'),
+      [
+        'craftRecipe MakeBracketBox',
+        '{',
+        '    inputs',
+        '    {',
+        '        item 3 [Base.Plank;Base.Plank_Broken],',
+        '        item 2 [Base.Nails],',
+        '    }',
+        '    outputs',
+        '    {',
+        '        item 1 Base.BracketBox,',
+        '    }',
+        '}',
+      ].join('\n')
+    );
+
+    await parser.parseGameFiles(tmpDir, true);
+    const refs = await db.getReferencesFrom('MakeBracketBox');
+    // Bracket alternatives each become their own ingredient reference row.
+    assert.ok(
+      refs.some(r => r.referenceId === 'Base.Plank' && r.context === 'ingredient'),
+      'bracket alternative Base.Plank should be an ingredient reference'
+    );
+    assert.ok(
+      refs.some(r => r.referenceId === 'Base.Plank_Broken' && r.context === 'ingredient'),
+      'bracket alternative Base.Plank_Broken should be an ingredient reference'
+    );
+    assert.ok(
+      refs.some(r => r.referenceId === 'Base.BracketBox' && r.context === 'output'),
+      'output should be a reference row'
+    );
+  });
 });
 
 // ===========================================================================

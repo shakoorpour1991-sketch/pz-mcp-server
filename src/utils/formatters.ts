@@ -205,7 +205,9 @@ export function formatRecipeChain(chain: any): string {
       if (bits.length > 0) output += `  ⚙️ ${bits.join(" · ")}\n`;
     }
     if (node.ingredients.length > 0) {
-      output += `  ⬆️ consumes: ${node.ingredients.map((i: any) => i.id).join(", ")}\n`;
+      output += `  ⬆️ consumes: ${node.ingredients
+        .map((i: any) => (i.tag ? `${i.id} (tag)` : i.id))
+        .join(", ")}\n`;
     }
     if (node.results.length > 0) {
       output += `  ⬇️ produces: ${node.results.map((r: any) => r.id).join(", ")}\n`;

@@ -129,6 +129,15 @@ Walk the recipe dependency graph built during parsing.
 | `direction` | enum | No | `upstream`, `downstream`, `both` (default) |
 | `maxDepth` | number | No | Chain depth, 1–10 (default: 3) |
 | `expandNode` | string | No | Grow in place: return only the one-hop neighborhood around this node id (already present in a previous result) so clients merge a delta instead of re-walking from the seed |
+
+Graph edges come from the `recipe_ingredients` mirror (authoritative for B42
+bracket alternatives and `tags[...]` inputs) unioned with the legacy
+`references` table — so every item resolves both its producers and its
+consumers regardless of the input form the script used. Tag inputs
+(`tags[base:flour]`) resolve to the items that carry the tag; those ingredient
+entries are flagged `tag: true`, and item nodes list recipes consuming any of
+the item's tags. Dense seeds (e.g. Plank, charcoal) can legitimately set
+`truncated` at shallow depths now that consumers are visible.
 | `target` | string | No | Find the shortest crafting path from `seed` to this item/recipe id — the reply carries the ordered node ids in `path` (`pathFound: false` when unreachable) |
 
 **Output:** Ordered chain of nodes — recipes with ingredients/results, items with producers/consumers. Node ids are canonicalized to the stored item id, and `seed` accepts bare (`Axe`), module-qualified (`Base.Axe`) or tag (`base:axe`) spellings. `truncated` is true when the depth limit or the 500-node safety cap cut the walk short.

@@ -1340,23 +1340,87 @@ export class DatabaseManager {
   }
 
   /**
-   * Ingredient/output rows for one recipe (the recipe_ingredients mirror) —
-   * used to attach count labels to chain-graph nodes. ref is the exact
-   * spelling the script used (may be a tag or mapper ref).
+   * Every recipe_ingredients mirror row in one pass (recipe, ref, ref_type,
+   * role, count). The recipe-chain analyzer loads the whole mirror once per
+   * walk so bracket/tag ingredient edges — which never reach the references
+   * table — resolve for the graph (chain-graph fix: consumers/offspring for
+   * every item, not just directly-referenced ones).
    */
-  async getRecipeRefCounts(
-    recipeId: string,
-  ): Promise<Array<{ ref: string; role: string; count: number }>> {
+  async getRecipeIngredientIndex(): Promise<
+    Array<{
+      recipeId: string;
+      ref: string;
+      refType: string;
+      role: string;
+      count: number;
+    }>
+  > {
     const rows = this.db
       .prepare(
-        "SELECT ref, role, count FROM recipe_ingredients WHERE recipe_id = ?",
+        "SELECT recipe_id, ref, ref_type, role, count FROM recipe_ingredients ORDER BY recipe_id, sort_order",
       )
-      .all(recipeId) as unknown as Array<{
+      .all() as unknown as Array<{
+      recipe_id: string;
       ref: string;
+      ref_type: string;
       role: string;
       count: number;
     }>;
-    return rows;
+    return rows.map((r) => ({
+      recipeId: r.recipe_id,
+      ref: r.ref,
+      refType: r.ref_type,
+      role: r.role,
+      count: r.count,
+    }));
+  }
+
+  /**
+   * Lean id + tags rows for every item (the tags column is a JSON array
+   * string). Loaded once per chain walk: builds the canonical-spelling set
+   * and the tag→items bridge used to resolve `tags[base:flour]` recipe
+   * inputs to the items that actually carry the tag.
+   */
+  async getGraphItems(): Promise<Array<{ id: string; tags: string[] | null }>> {
+    const rows = this.db
+      .prepare("SELECT id, tags FROM items")
+      .all() as unknown as Array<{ id: string; tags: string | null }>;
+    return rows.map((r) => {
+      let tags: string[] | null = null;
+      if (r.tags) {
+        try {
+          tags = JSON.parse(r.tags);
+        } catch {
+          tags = null;
+        }
+      }
+      return { id: r.id, tags };
+    });
+  }
+
+  /**
+   * The graph-relevant references rows (item-type ingredient/result/output
+   * edges) in one pass — the legacy supplement to the recipe_ingredients
+   * mirror for the recipe-chain walk. Sprite/sound/model rows are excluded
+   * (they are never recipe edges).
+   */
+  async getReferenceEdges(): Promise<
+    Array<{ itemId: string; referenceId: string; context: string }>
+  > {
+    const rows = this.db
+      .prepare(
+        "SELECT item_id, reference_id, context FROM \"references\" WHERE reference_type = 'item' AND context IN ('ingredient', 'result', 'output')",
+      )
+      .all() as unknown as Array<{
+      item_id: string;
+      reference_id: string;
+      context: string;
+    }>;
+    return rows.map((r) => ({
+      itemId: r.item_id,
+      referenceId: r.reference_id,
+      context: r.context,
+    }));
   }
 
   /**

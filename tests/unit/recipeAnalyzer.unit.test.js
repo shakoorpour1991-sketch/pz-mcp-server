@@ -124,15 +124,50 @@ describe('RecipeAnalyzer', () => {
 });
 
 describe('RecipeAnalyzer.analyzeChain fixes (audit D1)', () => {
-  // Minimal stub implementing the required database methods.
+  // Minimal stub implementing the required database methods. The batch
+  // graph-index methods are derived from the refsFrom/refsTo shape so the
+  // walk index behaves exactly as with a real DatabaseManager (mirror rows
+  // ← refsFrom, references edges ← refsTo).
   function createStubDb(data) {
+    const mirrorRows = [];
+    for (const [recipeId, refs] of Object.entries(data.refsFrom || {})) {
+      for (const r of refs) {
+        if (r.type !== 'item') continue;
+        const role =
+          r.context === 'ingredient'
+            ? 'ingredient'
+            : r.context === 'result' || r.context === 'output'
+              ? 'output'
+              : 'tool';
+        mirrorRows.push({
+          recipeId,
+          ref: r.referenceId,
+          refType: 'item',
+          role,
+          count: 1,
+        });
+      }
+    }
+    const refEdges = [];
+    for (const [referenceId, refs] of Object.entries(data.refsTo || {})) {
+      for (const r of refs) {
+        if (r.type !== 'item') continue;
+        refEdges.push({ itemId: r.itemId, referenceId, context: r.context });
+      }
+    }
+    const graphItems = Object.entries(data.items || {}).map(([id, it]) => ({
+      id,
+      tags: it.tags ?? null,
+    }));
     return {
       getItemById: async (id) => data.items[id] || null,
       getReferencesFrom: async (id) => data.refsFrom[id] || [],
       getReferencesToAny: async (id) => data.refsTo[id] || [],
-      getRecipeRefCounts: async () => [],
       // buildNode queries the structured recipes mirror for recipe metadata.
       getRecipeById: async () => null,
+      getRecipeIngredientIndex: async () => mirrorRows,
+      getGraphItems: async () => graphItems,
+      getReferenceEdges: async () => refEdges,
     };
   }
 
@@ -508,5 +543,85 @@ describe('RecipeAnalyzer roadmap: rich payloads, cycles, expand, path, severity'
     assert.notEqual(m, undefined);
     assert.equal(m.severity, 'low');
     assert.equal(m.kind, 'mapper');
+  });
+});
+
+describe('RecipeAnalyzer chain-graph consumers (recipe_ingredients mirror fix)', () => {
+  let tmpDir;
+  let db;
+  let analyzer;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-consumers-'));
+    db = new DatabaseManager(path.join(tmpDir, 'data', 'pz_database.db'));
+    await db.initialize();
+
+    // Real-game shape: items stored BARE ('Plank'), mirror refs QUALIFIED
+    // ('Base.Plank'), and the references table EMPTY for these edges (B42
+    // bracket/tag inputs never reach it — the bug that hid consumers).
+    await db.insertItems([
+      { id: 'Plank', name: 'Plank', displayName: 'Plank', type: 'item', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'Wheat', name: 'Wheat', displayName: 'Wheat', type: 'item', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'Flour2', name: 'Flour2', displayName: 'Flour', type: 'item', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt', tags: ['base:flour'] },
+      { id: 'CarvePlank', name: 'CarvePlank', displayName: 'Carve Plank', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'MakeBox', name: 'MakeBox', displayName: 'Make Box', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'MakeFlour', name: 'MakeFlour', displayName: 'Mill Flour', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+      { id: 'MakeBreadDough', name: 'MakeBreadDough', displayName: 'Make Bread Dough', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
+    ]);
+    await db.insertRecipes([
+      { id: 'CarvePlank', name: 'CarvePlank', module: 'Base', result: 'Base.Plank', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'MakeBox', name: 'MakeBox', module: 'Base', result: 'Base.Box', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'MakeFlour', name: 'MakeFlour', module: 'Base', result: 'Base.Flour2', resultCount: 1, properties: {}, filePath: 'x.txt' },
+      { id: 'MakeBreadDough', name: 'MakeBreadDough', module: 'Base', result: 'Base.BreadDough', resultCount: 1, properties: {}, filePath: 'x.txt' },
+    ]);
+    // Mirror rows ONLY — no references rows at all (the bug being fixed).
+    await db.insertRecipeIngredients([
+      { recipeId: 'CarvePlank', ref: 'Base.Plank', refType: 'item', count: 1, role: 'output', sortOrder: 0 },
+      { recipeId: 'MakeBox', ref: 'Base.Plank', refType: 'item', count: 3, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'MakeFlour', ref: 'Base.Wheat', refType: 'item', count: 2, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'MakeFlour', ref: 'Base.Flour2', refType: 'item', count: 1, role: 'output', sortOrder: 1 },
+      { recipeId: 'MakeBreadDough', ref: 'base:flour', refType: 'tag', count: 1, role: 'ingredient', sortOrder: 0 },
+      { recipeId: 'MakeBreadDough', ref: 'Base.BreadDough', refType: 'item', count: 1, role: 'output', sortOrder: 1 },
+    ]);
+
+    analyzer = new RecipeAnalyzer(db);
+  });
+
+  after(() => {
+    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('items consumed only via mirror bracket rows get their consumers', async () => {
+    const chain = await analyzer.analyzeChain('Plank', 'both', 2);
+    const plank = chain.nodes.find((n) => n.id === 'Plank');
+    assert.ok(plank.producedBy.includes('CarvePlank'));
+    assert.ok(plank.consumedBy.includes('MakeBox'));
+    // Recipe payloads come from the mirror too (bracket alternatives).
+    const box = chain.nodes.find((n) => n.id === 'MakeBox');
+    const ing = box.ingredients.find((i) => i.id === 'Plank');
+    assert.notEqual(ing, undefined);
+    assert.equal(ing.count, 3);
+    assert.equal(ing.tag, undefined);
+  });
+
+  test('items consumed via a tag input get their consumers (tag bridge)', async () => {
+    const chain = await analyzer.analyzeChain('Flour2', 'both', 2);
+    const flour = chain.nodes.find((n) => n.id === 'Flour2');
+    assert.ok(flour.producedBy.includes('MakeFlour'));
+    assert.ok(flour.consumedBy.includes('MakeBreadDough'));
+    const dough = chain.nodes.find((n) => n.id === 'MakeBreadDough');
+    const resolved = dough.ingredients.find((i) => i.id === 'Flour2');
+    assert.notEqual(resolved, undefined);
+    assert.equal(resolved.count, 1);
+    assert.equal(resolved.tag, true);
+  });
+
+  test('upstream walk reaches mirror-only producers through tag-resolved ingredients', async () => {
+    const chain = await analyzer.analyzeChain('MakeBreadDough', 'both', 3);
+    const ids = chain.nodes.map((n) => n.id);
+    assert.ok(ids.includes('Flour2'));
+    assert.ok(ids.includes('MakeFlour'));
+    assert.ok(ids.includes('Wheat'));
   });
 });
