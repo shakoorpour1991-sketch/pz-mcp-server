@@ -515,6 +515,9 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .insp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .chain-note{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:8px 12px;border-radius:10px;flex-wrap:wrap;
   background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25)}
+.chain-canvas.fs{position:fixed;inset:12px;z-index:85;border-radius:18px;border:1px solid var(--stroke-soft);background:rgba(4,8,16,.94);
+  padding:12px;box-shadow:0 24px 60px rgba(0,0,0,.55);backdrop-filter:blur(14px)}
+.chain-canvas.fs .chain-svgwrap{flex:1;height:auto}
 </style>
 </head>
 <body>
@@ -901,7 +904,7 @@ const S = {
   pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
   chain:{ seed:'', direction:'both', depth:2, busy:false, error:null, graph:null, layout:null, sugg:null,
     conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0,
-    fitted:false, dropIdx:-1, _dbSeen:false },
+    fitted:false, fs:false, dropIdx:-1, _dbSeen:false },
   settings:{ accent:'#22D3EE', reduceMotion:false, autoScroll:true, follow:false },
 };
 const MEM_BUDGET_MB = 512;
@@ -1026,6 +1029,12 @@ function applyTelemetry(t){
   S.sesSpark.push(t.sessions || 0); if (S.sesSpark.length > 24) S.sesSpark.shift();
   S.itemsSpark.push(t.db?.total || 0); if (S.itemsSpark.length > 24) S.itemsSpark.shift();
   S.upSpark.push(t.uptime ?? 0); if (S.upSpark.length > 24) S.upSpark.shift();
+  if (t && t.db){
+    // DB re-parse fingerprint: when the parsed item count changes mid-session,
+    // drop the recipe/item caches so graphs rebuild from fresh data.
+    if (S.chain._dbFinger != null && S.chain._dbFinger !== t.db.total){ chainItemCache.clear(); chainRecipeCache.clear(); S.chain.conflicts = null; }
+    S.chain._dbFinger = t.db.total;
+  }
   $('#upChip').textContent = '⏱ ' + fmtUp(t.uptime);
   updateStatusDom(); renderDbStats();
   if (S.view === 'chain' && t && t.db && !S.chain._dbSeen){ S.chain._dbSeen = true; renderChain(); }
@@ -1052,6 +1061,7 @@ function moveIndicator(){
 }
 function switchView(name){
   if (!VIEWS.includes(name)) return;
+  if (name !== 'chain') S.chain.fs = false;
   S.view = name;
   $$('.tab').forEach(b => {
     const on = b.dataset.view === name;
@@ -2134,7 +2144,7 @@ const CHAIN_CHIPS = [
   { id:'Flour2', label:'Flour', hint:'item' },
   { id:'SteelChunk', label:'Steel Chunk', hint:'item' },
 ];
-const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14;
+const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14, CHAIN_PITCH = 60;
 const chop = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 /* The DB stores items bare ("Flour2") but recipes reference them as "Base.Flour2"
  * (or "base:flour2" tags). bare() bridges the two so graph ids stay consistent. */
@@ -2277,12 +2287,20 @@ async function chainItemLinks(id){
   chainItemCache.set(id, links);
   return links;
 }
+async function chainPool(fns, n = 6){
+  const out = new Array(fns.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, fns.length) }, async () => {
+    while (i < fns.length){ const j = i++; out[j] = await fns[j](); }
+  }));
+  return out;
+}
 /* Build an accurate crafting graph entirely from search_recipes (which indexes
  * real ingredients/outputs per recipe). Both recipe seeds and item seeds expand
  * through producing/consuming recipes — every selection yields a genuine graph. */
 async function chainBuildGraph(seed, dir, depth){
   const map = new Map();
-  chainItemCache.clear(); chainRecipeCache.clear();
+  // session caches intentionally persist across runs — depth/direction changes
+  // reuse already-fetched recipes/links instead of re-querying the server
   const upsertItem = id => {
     const key = bare(id);
     if (!map.has(key)) map.set(key, { id:key, kind:'item', name:key, itemType:null, ingredients:[], results:[], producedBy:[], consumedBy:[] });
@@ -2319,15 +2337,20 @@ async function chainBuildGraph(seed, dir, depth){
   let layer = [root], seen = new Set([root]);
   for (let d = 1; d <= depth; d++){
     const next = [];
+    const items = [];
     for (const id of layer){
       const n = map.get(id); if (!n) continue;
       if (n.kind === 'recipe'){
         if (dir !== 'downstream') for (const i of n.ingredients) if (!seen.has(i.id)){ seen.add(i.id); next.push(i.id); upsertItem(i.id); }
         if (dir !== 'upstream') for (const r of n.results) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertItem(r.id); }
-      } else {
-        const links = await chainItemLinks(id);
-        if (dir !== 'downstream') for (const r of links.producers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
-        if (dir !== 'upstream') for (const r of links.consumers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
+      } else items.push(id);
+    }
+    if (items.length){
+      const links = await chainPool(items.map(id => () => chainItemLinks(id)));
+      for (let i = 0; i < items.length; i++){
+        const l = links[i] || { producers: [], consumers: [] };
+        if (dir !== 'downstream') for (const r of l.producers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
+        if (dir !== 'upstream') for (const r of l.consumers.slice(0, 8)) if (!seen.has(r.id)){ seen.add(r.id); next.push(r.id); upsertRecipe(r); }
       }
     }
     if (!next.length) break;
@@ -2410,12 +2433,13 @@ function chainGraphHTML(){
   const c = S.chain, L = c.layout;
   const totalCols = L.up.length + 1 + L.dn.length;
   const W = totalCols * CHAIN_COLW + 80;
+  const H = chainViewH();
   const insp = c.insp ? L.byId.get(c.insp) : null;
   const seedBadge = L.seed.kind === 'recipe' ? '<span class="badge b-info">recipe</span>'
     : L.seed.kind === 'item' ? '<span class="badge b-dim">item</span>'
     : '<span class="badge b-dim">'+esc(L.seed.kind)+'</span>';
   return '<div class="chain-main">' +
-    '<div class="chain-canvas">' +
+    '<div class="chain-canvas'+(c.fs ? ' fs' : '')+'">' +
       '<div class="chain-tools">' +
         '<b class="mono" style="font-size:12.5px">'+esc(L.seed.id)+'</b>' + seedBadge +
         (c.graph.truncated ? '<span class="badge b-err">depth limit hit</span>' : '') +
@@ -2424,9 +2448,10 @@ function chainGraphHTML(){
         '<button class="ibtn" data-act="chain-fit" style="width:34px;height:34px;border-radius:10px" title="Fit view" aria-label="Fit view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomout" style="width:34px;height:34px;border-radius:10px" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>' +
         '<button class="ibtn" data-act="chain-zoomin" style="width:34px;height:34px;border-radius:10px" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
+        '<button class="ibtn" data-act="chain-full" style="width:34px;height:34px;border-radius:10px" title="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'" aria-label="'+(c.fs ? 'Exit fullscreen' : 'Fullscreen')+'">'+(c.fs ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15h-6v-6M3 9h6v6M21 21l-6-6M3 3l6 6"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>')+'</button>' +
       '</div>' +
-      '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap">' +
-        '<svg class="chain-svg" id="chainSvg" viewBox="0 0 '+W+' '+CHAIN_H+'" preserveAspectRatio="xMidYMid meet">' +
+      '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap" style="height:'+(c.fs ? 'auto' : H)+'px">' +
+        '<svg class="chain-svg" id="chainSvg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">' +
           '<defs>' +
             '<marker id="mkG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#34D399"/></marker>' +
             '<marker id="mkA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FBBF24"/></marker>' +
@@ -2451,8 +2476,9 @@ function chainGraphHTML(){
 function chainPaint(){
   const g = $('#chainG'); if (!g) return;
   const c = S.chain, L = c.layout;
+  chainApplyGeometry();
   const colX = idx => 40 + idx * CHAIN_COLW + (CHAIN_COLW - CHAIN_NODE_W) / 2;
-  const colYs = col => { const n = col.length, pad = 70, span = CHAIN_H - 2 * pad; return col.map((id, i) => pad + (n === 1 ? span / 2 : span * (i + 0.5) / n)); };
+  const colYs = col => { const n = col.length, pad = 70, span = chainViewH() - 2 * pad; return col.map((id, i) => pad + (n === 1 ? span / 2 : span * (i + 0.5) / n)); };
   const seedCol = L.up.length;
   const pos = new Map();
   const shown = [];
@@ -2465,7 +2491,7 @@ function chainPaint(){
   });
   build('up', 0);
   build('dn', seedCol + 1);
-  const seedPos = { x: colX(seedCol), y: CHAIN_H / 2 };
+  const seedPos = { x: colX(seedCol), y: chainViewH() / 2 };
   pos.set(L.seed.id, seedPos);
   const nbors = (n, side) => {
     const out = [];
@@ -2519,6 +2545,7 @@ function chainPaint(){
     }
   });
   g.innerHTML = edgeHTML + nodeHTML;
+  chainApplyTransform();
 }
 function chainNodeHTML(n, x, y, extra){
   const cls = n.kind === 'recipe' ? 'r' : n.kind === 'item' ? 'i' : 'u';
@@ -2573,20 +2600,46 @@ function chainMarkSel(id){
 function chainTransformStr(){
   return 'translate('+S.chain.pan.x+','+S.chain.pan.y+') scale('+S.chain.zoom+')';
 }
+function chainViewH(){
+  const c = S.chain, L = c.layout; if (!L) return CHAIN_H;
+  let max = 1;
+  for (const side of ['up','dn']) for (let d = 0; d < L[side].length; d++){
+    const key = side + ':' + (d + 1);
+    const col = L[side][d] || [];
+    max = Math.max(max, c.expLayers[key] ? col.length : Math.min(col.length, CHAIN_CAP));
+  }
+  return Math.max(CHAIN_H, max * CHAIN_PITCH + 140);
+}
+function chainApplyTransform(){
+  const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
+}
+function chainApplyGeometry(){
+  const c = S.chain, L = c.layout; if (!L) return;
+  const wrap = $('#chainSvgWrap'), svg = $('#chainSvg');
+  if (wrap) wrap.style.height = c.fs ? 'auto' : (chainViewH() + 'px');
+  if (svg){
+    const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + chainViewH());
+  }
+}
+function chainFullscreen(){
+  const c = S.chain; c.fs = !c.fs; c.fitted = false; renderChain();
+}
 function chainFit(){
   const L = S.chain.layout; if (!L) return;
   const wrap = $('#chainSvgWrap'); if (!wrap) return;
   const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
-  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
-  const z = Math.max(0.2, Math.min(2.5, Math.min(cw / W, ch / CHAIN_H) * 0.94));
+  const H = chainViewH();
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || H;
+  const z = Math.max(0.2, Math.min(2.5, Math.min(cw / W, ch / H) * 0.94));
   S.chain.zoom = z;
   S.chain.pan.x = (cw - W * z) / 2;
-  S.chain.pan.y = (ch - CHAIN_H * z) / 2;
+  S.chain.pan.y = (ch - H * z) / 2;
   chainPaint();
 }
 function chainZoom(f){
   const wrap = $('#chainSvgWrap'); if (!wrap) return;
-  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || chainViewH();
   const z = Math.max(0.2, Math.min(3, S.chain.zoom * f));
   const cx = (cw / 2 - S.chain.pan.x) / S.chain.zoom, cy = (ch / 2 - S.chain.pan.y) / S.chain.zoom;
   S.chain.zoom = z;
@@ -2615,7 +2668,7 @@ function bindChainSvg(){
   svg.addEventListener('pointercancel', endDrag);
   svg.addEventListener('wheel', e => {
     const wrap = $('#chainSvgWrap');
-    const cw = wrap ? wrap.clientWidth : 600, ch = wrap ? wrap.clientHeight : CHAIN_H;
+    const cw = wrap ? wrap.clientWidth : 600, ch = wrap ? wrap.clientHeight : chainViewH();
     if (e.ctrlKey || e.metaKey){
       e.preventDefault();
       chainZoom(e.deltaY < 0 ? 1.12 : 0.89);
@@ -2623,7 +2676,7 @@ function bindChainSvg(){
     }
     const L = S.chain.layout;
     const W = L ? (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80 : 0;
-    const overW = W * S.chain.zoom > cw, overH = CHAIN_H * S.chain.zoom > ch;
+    const overW = W * S.chain.zoom > cw, overH = chainViewH() * S.chain.zoom > ch;
     if ((e.shiftKey && overW) || (!e.shiftKey && overH)){
       e.preventDefault();
       S.chain.pan.x -= e.shiftKey ? e.deltaY : 0;
@@ -2636,9 +2689,9 @@ function bindChainSvg(){
 function chainClampPan(){
   const wrap = $('#chainSvgWrap'), L = S.chain.layout; if (!wrap || !L) return;
   const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
-  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || chainViewH();
   S.chain.pan.x = Math.max(Math.min(0, cw - W * S.chain.zoom), Math.min(0, S.chain.pan.x));
-  S.chain.pan.y = Math.max(Math.min(0, ch - CHAIN_H * S.chain.zoom), Math.min(0, S.chain.pan.y));
+  S.chain.pan.y = Math.max(Math.min(0, ch - chainViewH() * S.chain.zoom), Math.min(0, S.chain.pan.y));
 }
 async function chainDropSearch(v){
   try {
@@ -2988,10 +3041,11 @@ document.addEventListener('click', e => {
       if (n) navigator.clipboard?.writeText(JSON.stringify(n, null, 2)).then(() => toast('Node JSON copied')).catch(() => toast('Copy blocked by browser','warn'));
       else toast('Node data not available','warn');
     }
-    else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); chainFit(); }
+    else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); } // keep the user's zoom/pan; canvas grows via chainApplyGeometry
     else if (a === 'chain-zoomin') chainZoom(1.25);
     else if (a === 'chain-zoomout') chainZoom(0.8);
     else if (a === 'chain-fit') chainFit();
+    else if (a === 'chain-full') chainFullscreen();
     return;
   }
   if (t.id === 'helpModal'){ closeHelp(); return; }
@@ -3071,6 +3125,8 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
+  // Escape always exits chain fullscreen first — even when an input is focused.
+  if (e.key === 'Escape' && S.chain.fs){ chainFullscreen(); return; }
   const inField = walkUp(e.target, 'input,textarea,select,[contenteditable]');
   if (inField){
     if (e.key === 'Enter' && inField.id === 'dbQuery'){ e.preventDefault(); dbSearch(); }
