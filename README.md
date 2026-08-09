@@ -2,43 +2,34 @@
   <img src="assets/banner.svg" alt="PZ MCP Server — Stop making your AI guess" width="100%">
 </p>
 
-# PZ MCP Server
+```text
+██████╗ ███████╗     ███╗   ███╗ ██████╗██████╗
+██╔══██╗╚══███╔╝     ████╗ ████║██╔════╝██╔══██╗
+██████╔╝  ███╔╝█████╗██╔████╔██║██║     ██████╔╝
+██╔═══╝  ███╔╝ ╚════╝██║╚██╔╝██║██║     ██╔═══╝
+██║     ███████╗     ██║ ╚═╝ ██║╚██████╗██║
+╚═╝     ╚══════╝     ╚═╝     ╚═╝ ╚═════╝╚═╝
 
-> **Project Zomboid modding tools for an AI that can inspect the same local material you do.**
+██████╗ ███████╗
+██╔══██╗╚══███╔╝
+██████╔╝  ███╔╝
+██╔═══╝  ███╔╝
+██║     ███████╗
+╚═╝     ╚══════╝
 
-Vanilla game data, modding documentation, script generation, validation, mod analysis, recipe analysis, and Workshop inspection are exposed through one MCP server.
+          ██████╗ ██████╗
+          ╚════██╗██╔══██╗
+           █████╔╝██████╔╝
+          ██╔═══╝ ██╔═══╝
+          ███████╗██║
+          ╚══════╝╚═╝
+```
 
-**The hook:** instead of asking an AI to remember Project Zomboid internals, give it tools to query the material, generate against it, and check the result.
+> **PROJECT ZOMBOID MODDING TOOLS FOR AN AI THAT CAN INSPECT THE SAME LOCAL MATERIAL YOU DO.**
 
 [Start here](#start-here) · [Tool map](#tool-map) · [System flow](#system-flow) · [Configuration](#configuration)
 
 <p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
-
-<div align="center">
-
-```text
-🟢 ═════════════════════════════════════════════════════════════════════ 🟢
-
-        ██████╗ ███████╗     ███╗   ███╗ ██████╗██████╗
-        ██╔══██╗╚══███╔╝     ████╗ ████║██╔════╝██╔══██╗
-        ██████╔╝  ███╔╝█████╗██╔████╔██║██║     ██████╔╝
-        ██╔═══╝  ███╔╝ ╚════╝██║╚██╔╝██║██║     ██╔═══╝
-        ██║     ███████╗     ██║ ╚═╝ ██║╚██████╗██║
-        ╚═╝     ╚══════╝     ╚═╝     ╚═╝ ╚═════╝╚═╝
-
-                 ███╗   ███╗ ██████╗██████╗
-                 ████╗ ████║██╔════╝██╔══██╗
-                 ██╔████╔██║██║     ██████╔╝
-                 ██║╚██╔╝██║██║     ██╔═══╝
-                 ██║ ╚═╝ ██║╚██████╗██║
-                 ╚═╝     ╚═╝ ╚═════╝╚═╝
-
-             [ LOCAL INTELLIGENCE // GHOST PROTOCOL ]
-
-🟢 ═════════════════════════════════════════════════════════════════════ 🟢
-```
-
-</div>
 
 ## System flow
 
@@ -69,29 +60,7 @@ A typical path is:
 
 **parse game files → search references → generate a script → validate it → analyze the mod → export**
 
-<div align="center">
-
-```text
-🟢 ────────────────────────[ SIGNAL DIVIDER ]──────────────────────── 🟢
-
-              ░▒▓█  ACCESSING THE MODDING GRID  █▓▒░
-
-                 ┌───────────────────────────┐
-                 │  > parse                  │
-                 │  > search                 │
-                 │  > generate               │
-                 │  > validate               │
-                 │  > analyze                │
-                 │  > export                 │
-                 └───────────────────────────┘
-                         │
-                         ▼
-                    [ MCP / STDIO ]
-
-🟢 ───────────────────────────────────────────────────────────────── 🟢
-```
-
-</div>
+<p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
 ## What the server actually does
 
@@ -228,32 +197,6 @@ The documented game-path detection covers standard Windows locations and WSL; se
 This README does **not** claim that the server can automatically create, launch, or play-test a Project Zomboid mod. That is not established by the supplied repository documentation.
 
 It also avoids unsupported performance claims and compatibility promises.
-
-<div align="center">
-
-```text
-                         ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-                    ▄██▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀██▄
-                  ▄█▀   ███████████████   ▀█▄
-                 █▀    ██  ▄▄▄▄▄▄▄  ██     ▀█
-                █     ██  █▀     ▀█  ██      █
-                █     ██  █  ◉ ◉  █  ██      █
-                █     ██  █   ▄   █  ██      █
-                █      ██  ███████  ██       █
-                 █      ▀██▄▄▄▄▄▄▄██▀       █
-                  ▀█▄                         █
-                    ▀██▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▀
-
-                    [ CONNECTION SECURED ]
-                    [ SOURCE > CONTEXT ]
-                    [ CONTEXT > CREATION ]
-
-                         ░▒▓█ PZ-MCP █▓▒░
-
-🟢 ═════════════════════════════════════════════════════════════════════ 🟢
-```
-
-</div>
 
 <p align="center">
   <img src="assets/divider.svg" width="100%" height="34" alt="">
