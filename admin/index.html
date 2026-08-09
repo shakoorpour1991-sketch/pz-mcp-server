@@ -506,6 +506,9 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .cn-ghost{font-size:12px;font-weight:600;fill:var(--muted)}
 .chain-ghost{cursor:pointer}
 .chain-ghost rect:hover{stroke:rgb(var(--accent-rgb))}
+.chain-ghost.less rect{stroke:#FBBF24}
+.chain-ghost.less text{fill:#FBBF24}
+.chain-ghost.less rect:hover{stroke:rgb(var(--accent-rgb));fill:rgba(251,191,36,.08)}
 .chain-count{font-size:10px;font-family:var(--font-mono);font-weight:700;fill:var(--muted);paint-order:stroke;stroke:rgba(4,8,16,.85);stroke-width:3px}
 .chain-edge{fill:none}
 .chain-edge,.chain-count{transition:opacity .14s ease}
@@ -2711,7 +2714,7 @@ function chainPaint(){
     const xs = colX(base + d), ys = colYs(dense ? [col[0]] : show);
     if (dense) pos.set(pillOf(key), { x: xs, y: ys[0] });
     else show.forEach((id, i) => pos.set(id, { x: xs, y: ys[i] }));
-    shown.push({ side, d, key, col, show, dense, xs, ys });
+    shown.push({ side, d, key, col, show, dense, expanded, xs, ys });
   });
   build('up', 0);
   build('dn', seedCol + 1);
@@ -2792,6 +2795,14 @@ function chainPaint(){
       nodeHTML += '<g class="chain-ghost" data-act="chain-more" data-key="'+s.key+'" transform="translate('+s.xs+','+gy+')">' +
         '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12" fill="transparent" stroke="#94A3B8" stroke-width="1.4" stroke-dasharray="5 5"/>' +
         '<text x="'+CHAIN_NODE_W/2+'" y="'+CHAIN_NODE_H/2+'" text-anchor="middle" dominant-baseline="central" class="cn-ghost">+ '+(s.col.length - s.show.length)+' more</text></g>';
+    }
+    // Expanded column (from a dense pill or a +N more ghost): a − collapse
+    // ghost restores the capped/pill view — no more toggling dense off/on.
+    else if (s.expanded && s.col.length > cap){
+      const gy = Math.max.apply(null, s.ys) + CHAIN_NODE_H + 20;
+      nodeHTML += '<g class="chain-ghost less" data-act="chain-less" data-key="'+s.key+'" transform="translate('+s.xs+','+gy+')" title="Collapse this column back to the '+(c.dense ? 'pill' : 'cap')+'">' +
+        '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12" fill="transparent" stroke="#FBBF24" stroke-width="1.4" stroke-dasharray="5 5"/>' +
+        '<text x="'+CHAIN_NODE_W/2+'" y="'+CHAIN_NODE_H/2+'" text-anchor="middle" dominant-baseline="central" class="cn-ghost">− '+(c.dense ? 'collapse to pill' : 'collapse')+'</text></g>';
     }
   });
   g.innerHTML = edgeHTML + nodeHTML;
@@ -3638,6 +3649,7 @@ document.addEventListener('click', e => {
       else toast('Node data not available','warn');
     }
     else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); } // keep the user's zoom/pan; canvas grows via chainApplyGeometry
+    else if (a === 'chain-less'){ delete S.chain.expLayers[act.dataset.key]; chainPaint(); chainFitAnim(); } // re-collapse an expanded column (back to pill/cap)
     else if (a === 'chain-zoomin') chainZoom(1.25);
     else if (a === 'chain-zoomout') chainZoom(0.8);
     else if (a === 'chain-fit') chainFitAnim();
