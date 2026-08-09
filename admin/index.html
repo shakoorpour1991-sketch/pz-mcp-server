@@ -171,6 +171,10 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .b-warn{background:rgba(251,191,36,.12);color:#FCD34D;border:1px solid rgba(251,191,36,.32)}
 .b-err{background:rgba(251,113,133,.12);color:#FDA4AF;border:1px solid rgba(251,113,133,.32)}
 .b-dim{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid var(--stroke-soft)}
+.db-res{display:flex;flex-direction:column;gap:6px}
+.db-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--stroke-soft);border-radius:10px;background:rgba(255,255,255,.03);cursor:help;transition:border-color .15s var(--easeout),background .15s var(--easeout)}
+.db-row:hover{border-color:rgba(var(--accent-rgb),.45);background:rgba(var(--accent-rgb),.06)}
+.db-name{font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
 @media(max-width:920px){.status-grid{grid-template-columns:1fr}}
@@ -455,6 +459,61 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .gs-title{font-size:13px;font-weight:700}
 .gs-desc{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.6}
 .gs-desc b{color:var(--text)}
+
+/* Recipe Chain */
+.chain-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.chain-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid var(--stroke);background:rgba(255,255,255,.04);color:var(--text);transition:border-color .2s ease,background .2s ease,transform .1s ease}
+.chain-chip:hover{border-color:rgba(var(--accent-rgb),.6);background:rgba(var(--accent-rgb),.08)}
+.chain-chip:active{transform:scale(.97)}
+.chain-chip.warn{border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.07)}
+.chain-chip.warn:hover{border-color:#FBBF24}
+.chain-seg{display:inline-flex;gap:4px;padding:4px;border-radius:13px;background:rgba(0,0,0,.28);border:1px solid var(--stroke-soft)}
+.chain-seg button{border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:600;padding:7px 13px;border-radius:9px;cursor:pointer;transition:all .2s ease}
+.chain-seg button.on{background:rgba(var(--accent-rgb),.16);color:var(--text);box-shadow:0 0 12px rgba(var(--accent-rgb),.25)}
+.chain-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;max-height:280px;overflow:auto;border-radius:14px;
+  background:rgba(16,20,30,.96);border:1px solid var(--stroke);box-shadow:0 18px 40px rgba(0,0,0,.45);backdrop-filter:blur(14px)}
+.chain-drop-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 14px;border:0;background:transparent;color:var(--text);cursor:pointer;font-size:12.5px}
+.chain-drop-item:hover,.chain-drop-item:focus-visible{background:rgba(var(--accent-rgb),.1)}
+.chain-drop-item + .chain-drop-item{border-top:1px solid var(--stroke-soft)}
+.chain-drop-empty{padding:12px 14px;font-size:12.5px;color:var(--muted)}
+.chain-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start;margin-top:14px}
+@media(max-width:980px){.chain-main{grid-template-columns:1fr}}
+.chain-canvas{display:flex;flex-direction:column;gap:10px;min-width:0}
+.chain-svgwrap{position:relative;height:640px;border-radius:16px;border:1px solid var(--stroke-soft);overflow:hidden;
+  background:radial-gradient(1200px 600px at 50% 0%,rgba(var(--accent-rgb),.05),transparent 60%),rgba(4,8,16,.5)}
+.chain-svgwrap.trunc{border-style:dashed;border-color:rgba(251,191,36,.5)}
+.chain-svg{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+.chain-svg.dragging{cursor:grabbing}
+.chain-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chain-tools .spacer{flex:1}
+.chain-node{cursor:pointer}
+.chain-node rect{fill:rgba(255,255,255,.06);stroke:rgba(255,255,255,.18);transition:all .18s ease}
+.chain-node.r rect{fill:rgba(251,191,36,.12);stroke:rgba(251,191,36,.55)}
+.chain-node.i rect{fill:rgba(34,211,238,.10);stroke:rgba(34,211,238,.55)}
+.chain-node.u rect{fill:rgba(148,163,184,.08);stroke:rgba(148,163,184,.4)}
+.chain-node:hover rect{stroke-width:2.2;filter:drop-shadow(0 0 10px rgba(var(--accent-rgb),.35))}
+.chain-node.sel rect{stroke:rgb(var(--accent-rgb));stroke-width:2.4;filter:drop-shadow(0 0 12px rgba(var(--accent-rgb),.5))}
+.chain-node.seed rect{stroke-width:2}
+.chain-node text,.chain-lvl{pointer-events:none}
+.cn-name{font-size:12.5px;font-weight:700;fill:var(--text)}
+.cn-id{font-size:9.5px;fill:var(--faint);font-family:var(--font-mono)}
+.chain-lvl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;fill:var(--faint)}
+.cn-ghost{font-size:12px;font-weight:600;fill:var(--muted)}
+.chain-ghost{cursor:pointer}
+.chain-ghost rect:hover{stroke:rgb(var(--accent-rgb))}
+.chain-count{font-size:10px;font-family:var(--font-mono);font-weight:700;fill:var(--muted);paint-order:stroke;stroke:rgba(4,8,16,.85);stroke-width:3px}
+.chain-edge{fill:none}
+.chain-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);align-items:center}
+.chain-legend i{display:inline-block;width:16px;height:2px;border-radius:2px;vertical-align:middle;margin-right:5px;background:#34D399}
+.lg-dot{display:inline-block;width:10px;height:10px;border-radius:3px;border:1px solid;vertical-align:middle;margin-right:5px}
+.chain-insp{min-width:0;position:sticky;top:14px;max-height:640px;overflow:auto}
+.insp-sec{margin-top:10px}
+.insp-title{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.insp-row{display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:12px;font-family:var(--font-mono);padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.03);margin-top:4px}
+.insp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chain-note{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:8px 12px;border-radius:10px;flex-wrap:wrap;
+  background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25)}
 </style>
 </head>
 <body>
@@ -499,7 +558,10 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
   <button class="tab" role="tab" id="tab-workshop" aria-selected="false" data-view="workshop" tabindex="-1" title="Workshop Browser (4)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.3 7.8L12 13l8.7-5.2M12 22V13"/></svg><span>Workshop</span>
   </button>
-  <button class="tab" role="tab" id="tab-settings" aria-selected="false" data-view="settings" tabindex="-1" title="Configuration (5)">
+  <button class="tab" role="tab" id="tab-chain" aria-selected="false" data-view="chain" tabindex="-1" title="Recipe Chain (5)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2.4"/><path d="M7 6h10M6.5 7.5L11 16M17.5 7.5L13 16"/></svg><span>Chains</span>
+  </button>
+  <button class="tab" role="tab" id="tab-settings" aria-selected="false" data-view="settings" tabindex="-1" title="Configuration (6)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Config</span>
   </button>
 </nav>
@@ -650,6 +712,7 @@ const ICONS = {
   play:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  graph:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2.4"/><path d="M7 6h10M6.5 7.5L11 16M17.5 7.5L13 16"/></svg>',
 };
 const TOOL_ICONS = { validate_script:'shield', generate_script:'spark', search_vanilla:'search', check_references:'link',
   analyze_mod:'scan', parse_game_files:'db', index_knowledge_base:'book', search_knowledge_base:'search', list_knowledge_topics:'book' };
@@ -787,12 +850,13 @@ function closeHelp(){
 const GUIDE_STEPS = [
   { icon:'power', title:'What is this?', body:'<b>pz-mcp-server</b> is a Model Context Protocol (MCP) server that gives AI assistants live access to your Project Zomboid mod data. This deck is its friendly control panel — you drive the same 17 tools an AI would, right from your browser.' },
   { icon:'link', title:'How the deck connects', body:'The bridge (<b>admin/bridge.mjs</b>) serves this page on <b>port 8787</b> and pipes JSON-RPC to the real MCP server over stdio. Watch the pill in the header — when it turns green <b>Live</b>, the server is ready. It reconnects automatically.' },
-  { icon:'scan', title:'The 5 tabs', body:'<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Config</b> — accent color, console behaviour and server controls.' },
+  { icon:'scan', title:'The 6 tabs', body:'<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Config</b> — accent color, console behaviour and server controls.' },
   { icon:'play', title:'Playground workflow', body:'Open a tool card, fill the fields and press <b>Run</b>. Required fields are marked with a red <b>*</b> and are validated live — an empty required field disables Run with a red ring. Results appear in the result card (with a Copy button), long output collapses behind <b>Show more</b>, and every call lands in <b>Recent Runs</b> so you can re-open it later.' },
   { icon:'search', title:'Typical flow', body:'<b>1.</b> parse_game_files once to index the game. <b>2.</b> search_vanilla / search_recipes to research. <b>3.</b> generate_script to create content. <b>4.</b> validate_script + check_references to verify. <b>5.</b> analyze_mod for a full mod audit, or workshop_analyze for community mods.' },
   { icon:'db', title:'Database & Knowledge tabs', body:'The Database tab runs the same FTS5 search as search_vanilla. The Knowledge Base tools index and search your markdown modding docs — useful for keeping your research one query away.' },
   { icon:'download', title:'Workshop tab', body:'Search Steam, paste a URL/id for guaranteed resolution, download a mod via SteamCMD, then run the full analyze pipeline — download, parse, balance check and a complete Mod Report.' },
-  { icon:'arrowR', title:'Keyboard & tips', body:'<span class="kbd">1–5</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.' },
+  { icon:'graph', title:'Recipe Chain tab', body:'Type any item or recipe id (a recipe like <b>MillFlour</b> gives the richest graph) and press <b>Build graph</b>. Recipe nodes are amber, items cyan; green arrows mean <b>produces</b>, amber means <b>consumes</b>. Click a node to inspect it, drag to pan, ctrl+scroll to zoom. <b>Show recipe conflicts</b> lists items several recipes claim to make — click one to graph it.' },
+  { icon:'arrowR', title:'Keyboard & tips', body:'<span class="kbd">1–6</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.' },
 ];
 function openGuide(){
   const modal = $('#guideModal'); if (!modal) return;
@@ -834,6 +898,8 @@ const S = {
   memSpark:[], sesSpark:[], itemsSpark:[], upSpark:[],
   events:[], lastResult:null,
   pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
+  chain:{ seed:'', direction:'both', depth:2, busy:false, error:null, graph:null, layout:null, sugg:null,
+    conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0 },
   settings:{ accent:'#22D3EE', reduceMotion:false, autoScroll:true, follow:false },
 };
 const MEM_BUDGET_MB = 512;
@@ -974,7 +1040,7 @@ function renderEvents(){
 }
 
 /* ---------- tab bar ---------- */
-const VIEWS = ['status','playground','database','workshop','settings'];
+const VIEWS = ['status','playground','database','workshop','chain','settings'];
 function moveIndicator(){
   const ind = $('#tabInd'), btn = $('#tab-' + S.view);
   if (!btn) return;
@@ -1006,6 +1072,7 @@ function renderView(){
   else if (S.view === 'playground') html += playgroundHTML();
   else if (S.view === 'database') html += databaseHTML();
   else if (S.view === 'workshop') html += workshopHTML();
+  else if (S.view === 'chain') html += chainHTML();
   else html += settingsHTML();
   wrap.innerHTML = html;
   if (S.view === 'status'){ updateStatusDom(); renderEvents(); }
@@ -1015,6 +1082,7 @@ function renderView(){
   }
   if (S.view === 'database') renderDbStats();
   if (S.view === 'workshop') renderWorkshopResults();
+  if (S.view === 'chain') renderChain();
   if (S.view === 'settings'){ loadWorkshopDir(); loadEnv(); }
   requestAnimationFrame(moveIndicator);
 }
@@ -1642,14 +1710,22 @@ function databaseHTML(){
 function renderDbStats(){
   const box = $('#dbTiles'); if (!box) return;
   const db = S.telemetry?.db;
-  const tile = (k, v) => '<div class="glass card stat-tile"><div class="tv num">'+(v ?? 0).toLocaleString()+'</div><div class="tk2">'+esc(k)+'</div></div>';
+  const TYPE_TIPS = {
+    item: 'Items you can hold, use, wear or eat — weapons, food, tools, clothes, materials. The things recipes consume and produce.',
+    recipe: 'Crafting recipes: how the game turns ingredients into results — building, cooking, crafting, crafting stations.',
+    evolvedrecipe: 'Cooking evolution — how prepared food upgrades into better meals (e.g. soup → stew) as ingredients are added.',
+    fixing: 'Repair recipes — how worn or damaged items are fixed with tools and materials (patching clothes, mending weapons).',
+    sound: 'Game sound scripts — the audio events (footsteps, gunshots, doors, alarms) that items and animations trigger.',
+    vehicle: 'Vehicles and their parts — cars, engines, seats, doors, with stats like condition, fuel capacity and weight.',
+  };
+  const tile = (k, v, tip) => '<div class="glass card stat-tile" '+(tip ? 'title="'+esc(tip)+'"' : '')+'><div class="tv num">'+(v ?? 0).toLocaleString()+'</div><div class="tk2">'+esc(k)+'</div></div>';
   if (!db){
     box.innerHTML = tile('total',0) + '<div class="glass stat-tile" style="grid-column:span 2;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;flex-wrap:wrap">'+ICONS.warn+' Database not created yet — run <button class="btn sm" data-act="go-tool" data-tool="parse_game_files" style="margin:0 4px">parse_game_files</button> first.</div>';
     return;
   }
-  box.innerHTML = tile('total', db.total) +
-    Object.entries(db.byType).map(([k,v]) => tile(k, v)).join('') +
-    tile('references', db.references) + tile('mods', db.mods);
+  box.innerHTML = tile('total', db.total, 'Everything indexed from the game scripts: items, recipes, sounds, vehicles and more. Hover the other tiles to learn what each type means.') +
+    Object.entries(db.byType).map(([k,v]) => tile(k, v, TYPE_TIPS[k] || 'Rows of type “'+k+'” in the database.')).join('') +
+    tile('references', db.references, 'Links between recipes and items — which recipe needs which ingredients and produces which results. This is what powers the recipe chain browser.') + tile('mods', db.mods, 'Distinct mods whose scripts were parsed into this database — the vanilla game counts as one, plus any workshop mods you have analyzed.');
 }
 async function dbSearch(){
   const q = $('#dbQuery').value.trim();
@@ -1661,11 +1737,35 @@ async function dbSearch(){
     const args = { query:q, limit:15 };
     if (type !== 'all') args.type = type;
     const reply = await rpc('tools/call', { name:'search_vanilla', arguments:args });
-    const text = reply.result?.content?.map(c => c.text || '').join('\n') || '(empty result)';
-    out.innerHTML = '<div class="md-out">'+renderMD(text)+'</div>';
+    const results = reply.result?.structuredContent?.results || [];
+    if (!results.length){
+      out.innerHTML = '<div class="md-out" style="color:var(--faint)">No results for “'+esc(q)+'”. Try a broader query.</div>';
+      return;
+    }
+    out.innerHTML = '<div class="sec-title" style="margin:0 2px 10px">'+results.length+' result(s) — hover a row for details</div>' +
+      '<div class="db-res">'+results.map(dbRowHTML).join('')+'</div>';
   } catch (e){
     out.innerHTML = '<div class="md-out" style="color:#FDA4AF">✖ '+esc(e.message)+'</div>';
   }
+}
+function dbRowHTML(r){
+  const name = r.displayName || r.name || r.id;
+  let tip = (r.displayName && r.displayName !== r.name ? r.displayName + ' (' + r.id + ')' : r.id);
+  const lines = [];
+  if (r.type) lines.push('Type: ' + r.type);
+  if (r.module) lines.push('Module: ' + r.module);
+  if (r.category) lines.push('Category: ' + r.category);
+  if (r.weight != null) lines.push('Weight: ' + r.weight + ' kg');
+  if (r.calories != null) lines.push('Calories: ' + r.calories);
+  const props = r.properties ? Object.entries(r.properties).filter(([,v]) => v !== null && v !== undefined).slice(0,8).map(([k,v]) => k + ': ' + v).join('\n') : '';
+  if (props) lines.push('', 'Properties:', props);
+  if (lines.length) tip += '\n\n' + lines.join('\n');
+  return '<div class="db-row" tabindex="0" title="'+esc(tip)+'">' +
+    '<span class="db-name">'+esc(name)+'</span>' +
+    '<span class="badge '+(r.type === 'recipe' ? 'b-dim' : 'b-info')+'">'+esc(r.type||'?')+'</span>' +
+    (r.module && r.module !== 'Base' ? '<span class="badge b-dim">'+esc(r.module)+'</span>' : '') +
+    (r.category ? '<span style="margin-left:auto" class="tk2">'+esc(r.category)+'</span>' : '') +
+    '</div>';
 }
 
 /* ==================== WORKSHOP ==================== */
@@ -2020,6 +2120,442 @@ function wsDetailHTML(d){
     '</div></section>';
 }
 
+/* ==================== RECIPE CHAIN ==================== */
+const CHAIN_CHIPS = [
+  { id:'MillFlour', label:'Mill Flour', hint:'recipe' },
+  { id:'MakeCoffeeMug', label:'Coffee Mug', hint:'recipe' },
+  { id:'WeaveCloth', label:'Weave Cloth', hint:'recipe' },
+  { id:'RippleFlax', label:'Ripple Flax', hint:'recipe' },
+  { id:'ScutchFibre', label:'Scutch Fibre', hint:'recipe' },
+  { id:'MillCornmeal', label:'Mill Cornmeal', hint:'recipe' },
+  { id:'Axe', label:'Axe', hint:'item' },
+  { id:'Log', label:'Log', hint:'item' },
+  { id:'Saw', label:'Saw', hint:'item' },
+  { id:'CannedBeans', label:'Canned Beans', hint:'item' },
+];
+const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14;
+const chop = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+function chainHTML(){
+  const emptyDb = !S.telemetry?.db || !S.telemetry.db.total;
+  const segs = ['both','upstream','downstream'];
+  return '<div class="sec-title" style="margin-top:0">'+ICONS.graph+' Recipe Chain · crafting graph browser</div>' +
+    (emptyDb ? '<div class="ws-alert" style="margin-bottom:14px">'+ICONS.warn+' The database is empty — run <b>parse_game_files</b> once so the graph has real crafting data. <button class="btn sm primary" style="margin-left:auto" data-act="go-tool" data-tool="parse_game_files">'+ICONS.db+' parse_game_files</button></div>' : '') +
+    '<section class="glass card panel-card">' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
+        '<div style="flex:1;min-width:230px;position:relative">' +
+          '<input class="field" id="chainSeed" value="'+esc(S.chain.seed)+'" style="padding-right:44px" placeholder="Search any item or recipe… e.g. MillFlour, Flour, Axe" aria-label="Seed item or recipe" autocomplete="off" spellcheck="false">' +
+          '<div class="chain-drop" id="chainDrop" hidden></div>' +
+        '</div>' +
+        '<button class="btn primary" data-act="chain-run">'+ICONS.play+' Build graph</button>' +
+      '</div>' +
+      '<div class="f-hint" style="margin:8px 2px 0">Recipe ids craft the best graphs — type 3+ letters to autocomplete, or paste an exact id and press <b>Enter</b>. Most plain items (Axe, Log…) are found in the world, not crafted.</div>' +
+      '<div class="chain-chips">'+CHAIN_CHIPS.map(ch => '<button class="chain-chip" data-act="chain-chip" data-id="'+esc(ch.id)+'" title="'+esc(ch.id)+'">'+esc(ch.label)+' <span class="badge b-dim" style="flex:none">'+esc(ch.hint)+'</span></button>').join('')+'</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--stroke-soft)">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Direction</span>' +
+          '<div class="chain-seg" role="group" aria-label="Graph direction">'+segs.map(d => '<button class="'+(S.chain.direction === d ? 'on' : '')+'" data-act="chain-dir" data-v="'+d+'">'+({both:'Both',upstream:'Upstream',downstream:'Downstream'}[d])+'</button>').join('')+'</div></div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Depth <b id="chainDepthVal" style="color:var(--text)">'+S.chain.depth+'</b></span>' +
+          '<input type="range" id="chainDepth" min="1" max="6" step="1" value="'+S.chain.depth+'" style="width:150px" aria-label="Graph depth">' +
+          '<button class="btn sm ghost" id="chainConfBtn" data-act="chain-conflicts" style="border:1px solid var(--stroke)">'+ICONS.warn+' Show recipe conflicts</button></div>' +
+      '</div>' +
+    '</section>' +
+    '<div id="chainOut"></div>';
+}
+function renderChain(){
+  const out = $('#chainOut'); if (!out) return;
+  const c = S.chain;
+  let html = '';
+  if (c.confBusy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> scanning recipes for conflicts…</div>';
+  else if (c.conflicts) html += chainConflictsHTML();
+  if (c.busy) html += '<div class="md-out" style="display:flex;align-items:center;gap:10px;margin-top:14px"><span class="spinner"></span> expanding crafting graph…</div>';
+  else if (c.error) html += '<div class="md-out" style="color:#FDA4AF;margin-top:14px">✖ '+esc(c.error)+'</div>';
+  else if (c.layout) html += chainGraphHTML();
+  else if (c.sugg) html += chainSuggHTML();
+  else html += '<div class="md-out" style="color:var(--faint);margin-top:14px">Pick a seed above and press <b>Build graph</b>, click a quick-start chip, or scan for conflicts — then watch what makes it, what it makes, and what consumes it.</div>';
+  out.innerHTML = html;
+  if (c.layout){
+    chainPaint();
+    bindChainSvg();
+    requestAnimationFrame(() => { if (S.chain.layout && $('#chainG')) chainFit(); });
+  }
+}
+function chainConflictsHTML(){
+  const c = S.chain, cs = c.conflicts || [];
+  return '<div class="glass card panel-card" style="margin-bottom:14px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+ICONS.warn+' <b>Recipe conflicts</b>' +
+      '<span class="badge b-dim">'+cs.length+' conflicted item(s) · '+esc(c.confTotal)+' recipes scanned</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="ibtn" data-act="chain-conf-clear" style="width:32px;height:32px;border-radius:9px" aria-label="Hide conflicts" title="Hide conflicts">'+ICONS.x+'</button>' +
+    '</div>' +
+    '<div class="f-hint" style="margin:6px 2px 10px">Items that multiple recipes claim to produce — click one to graph its producers.</div>' +
+    '<div class="chain-chips">'+cs.map(x => '<button class="chain-chip warn" data-act="chain-conf" data-id="'+esc(x.item)+'" title="'+esc(x.item)+' — '+x.recipes.length+' recipes">'+esc(x.item)+' <span class="badge b-err" style="flex:none">'+x.recipes.length+'</span></button>').join('')+'</div>' +
+  '</div>';
+}
+async function chainConflicts(){
+  const c = S.chain;
+  if (c.confBusy) return;
+  const btn = $('#chainConfBtn');
+  c.confBusy = true;
+  if (btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span> scanning…'; }
+  renderChain();
+  try {
+    const reply = await rpc('tools/call', { name:'detect_recipe_conflicts', arguments:{ limit:40 } });
+    const sc = reply.result?.structuredContent;
+    c.conflicts = sc?.conflicts || [];
+    c.confTotal = sc?.totalRecipes || 0;
+    c.confBusy = false;
+    if (btn){ btn.disabled = false; btn.innerHTML = ICONS.warn+' Show recipe conflicts'; }
+    renderChain();
+    addEvent('recipe conflicts · ' + c.conflicts.length + ' conflicted items');
+    if (!c.conflicts.length) toast('No recipe conflicts found','warn');
+  } catch (e){
+    c.confBusy = false;
+    if (btn){ btn.disabled = false; btn.innerHTML = ICONS.warn+' Show recipe conflicts'; }
+    c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    renderChain();
+  }
+}
+async function chainRun(seedOverride){
+  const c = S.chain, f = $('#chainSeed');
+  if (c.busy){ toast('A graph is already building','warn'); return; }
+  const seed = seedOverride ?? (f ? f.value.trim() : '');
+  if (!seed){ toast('Type an item or recipe id first','warn'); return; }
+  if (f) f.value = seed;
+  c.seed = seed; c.insp = null; c.sugg = null; c.error = null;
+  c.busy = true; c.graph = null; c.layout = null; c.expLayers = {};
+  chainDropClose();
+  renderChain();
+  try {
+    const reply = await rpc('tools/call', { name:'analyze_recipe_chain', arguments:{ seed, direction:c.direction, maxDepth:c.depth } });
+    const sc = reply.result?.structuredContent;
+    const nodes = Array.isArray(sc?.nodes) ? sc.nodes : [];
+    c.graph = { seed, seedKind: sc?.seedKind || 'unknown', nodes, truncated: !!sc?.truncated, maxDepth: sc?.maxDepth ?? c.depth };
+    c.layout = chainLayout();
+    c.busy = false;
+    const hasEdges = c.layout && (c.layout.up.length || c.layout.dn.length);
+    if (!hasEdges && nodes.length <= 1 && (sc?.seedKind || 'unknown') !== 'recipe'){
+      c.sugg = { seed, kind: sc?.seedKind || 'unknown', results: [] };
+      chainSuggest(seed);
+    } else if (!hasEdges && nodes.length === 1){
+      toast('Seed resolves but nothing crafts it in this database','warn');
+    }
+    renderChain();
+    addEvent('recipe chain · ' + seed + ' → ' + Math.max(0, nodes.length - 1) + ' linked');
+  } catch (e){
+    c.busy = false; c.error = String(e.message || e).replace(/^Tool execution failed:\s*/,'');
+    renderChain();
+  }
+}
+async function chainSuggest(seed){
+  const c = S.chain;
+  try {
+    const [ir, rr] = await Promise.all([
+      rpc('tools/call', { name:'search_vanilla', arguments:{ query:seed, type:'item', limit:8 } }).catch(() => null),
+      rpc('tools/call', { name:'search_vanilla', arguments:{ query:seed, type:'recipe', limit:8 } }).catch(() => null),
+    ]);
+    const list = [];
+    const push = (sc, type) => { for (const r of (sc && sc.results) || []) if (!list.find(x => x.id === r.id)) list.push({ id:r.id, type, name:r.displayName || r.name || r.id }); };
+    push(ir && ir.result && ir.result.structuredContent, 'item');
+    push(rr && rr.result && rr.result.structuredContent, 'recipe');
+    if (!c.sugg || c.sugg.seed !== seed) return;
+    c.sugg.results = list.slice(0, 14);
+    renderChain();
+  } catch (e){ /* keep the dead-end card without suggestions */ }
+}
+function chainSuggHTML(){
+  const s = S.chain.sugg; if (!s) return '';
+  const items = (s.results || []).map(r => '<button class="chain-chip" data-act="chain-sugg" data-id="'+esc(r.id)+'">'+esc(r.name || r.id)+' <span class="badge '+(r.type === 'recipe' ? 'b-info' : 'b-dim')+'" style="flex:none">'+esc(r.type)+'</span></button>').join('');
+  return '<div class="glass card panel-card" style="margin-top:14px">' +
+    '<div class="md-h" style="display:flex;align-items:center;gap:8px">'+ICONS.warn+' Nothing craftable for “'+esc(s.seed)+'”</div>' +
+    '<div class="md-p" style="color:var(--muted);margin-top:6px">That id resolves'+(s.kind ? ' as <b>'+esc(s.kind)+'</b>' : '')+', but no crafting recipe links to it in the parsed database. Most items are found in the world, not crafted. Search finds recipes too — try one below, or a close match:</div>' +
+    (items ? '<div class="chain-chips" style="margin-top:10px">'+items+'</div>' : '<div class="md-p" style="color:var(--faint);margin-top:10px">No close matches found — try another keyword.</div>') +
+  '</div>';
+}
+function chainLayout(){
+  const g = S.chain.graph; if (!g) return null;
+  const byId = new Map(g.nodes.map(n => [n.id, n]));
+  const seed = byId.get(g.seed) || byId.get(g.nodes[0]) || null;
+  if (!seed) return null;
+  const dir = S.chain.direction;
+  const nbors = (n, side) => {
+    const out = [];
+    if (n.kind === 'recipe'){
+      const list = side === 'up' ? (n.ingredients || []) : (n.results || []);
+      for (const x of list) if (byId.has(x.id) && x.id !== seed.id) out.push(x.id);
+    } else {
+      const list = side === 'up' ? (n.producedBy || []) : (n.consumedBy || []);
+      for (const id of list) if (byId.has(id) && id !== seed.id) out.push(id);
+    }
+    return out;
+  };
+  const columns = side => {
+    if ((side === 'up' && dir === 'downstream') || (side === 'dn' && dir === 'upstream')) return [];
+    const cols = []; let layer = [seed.id]; const seen = new Set([seed.id]);
+    for (let d = 1; d <= g.maxDepth; d++){
+      const next = [], refs = new Map();
+      for (const pid of layer){
+        const pn = byId.get(pid); if (!pn) continue;
+        for (const nid of nbors(pn, side)){
+          refs.set(nid, (refs.get(nid) || 0) + 1);
+          if (seen.has(nid)) continue;
+          seen.add(nid); next.push(nid);
+        }
+      }
+      if (!next.length) break;
+      next.sort((a, b) => (refs.get(b) || 0) - (refs.get(a) || 0) || a.localeCompare(b));
+      cols.push(next); layer = next;
+    }
+    return cols;
+  };
+  return { byId, seed, up: columns('up'), dn: columns('dn') };
+}
+function chainGraphHTML(){
+  const c = S.chain, L = c.layout;
+  const totalCols = L.up.length + 1 + L.dn.length;
+  const W = totalCols * CHAIN_COLW + 80;
+  const insp = c.insp ? L.byId.get(c.insp) : null;
+  const seedBadge = L.seed.kind === 'recipe' ? '<span class="badge b-info">recipe</span>'
+    : L.seed.kind === 'item' ? '<span class="badge b-dim">item</span>'
+    : '<span class="badge b-dim">'+esc(L.seed.kind)+'</span>';
+  return '<div class="chain-main">' +
+    '<div class="chain-canvas">' +
+      '<div class="chain-tools">' +
+        '<b class="mono" style="font-size:12.5px">'+esc(L.seed.id)+'</b>' + seedBadge +
+        (c.graph.truncated ? '<span class="badge b-err">depth limit hit</span>' : '') +
+        '<span class="badge b-dim">'+(L.up.length + L.dn.length)+' layer(s) · '+c.graph.nodes.length+' node(s)</span>' +
+        '<span class="spacer"></span>' +
+        '<button class="ibtn" data-act="chain-fit" style="width:34px;height:34px;border-radius:10px" title="Fit view" aria-label="Fit view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>' +
+        '<button class="ibtn" data-act="chain-zoomout" style="width:34px;height:34px;border-radius:10px" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>' +
+        '<button class="ibtn" data-act="chain-zoomin" style="width:34px;height:34px;border-radius:10px" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
+      '</div>' +
+      '<div class="chain-svgwrap'+(c.graph.truncated ? ' trunc' : '')+'" id="chainSvgWrap">' +
+        '<svg class="chain-svg" id="chainSvg" viewBox="0 0 '+W+' '+CHAIN_H+'" preserveAspectRatio="xMidYMid meet">' +
+          '<defs>' +
+            '<marker id="mkG" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#34D399"/></marker>' +
+            '<marker id="mkA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#FBBF24"/></marker>' +
+          '</defs>' +
+          '<g id="chainG" transform="'+chainTransformStr()+'"></g>' +
+        '</svg>' +
+      '</div>' +
+      '<div class="chain-legend">' +
+        '<span><i style="background:#34D399"></i>produces</span>' +
+        '<span><i style="background:#FBBF24"></i>consumes</span>' +
+        '<span><span class="lg-dot" style="background:rgba(251,191,36,.25);border-color:rgba(251,191,36,.65)"></span>recipe</span>' +
+        '<span><span class="lg-dot" style="background:rgba(34,211,238,.22);border-color:rgba(34,211,238,.65)"></span>item</span>' +
+        '<span style="margin-left:auto">drag to pan · ctrl+scroll to zoom</span>' +
+      '</div>' +
+      (c.graph.truncated ? '<div class="chain-note">'+ICONS.warn+' The server hit its depth limit — raise <b>Depth</b> to expand the graph further.</div>' : '') +
+    '</div>' +
+    '<aside class="glass card panel-card chain-insp" id="chainInsp">' +
+      (insp ? chainInspHTML(insp) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it — ingredients, results, producers and consumers. Click again to re-root the graph.</div>') +
+    '</aside>' +
+  '</div>';
+}
+function chainPaint(){
+  const g = $('#chainG'); if (!g) return;
+  const c = S.chain, L = c.layout;
+  const colX = idx => 40 + idx * CHAIN_COLW + (CHAIN_COLW - CHAIN_NODE_W) / 2;
+  const colYs = col => { const n = col.length, pad = 70, span = CHAIN_H - 2 * pad; return col.map((id, i) => pad + (n === 1 ? span / 2 : span * (i + 0.5) / n)); };
+  const seedCol = L.up.length;
+  const pos = new Map();
+  const shown = [];
+  const build = (side, base) => L[side].forEach((col, d) => {
+    const key = side + ':' + (d + 1);
+    const show = c.expLayers[key] ? col : col.slice(0, CHAIN_CAP);
+    const xs = colX(base + d), ys = colYs(show);
+    show.forEach((id, i) => pos.set(id, { x: xs, y: ys[i] }));
+    shown.push({ side, d, key, col, show, xs, ys });
+  });
+  build('up', 0);
+  build('dn', seedCol + 1);
+  const seedPos = { x: colX(seedCol), y: CHAIN_H / 2 };
+  pos.set(L.seed.id, seedPos);
+  const nbors = (n, side) => {
+    const out = [];
+    if (n.kind === 'recipe'){ const list = side === 'up' ? (n.ingredients || []) : (n.results || []); for (const x of list) if (L.byId.has(x.id) && x.id !== L.seed.id) out.push(x.id); }
+    else { const list = side === 'up' ? (n.producedBy || []) : (n.consumedBy || []); for (const id of list) if (L.byId.has(id) && id !== L.seed.id) out.push(id); }
+    return out;
+  };
+  const edges = [], seen = new Set();
+  function link(pn, cn){
+    const p = pos.get(pn.id), ch = pos.get(cn.id);
+    if (!p || !ch) return;
+    const k = pn.id + '|' + cn.id; if (seen.has(k)) return; seen.add(k);
+    let color = '#FBBF24', count = null;
+    if (pn.kind === 'recipe' && cn.kind === 'item'){
+      const r = (pn.results || []).find(x => x.id === cn.id);
+      if (r){ color = '#34D399'; count = r.count || null; }
+      else { const ing = (pn.ingredients || []).find(x => x.id === cn.id); count = ing ? ing.count || null : null; }
+    } else if (pn.kind === 'item' && cn.kind === 'recipe'){
+      const res = (cn.results || []).find(x => x.id === pn.id);
+      if (res){ color = '#34D399'; count = res.count || null; }
+      else { const ing = (cn.ingredients || []).find(x => x.id === pn.id); count = ing ? ing.count || null : null; }
+    }
+    const l = p.x <= ch.x ? p : ch, r2 = l === p ? ch : p;
+    const xA = l.x + CHAIN_NODE_W, yA = l.y + CHAIN_NODE_H / 2, xB = r2.x, yB = r2.y + CHAIN_NODE_H / 2;
+    const mx = (xA + xB) / 2;
+    edges.push({ d: 'M'+xA+' '+yA+' C'+mx+' '+yA+' '+mx+' '+yB+' '+xB+' '+yB,
+      color, count, lx: mx, ly: (yA + yB) / 2 - 7 });
+  }
+  function layerEdges(side, cols, prevIds){
+    for (const pid of prevIds){
+      const pn = L.byId.get(pid); if (!pn) continue;
+      for (const nid of nbors(pn, side)) if (cols.includes(nid)) link(pn, L.byId.get(nid));
+    }
+  }
+  const up0 = shown.find(x => x.side === 'up' && x.d === 0);
+  const dn0 = shown.find(x => x.side === 'dn' && x.d === 0);
+  if (up0) layerEdges('up', up0.show, [L.seed.id]);
+  if (dn0) layerEdges('dn', dn0.show, [L.seed.id]);
+  shown.forEach(s => { if (s.d === 0) return; const prev = shown.find(x => x.side === s.side && x.d === s.d - 1); if (prev) layerEdges(s.side, s.show, prev.show); });
+  const edgeHTML = edges.map(e => '<path class="chain-edge" d="'+e.d+'" stroke="'+e.color+'" stroke-width="1.6" marker-end="url(#mk'+(e.color === '#34D399' ? 'G' : 'A')+')"/>' +
+    (e.count ? '<text class="chain-count" x="'+e.lx+'" y="'+e.ly+'" text-anchor="middle">'+e.count+'×</text>' : '')).join('');
+  let nodeHTML = chainNodeHTML(L.seed, seedPos.x, seedPos.y, 'seed');
+  shown.forEach(s => {
+    nodeHTML += '<text class="chain-lvl" x="'+(s.xs + CHAIN_NODE_W / 2)+'" y="30" text-anchor="middle">level '+(s.d + 1)+'</text>';
+    s.show.forEach((id, i) => nodeHTML += chainNodeHTML(L.byId.get(id), s.xs, s.ys[i], ''));
+    if (s.col.length > s.show.length){
+      const gy = Math.max.apply(null, s.ys) + CHAIN_NODE_H + 20;
+      nodeHTML += '<g class="chain-ghost" data-act="chain-more" data-key="'+s.key+'" transform="translate('+s.xs+','+gy+')">' +
+        '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12" fill="transparent" stroke="#94A3B8" stroke-width="1.4" stroke-dasharray="5 5"/>' +
+        '<text x="'+CHAIN_NODE_W/2+'" y="'+CHAIN_NODE_H/2+'" text-anchor="middle" dominant-baseline="central" class="cn-ghost">+ '+(s.col.length - s.show.length)+' more</text></g>';
+    }
+  });
+  g.innerHTML = edgeHTML + nodeHTML;
+}
+function chainNodeHTML(n, x, y, extra){
+  const cls = n.kind === 'recipe' ? 'r' : n.kind === 'item' ? 'i' : 'u';
+  const sel = S.chain.insp === n.id;
+  const gy = Math.round(CHAIN_NODE_H / 2 - 7);
+  const glyph = n.kind === 'recipe'
+    ? '<svg x="12" y="'+gy+'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h6M6 2v3L3.4 9.4A2.6 2.6 0 0 0 5.4 13h5.2a2.6 2.6 0 0 0 2-4.1L10 5V2"/><path d="M4.6 10h6.8"/></svg>'
+    : n.kind === 'item'
+    ? '<svg x="12" y="'+gy+'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2" y="2.5" width="12" height="11" rx="2.5"/><path d="M2 6.5h12"/></svg>'
+    : '<text class="cn-glyph" x="18" y="'+CHAIN_NODE_H/2+'" dominant-baseline="central">?</text>';
+  return '<g class="chain-node '+cls+(sel ? ' sel' : '')+(extra ? ' '+extra : '')+'" data-act="chain-node" data-id="'+esc(n.id)+'" transform="translate('+x+','+y+')">' +
+    '<rect width="'+CHAIN_NODE_W+'" height="'+CHAIN_NODE_H+'" rx="12"/>' + glyph +
+    '<text class="cn-name" x="32" y="'+Math.round(CHAIN_NODE_H/2 - 7)+'">'+esc(chop(n.name || n.id, 21))+'</text>' +
+    '<text class="cn-id" x="32" y="'+Math.round(CHAIN_NODE_H/2 + 9)+'">'+esc(chop(n.id, 25))+'</text>' +
+  '</g>';
+}
+function chainInspHTML(n){
+  const rows = [];
+  if (n.kind === 'recipe'){
+    const ing = n.ingredients || [], res = n.results || [];
+    rows.push('<div class="insp-sec"><div class="insp-title">Ingredients · '+ing.length+'</div>' +
+      (ing.length ? ing.map(i => '<div class="insp-row"><span>'+esc(i.id)+'</span>'+(i.count ? '<span class="badge b-dim" style="flex:none">×'+esc(i.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
+    rows.push('<div class="insp-sec"><div class="insp-title">Results · '+res.length+'</div>' +
+      (res.length ? res.map(r => '<div class="insp-row"><span>'+esc(r.id)+'</span>'+(r.count ? '<span class="badge b-dim" style="flex:none">×'+esc(r.count)+'</span>' : '')+'</div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">none</span></div>') + '</div>');
+  } else {
+    const pb = n.producedBy || [], cb = n.consumedBy || [];
+    rows.push('<div class="insp-row" style="justify-content:flex-start"><span class="badge '+(n.kind === 'item' ? 'b-info' : 'b-dim')+'">'+esc(n.kind === 'item' ? 'Item' : 'Unknown')+'</span>'+(n.itemType ? '<span class="badge b-dim" style="flex:none">'+esc(n.itemType)+'</span>' : '')+'</div>');
+    rows.push('<div class="insp-sec"><div class="insp-title">Produced by · '+pb.length+'</div>' +
+      (pb.length ? pb.map(id => '<div class="insp-row"><span>'+esc(id)+'</span></div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">nothing crafts this</span></div>') + '</div>');
+    rows.push('<div class="insp-sec"><div class="insp-title">Consumed by · '+cb.length+'</div>' +
+      (cb.length ? cb.map(id => '<div class="insp-row"><span>'+esc(id)+'</span></div>').join('') : '<div class="insp-row"><span style="color:var(--faint)">used by nothing</span></div>') + '</div>');
+  }
+  return '<div style="display:flex;flex-direction:column;gap:6px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b class="mono" style="font-size:12.5px;word-break:break-all">'+esc(n.id)+'</b></div>' +
+    '<div style="font-size:11px;color:var(--faint);font-family:var(--font-mono)">'+(n.name && n.name !== n.id ? esc(n.name) : '—')+'</div>' +
+    rows.join('') +
+    '<div class="insp-actions">' +
+      '<button class="btn sm primary" data-act="chain-root" data-id="'+esc(n.id)+'">'+ICONS.spark+' Root graph here</button>' +
+      '<button class="btn sm ghost" data-act="chain-copy-id" data-id="'+esc(n.id)+'" style="border:1px solid var(--stroke)">'+ICONS.copy+' Copy id</button>' +
+      '<button class="btn sm ghost" data-act="chain-copy-json" data-id="'+esc(n.id)+'" style="border:1px solid var(--stroke)">'+ICONS.doc+' Copy JSON</button>' +
+    '</div></div>';
+}
+function chainInspPaint(){
+  const box = $('#chainInsp'); if (!box) return;
+  const n = S.chain.layout && S.chain.layout.byId.get(S.chain.insp);
+  box.innerHTML = n ? chainInspHTML(n) : '<div style="color:var(--faint);font-size:12.5px">Click any node to inspect it.</div>';
+}
+function chainMarkSel(id){
+  $$('#chainG [data-act="chain-node"]').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+}
+function chainTransformStr(){
+  return 'translate('+S.chain.pan.x+','+S.chain.pan.y+') scale('+S.chain.zoom+')';
+}
+function chainFit(){
+  const L = S.chain.layout; if (!L) return;
+  const wrap = $('#chainSvgWrap'); if (!wrap) return;
+  const W = (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80;
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
+  const z = Math.max(0.2, Math.min(2.5, Math.min(cw / W, ch / CHAIN_H) * 0.94));
+  S.chain.zoom = z;
+  S.chain.pan.x = (cw - W * z) / 2;
+  S.chain.pan.y = (ch - CHAIN_H * z) / 2;
+  chainPaint();
+}
+function chainZoom(f){
+  const wrap = $('#chainSvgWrap'); if (!wrap) return;
+  const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || CHAIN_H;
+  const z = Math.max(0.2, Math.min(3, S.chain.zoom * f));
+  const cx = (cw / 2 - S.chain.pan.x) / S.chain.zoom, cy = (ch / 2 - S.chain.pan.y) / S.chain.zoom;
+  S.chain.zoom = z;
+  S.chain.pan.x = cw / 2 - cx * z;
+  S.chain.pan.y = ch / 2 - cy * z;
+  chainPaint();
+}
+function bindChainSvg(){
+  const svg = $('#chainSvg'); if (!svg) return;
+  let drag = null;
+  svg.addEventListener('pointerdown', e => {
+    if (e.target.closest('[data-act]')) return;
+    drag = { x: e.clientX, y: e.clientY, px: S.chain.pan.x, py: S.chain.pan.y };
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('dragging');
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!drag) return;
+    S.chain.pan.x = drag.px + e.clientX - drag.x;
+    S.chain.pan.y = drag.py + e.clientY - drag.y;
+    const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
+  });
+  const endDrag = () => { drag = null; svg.classList.remove('dragging'); };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+  svg.addEventListener('wheel', e => {
+    const wrap = $('#chainSvgWrap');
+    const cw = wrap ? wrap.clientWidth : 600, ch = wrap ? wrap.clientHeight : CHAIN_H;
+    if (e.ctrlKey || e.metaKey){
+      e.preventDefault();
+      chainZoom(e.deltaY < 0 ? 1.12 : 0.89);
+      return;
+    }
+    const L = S.chain.layout;
+    const W = L ? (L.up.length + 1 + L.dn.length) * CHAIN_COLW + 80 : 0;
+    const overW = W * S.chain.zoom > cw, overH = CHAIN_H * S.chain.zoom > ch;
+    if ((e.shiftKey && overW) || (!e.shiftKey && overH)){
+      e.preventDefault();
+      S.chain.pan.x -= e.shiftKey ? e.deltaY : 0;
+      S.chain.pan.y += e.shiftKey ? 0 : e.deltaY;
+      const g = $('#chainG'); if (g) g.setAttribute('transform', chainTransformStr());
+    }
+  }, { passive:false });
+}
+async function chainDropSearch(v){
+  try {
+    const [ir, rr] = await Promise.all([
+      rpc('tools/call', { name:'search_vanilla', arguments:{ query:v, type:'item', limit:6 } }).catch(() => null),
+      rpc('tools/call', { name:'search_vanilla', arguments:{ query:v, type:'recipe', limit:6 } }).catch(() => null),
+    ]);
+    const list = [];
+    const push = (sc, type) => { for (const r of (sc && sc.results) || []) if (!list.find(x => x.id === r.id)) list.push({ id:r.id, type, name:r.displayName || r.name || r.id }); };
+    push(ir && ir.result && ir.result.structuredContent, 'item');
+    push(rr && rr.result && rr.result.structuredContent, 'recipe');
+    const drop = $('#chainDrop');
+    const f = $('#chainSeed');
+    if (!drop || !f || f.value.trim() !== v) return;
+    if (!list.length){
+      drop.innerHTML = '<div class="chain-drop-empty">No matches for “'+esc(v)+'” — paste an exact id and press Enter.</div>';
+      drop.hidden = false;
+      return;
+    }
+    drop.innerHTML = list.map(x => '<button type="button" class="chain-drop-item" data-act="chain-sel" data-id="'+esc(x.id)+'"><span class="mono">'+esc(x.id)+'</span><span class="badge '+(x.type === 'recipe' ? 'b-info' : 'b-dim')+'" style="margin-left:auto;flex:none">'+esc(x.type)+'</span></button>').join('');
+    drop.hidden = false;
+  } catch (e){ /* autocomplete is best-effort */ }
+}
+function chainDropClose(){ const d = $('#chainDrop'); if (d) d.hidden = true; }
+
 /* ==================== SETTINGS ==================== */
 const SWATCHES = ['#22D3EE','#A78BFA','#34D399','#FBBF24','#FB7185'];
 function switchRow(key, checked, label, sub){
@@ -2061,7 +2597,7 @@ function settingsHTML(){
       '<div class="krow"><span class="k">Server</span><span class="v">'+esc((S.serverInfo?.name||'pz-mcp-server')+' v'+(S.serverInfo?.version||'—'))+'</span></div>' +
       '<div class="krow"><span class="k">Protocol</span><span class="v">'+esc(S.protocol||'—')+'</span></div>' +
       '<div class="krow"><span class="k">Transport</span><span class="v">stdio ⇄ bridge ⇄ SSE/HTTP</span></div>' +
-      '<div class="krow"><span class="k">Shortcuts</span><span class="v"><span class="kbd">1–5</span> tabs · <span class="kbd">T</span> terminal · <span class="kbd">Esc</span> close</span></div>' +
+      '<div class="krow"><span class="k">Shortcuts</span><span class="v"><span class="kbd">1–6</span> tabs · <span class="kbd">T</span> terminal · <span class="kbd">Esc</span> close</span></div>' +
       '<div class="krow"><span class="k">Source</span><span class="v"><a class="link" href="https://github.com/shakoorpour1991-sketch/pz-mcp-server" target="_blank" rel="noopener">repository ↗</a></span></div>' +
     '</section></div>';
 }
@@ -2313,6 +2849,33 @@ document.addEventListener('click', e => {
       if (key === 'reduceMotion') document.documentElement.classList.toggle('rm', S.settings.reduceMotion);
       if (key === 'follow'){ const fb = $('#termFollow'); if (fb){ fb.classList.toggle('on', S.settings.follow); fb.setAttribute('aria-pressed', String(S.settings.follow)); } }
     }
+    else if (a === 'chain-run') chainRun();
+    else if (a === 'chain-chip' || a === 'chain-sugg' || a === 'chain-conf') chainRun(act.dataset.id);
+    else if (a === 'chain-sel'){
+      const f = $('#chainSeed'); if (f) f.value = act.dataset.id;
+      chainDropClose(); chainRun(act.dataset.id);
+    }
+    else if (a === 'chain-dir'){
+      S.chain.direction = act.dataset.v;
+      $$('.chain-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === S.chain.direction));
+      if (S.chain.seed) chainRun();
+    }
+    else if (a === 'chain-conflicts') chainConflicts();
+    else if (a === 'chain-conf-clear'){ S.chain.conflicts = null; renderChain(); }
+    else if (a === 'chain-node'){ S.chain.insp = act.dataset.id; chainInspPaint(); chainMarkSel(act.dataset.id); }
+    else if (a === 'chain-root') chainRun(act.dataset.id);
+    else if (a === 'chain-copy-id'){
+      navigator.clipboard?.writeText(act.dataset.id).then(() => toast('Copied '+act.dataset.id)).catch(() => toast('Copy blocked by browser','warn'));
+    }
+    else if (a === 'chain-copy-json'){
+      const n = S.chain.graph && S.chain.graph.nodes.find(x => x.id === act.dataset.id);
+      if (n) navigator.clipboard?.writeText(JSON.stringify(n, null, 2)).then(() => toast('Node JSON copied')).catch(() => toast('Copy blocked by browser','warn'));
+      else toast('Node data not available','warn');
+    }
+    else if (a === 'chain-more'){ S.chain.expLayers[act.dataset.key] = true; chainPaint(); }
+    else if (a === 'chain-zoomin') chainZoom(1.25);
+    else if (a === 'chain-zoomout') chainZoom(0.8);
+    else if (a === 'chain-fit') chainFit();
     return;
   }
   if (t.id === 'helpModal'){ closeHelp(); return; }
@@ -2334,6 +2897,20 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target;
+  if (t.id === 'chainSeed'){
+    clearTimeout(S.chain.dropTimer);
+    const v = t.value.trim();
+    if (v.length < 3){ chainDropClose(); return; }
+    S.chain.dropTimer = setTimeout(() => chainDropSearch(v), 220);
+    return;
+  }
+  if (t.id === 'chainDepth'){
+    S.chain.depth = Math.max(1, Math.min(6, parseInt(t.value, 10) || 2));
+    const l = $('#chainDepthVal'); if (l) l.textContent = String(S.chain.depth);
+    clearTimeout(S.chain.depthTimer);
+    S.chain.depthTimer = setTimeout(() => { if (S.chain.seed) chainRun(); }, 450);
+    return;
+  }
   if (t.id === 'pgFilter'){
     S.pg.query = t.value;
     const clearBtn = $('.pg-search .pg-clear');
@@ -2382,6 +2959,14 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inField.id === 'dbQuery'){ e.preventDefault(); dbSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsQuery'){ e.preventDefault(); wsSearch(); }
     else if (e.key === 'Enter' && inField.id === 'wsId'){ e.preventDefault(); wsFetchDetails(inField.value.trim()); }
+    else if (e.key === 'Enter' && inField.id === 'chainSeed'){
+      e.preventDefault();
+      const d = $('#chainDrop');
+      const first = d && !d.hidden ? d.querySelector('[data-act="chain-sel"]') : null;
+      if (first){ const f = $('#chainSeed'); if (f) f.value = first.dataset.id; chainRun(first.dataset.id); }
+      else chainRun();
+    }
+    else if (e.key === 'Escape' && inField.id === 'chainSeed'){ chainDropClose(); }
     else if (e.key === 'Enter' && inField.id && inField.id.startsWith('pf-')){
       if (inField.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
@@ -2390,12 +2975,13 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
+  if (e.key === 'Escape'){ const d = $('#chainDrop'); if (d && !d.hidden){ chainDropClose(); return; } }
   if (e.key === 'Escape' && term.open){ closeTerminal(); return; }
   if (e.key === 'Escape' && $('#helpModal').classList.contains('open')){ closeHelp(); return; }
   if (e.key === 'Escape' && $('#guideModal').classList.contains('open')){ closeGuide(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k >= '1' && k <= '5') switchView(VIEWS[parseInt(k,10) - 1]);
+  if (k >= '1' && k <= '6') switchView(VIEWS[parseInt(k,10) - 1]);
   else if (k === 't'){ e.preventDefault(); term.open ? closeTerminal() : openTerminal(); }
 });
 $('#tabbar').addEventListener('keydown', e => {
