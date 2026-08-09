@@ -1,0 +1,154 @@
+<svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="searchGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22D3EE;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="genGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="validGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#34D399;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#10B981;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="analyzeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FBBF24;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+    
+    <filter id="cardShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="600" height="400" fill="none"/>
+  
+  <!-- Title -->
+  <text x="300" y="35" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="#F4F5F8">Core Capabilities</text>
+  
+  <!-- Card 1: Search -->
+  <g transform="translate(30, 60)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(34,211,238,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#searchGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(34,211,238,0.15)"/>
+    <path d="M 24 30 L 28 34 L 34 28" stroke="url(#searchGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="30" cy="30" r="6" stroke="url(#searchGrad)" stroke-width="2" fill="none"/>
+    <line x1="34" y1="34" x2="38" y2="38" stroke="url(#searchGrad)" stroke-width="2" stroke-linecap="round"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Deep Search</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Full-text search across</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">vanilla items, recipes,</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">sounds, vehicles</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#22D3EE">search_vanilla()</text>
+  </g>
+  
+  <!-- Card 2: Generate -->
+  <g transform="translate(220, 60)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(167,139,250,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#genGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(167,139,250,0.15)"/>
+    <path d="M 23 26 L 30 33 L 37 26" stroke="url(#genGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="30" y1="26" x2="30" y2="38" stroke="url(#genGrad)" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="25" y1="38" x2="35" y2="38" stroke="url(#genGrad)" stroke-width="2.5" stroke-linecap="round"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Script Gen</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Generate balanced</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">items, recipes, fixings,</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">sounds, vehicles</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#A78BFA">generate_script()</text>
+  </g>
+  
+  <!-- Card 3: Validate -->
+  <g transform="translate(410, 60)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(52,211,153,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#validGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(52,211,153,0.15)"/>
+    <path d="M 25 30 L 29 34 L 37 24" stroke="url(#validGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Validation</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Catch syntax errors and</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">broken references before</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">they hit the game</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#34D399">validate_script()</text>
+  </g>
+  
+  <!-- Card 4: Analyze -->
+  <g transform="translate(30, 230)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(251,191,36,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#analyzeGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(251,191,36,0.15)"/>
+    <rect x="24" y="22" width="12" height="12" rx="2" stroke="url(#analyzeGrad)" stroke-width="2" fill="none"/>
+    <line x1="27" y1="26" x2="33" y2="32" stroke="url(#analyzeGrad)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="33" y1="26" x2="27" y2="32" stroke="url(#analyzeGrad)" stroke-width="2" stroke-linecap="round"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Mod Analysis</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Structure, balance,</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">compatibility checks in</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">one pass</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#FBBF24">analyze_mod()</text>
+  </g>
+  
+  <!-- Card 5: Recipe Graph -->
+  <g transform="translate(220, 230)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(34,211,238,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#searchGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(34,211,238,0.15)"/>
+    <circle cx="26" cy="26" r="3" fill="url(#searchGrad)"/>
+    <circle cx="34" cy="26" r="3" fill="url(#searchGrad)"/>
+    <circle cx="30" cy="34" r="3" fill="url(#searchGrad)"/>
+    <line x1="26" y1="26" x2="30" y2="34" stroke="url(#searchGrad)" stroke-width="1.5"/>
+    <line x1="34" y1="26" x2="30" y2="34" stroke="url(#searchGrad)" stroke-width="1.5"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Recipe Graphs</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Walk crafting chains</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">upstream/downstream,</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">find conflicts</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#22D3EE">analyze_recipe_chain()</text>
+  </g>
+  
+  <!-- Card 6: Workshop -->
+  <g transform="translate(410, 230)" filter="url(#cardShadow)">
+    <rect width="160" height="140" rx="12" fill="#1A1C23" stroke="rgba(167,139,250,0.2)"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="url(#genGrad)"/>
+    
+    <!-- Icon -->
+    <circle cx="30" cy="30" r="14" fill="rgba(167,139,250,0.15)"/>
+    <path d="M 23 30 L 37 30" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 26 26 L 34 26" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 26 34 L 34 34" stroke="url(#genGrad)" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="30" cy="30" r="8" stroke="url(#genGrad)" stroke-width="1.5" fill="none"/>
+    
+    <text x="30" y="65" font-family="system-ui" font-size="12" font-weight="600" fill="#F4F5F8">Workshop</text>
+    
+    <text x="30" y="85" font-family="system-ui" font-size="10" fill="#9BA1AE">Search, fetch, and</text>
+    <text x="30" y="100" font-family="system-ui" font-size="10" fill="#9BA1AE">analyze any Steam</text>
+    <text x="30" y="115" font-family="system-ui" font-size="10" fill="#9BA1AE">Workshop mod</text>
+    
+    <text x="30" y="132" font-family="monospace" font-size="9" fill="#A78BFA">workshop_analyze()</text>
+  </g>
+</svg>
