@@ -34,6 +34,10 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans
 ::selection{background:rgba(var(--accent-rgb),.35)}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
 input,select,textarea{font:inherit;color:inherit}
+/* Inline SVG icons: 1.25em by default so an unstyled icon (e.g. inside .md-p,
+ * .ws-report-head, banners) can never balloon to the browser's 300×150 default.
+ * Component rules (.btn svg, .tab svg, .ring, …) override this. */
+svg{width:1.25em;height:1.25em;flex:none;vertical-align:-0.12em}
 :focus-visible{outline:2px solid rgba(var(--accent-rgb),.95);outline-offset:2px;border-radius:10px}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:99px;border:2px solid transparent;background-clip:content-box}
@@ -328,6 +332,7 @@ main{max-width:1240px;margin:0 auto;padding:22px clamp(14px,4vw,36px) calc(var(-
 .ws-chip.score{background:rgba(52,211,153,.10);border-color:rgba(52,211,153,.35);color:#6EE7B7}
 .ws-chip.warn{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3);color:#FCD34D}
 .ws-report-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--stroke-soft);font-weight:700}
+.ws-report-head svg{width:15px;height:15px;color:rgb(var(--accent-rgb))}
 .ws-report-body{max-height:360px;overflow-y:auto;transition:max-height .3s var(--easeout)}
 .ws-report-body.expand{max-height:none}
 .md-out{margin:0;padding:16px;border-radius:14px;background:rgba(0,0,0,.30);border:1px solid var(--stroke-soft);
