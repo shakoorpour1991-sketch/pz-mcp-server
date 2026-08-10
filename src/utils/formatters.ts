@@ -56,6 +56,37 @@ export function formatRecipeSearchResults(recipes: any[]): string {
   return output;
 }
 
+/** One diagnostic line: file:line:col [CODE] message + suggestion. */
+function formatDiagnosticLine(
+  entry: any,
+  index: number,
+  withSuggestion: boolean,
+): string {
+  const location = [
+    entry.file,
+    entry.line !== undefined ? `line ${entry.line}` : undefined,
+    entry.column !== undefined ? `col ${entry.column + 1}` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(", ");
+  const locationPrefix = location ? ` (${location})` : "";
+  // ZedScripts provenance: original ports stay `[ZedScripts]`; server
+  // extensions carry the explicit `·dev_functionality` marker so agents can
+  // tell the ported checks from the deep-scan/hierarchy additions.
+  const sourceMarker =
+    entry.source === "zedscripts"
+      ? entry.provenance === "dev_functionality"
+        ? " [ZedScripts·dev_functionality]"
+        : " [ZedScripts]"
+      : "";
+  const code = entry.code ? ` [${entry.code}]` : "";
+  let line = `${index + 1}.${locationPrefix}${sourceMarker}${code} ${entry.message}\n`;
+  if (withSuggestion && entry.suggestion) {
+    line += `   💡 Suggestion: ${entry.suggestion}\n`;
+  }
+  return line;
+}
+
 export function formatValidationResults(validation: any): string {
   let output = `## Validation Results\n\n`;
 
@@ -65,13 +96,15 @@ export function formatValidationResults(validation: any): string {
     output += `❌ **Invalid** - Found ${validation.errors.length} error(s)\n\n`;
   }
 
+  if (validation.zedScripts) {
+    const z = validation.zedScripts;
+    output += `📚 ZedScripts knowledge layer: ${z.diagnostics} diagnostic(s) (source: ${z.source} @ ${z.commit})\n\n`;
+  }
+
   if (validation.errors.length > 0) {
     output += `### Errors:\n`;
     validation.errors.forEach((error: any, index: number) => {
-      output += `${index + 1}. **Line ${error.line || "unknown"}**: ${error.message}\n`;
-      if (error.suggestion) {
-        output += `   💡 Suggestion: ${error.suggestion}\n`;
-      }
+      output += formatDiagnosticLine(error, index, true);
     });
     output += "\n";
   }
@@ -79,7 +112,7 @@ export function formatValidationResults(validation: any): string {
   if (validation.warnings.length > 0) {
     output += `### Warnings:\n`;
     validation.warnings.forEach((warning: any, index: number) => {
-      output += `${index + 1}. **Line ${warning.line || "unknown"}**: ${warning.message}\n`;
+      output += formatDiagnosticLine(warning, index, true);
     });
     output += "\n";
   }
@@ -351,6 +384,78 @@ export function formatKbIndexResults(result: {
   return output;
 }
 
+export function formatJavadocsIndexResults(result: {
+  mode?: "shipped" | "source";
+  ingest: {
+    mode?: "shipped";
+    source: string;
+    output: string;
+    version: string | null;
+    classPages: number;
+    parsed: number;
+    written: number;
+    unchanged: number;
+    skippedNonClass: number;
+    removed: number;
+    errors: Array<{ file: string; message: string }>;
+  };
+  index: {
+    topics: number;
+    files: number;
+    chars: number;
+    skipped: number;
+    removed: number;
+    errors: Array<{ file: string; message: string }>;
+  };
+}): string {
+  const i = result.ingest;
+  const k = result.index;
+  const shipped = result.mode === "shipped" || i.mode === "shipped";
+  let output = `## JavaDocs Index Results\n\n`;
+  output += `- **Source**: ${i.source}\n`;
+  if (shipped) {
+    output += `- **Mode**: 📦 repo-shipped distilled markdown (no HTML re-parse — works on any machine)\n`;
+  } else {
+    output += `- **Output**: ${i.output}\n`;
+  }
+  if (i.version) output += `- **Docs version**: ${i.version}\n`;
+  if (!shipped) {
+    output += `- **Class pages discovered**: ${i.classPages}\n`;
+    output += `- **Pages parsed**: ${i.parsed}\n`;
+    output += `- **Markdown written**: ${i.written}\n`;
+    if (i.unchanged > 0) {
+      output += `- **Unchanged (skipped)**: ${i.unchanged}\n`;
+    }
+    if (i.skippedNonClass > 0) {
+      output += `- **Non-class HTML skipped**: ${i.skippedNonClass}\n`;
+    }
+    if (i.removed > 0) {
+      output += `- **Stale docs pruned**: ${i.removed}\n`;
+    }
+  }
+  output += `- **KB topics indexed**: ${k.topics} (${k.files} files, ${k.chars} chars)\n`;
+  if (k.skipped > 0) {
+    output += `- **KB skipped (unchanged)**: ${k.skipped}\n`;
+  }
+  output += `\n`;
+
+  if (i.errors.length > 0) {
+    output += `### Ingest errors (${i.errors.length}):\n`;
+    i.errors.slice(0, 20).forEach((error, index) => {
+      output += `${index + 1}. **${error.file}**: ${error.message}\n`;
+    });
+  }
+  if (k.errors.length > 0) {
+    output += `### Index errors (${k.errors.length}):\n`;
+    k.errors.slice(0, 20).forEach((error, index) => {
+      output += `${index + 1}. **${error.file}**: ${error.message}\n`;
+    });
+  }
+
+  output += `\nRun search_knowledge_base with a class or method name to query the Java API docs.`;
+  return output;
+}
+
 export function formatKbSearchResults(
   query: string,
   results: Array<{
@@ -358,6 +463,8 @@ export function formatKbSearchResults(
     title: string;
     snippet: string;
     score: number;
+    /** Source file path (javadocs results live under a javadocs-kb dir). */
+    path?: string;
   }>,
 ): string {
   if (results.length === 0) {
@@ -366,7 +473,10 @@ export function formatKbSearchResults(
 
   let output = `Found ${results.length} results for "${query}":\n\n`;
   results.forEach((r) => {
-    output += `**${r.topic}** (${r.title})\n`;
+    // Java API docs live under data/javadocs-kb/ (regenerated) or the
+    // repo-shipped knowledge-base/javadocs/ — both end in `javadocs/`.
+    const javadocs = /javadocs(?:-kb)?[\\/]/.test(r.path ?? "");
+    output += `**${r.topic}** (${r.title})${javadocs ? " 📘 JavaDocs" : ""}\n`;
     output += `  Score: ${r.score}\n`;
     // Collapse the raw content slice to a single line (qwen audit G5: the
     // old snippet.replace(/\n/g, "\n  ") was a no-op for single-line
@@ -692,7 +802,9 @@ export function formatDetectPaths(result: any): string {
   };
   const lines: string[] = [];
   lines.push("# Project Zomboid path detection");
-  lines.push(`**Platform:** \`${result.platform}\` · **Home:** \`${result.home}\``);
+  lines.push(
+    `**Platform:** \`${result.platform}\` · **Home:** \`${result.home}\``,
+  );
   lines.push("");
 
   const game = result.gameInstall?.path;
@@ -712,7 +824,12 @@ export function formatDetectPaths(result: any): string {
   const env = result.envOverrides ?? {};
   if (Object.keys(env).length > 0) {
     lines.push("");
-    lines.push("**Env overrides:** " + Object.entries(env).map(([k, v]) => `\`${k}=\`${v}\``).join(" · "));
+    lines.push(
+      "**Env overrides:** " +
+        Object.entries(env)
+          .map(([k, v]) => `\`${k}=\`${v}\``)
+          .join(" · "),
+    );
   }
   return lines.join("\n");
 }
@@ -731,13 +848,21 @@ export function formatInstallResult(r: any): string {
     const id = m.modId ? ` \`${m.modId}\`` : "";
     const ver = m.version ? ` v${m.version}` : "";
     if (m.status === "installed") {
-      out.push(`- ✅ **${m.name}**${id}${ver} → installed (${m.filesCopied ?? 0} files)`);
+      out.push(
+        `- ✅ **${m.name}**${id}${ver} → installed (${m.filesCopied ?? 0} files)`,
+      );
     } else if (m.status === "planned") {
-      out.push(`- 🔍 **${m.name}**${id}${ver} → would install to \`${m.targetPath}\``);
+      out.push(
+        `- 🔍 **${m.name}**${id}${ver} → would install to \`${m.targetPath}\``,
+      );
     } else if (m.status === "skipped") {
-      out.push(`- ⏭️ **${m.name}**${id}${ver} → skipped: ${m.reason ?? "conflict"}`);
+      out.push(
+        `- ⏭️ **${m.name}**${id}${ver} → skipped: ${m.reason ?? "conflict"}`,
+      );
     } else {
-      out.push(`- ❌ **${m.name}**${id}${ver} → failed: ${m.reason ?? "unknown error"}`);
+      out.push(
+        `- ❌ **${m.name}**${id}${ver} → failed: ${m.reason ?? "unknown error"}`,
+      );
     }
   }
   for (const w of r.warnings ?? []) {
@@ -758,8 +883,7 @@ export function formatInstallResult(r: any): string {
 export function formatModgenTemplates(templates: any[]): string {
   let out = `# Mod Generator templates (${templates.length})\n\n`;
   for (const t of templates) {
-    const maturity =
-      t.maturity === "beta" ? "🟡 beta" : "✅ ready";
+    const maturity = t.maturity === "beta" ? "🟡 beta" : "✅ ready";
     out += `## ${t.label} — ${maturity}\n`;
     out += `${t.short}\n`;
     if (t.maturityNote) out += `> ℹ️ ${t.maturityNote}\n`;
@@ -800,7 +924,35 @@ function modgenValidationBlock(v: any): string {
   for (const e of v.b42Errors ?? []) lines.push(`- 🔴 ${e}`);
   for (const w of v.b42Warnings ?? []) lines.push(`- ⚠️ B42: ${w}`);
   for (const i of v.b42Info ?? []) lines.push(`- ℹ️ ${i}`);
-  for (const w of v.scriptWarnings ?? []) lines.push(`- ⚠️ ${w}`);
+  const diags = v.scriptDiagnostics ?? [];
+  if (diags.length > 0) {
+    // Structured script diagnostics (ValidationEngine + ZedScripts layer)
+    // with file/line/column, code and the actionable suggestion.
+    for (const d of diags) {
+      const loc = [
+        d.file,
+        d.line > 0
+          ? `L${d.line}${d.column !== undefined ? `:${d.column + 1}` : ""}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const icon =
+        d.severity === "error" ? "🔴" : d.severity === "warning" ? "⚠️" : "ℹ️";
+      const prov =
+        d.provenance === "dev_functionality" ? "·dev_functionality" : "";
+      lines.push(
+        `- ${icon} ${loc ? `${loc} ` : ""}[${d.code}${prov}] ${d.message}${d.suggestion ? ` → ${d.suggestion}` : ""}`,
+      );
+    }
+    if (v.zedScripts?.source) {
+      lines.push(
+        `- ℹ️ Knowledge layer: ${v.zedScripts.source} (commit ${v.zedScripts.commit})`,
+      );
+    }
+  } else {
+    for (const w of v.scriptWarnings ?? []) lines.push(`- ⚠️ ${w}`);
+  }
   for (const e of v.projectErrors ?? []) lines.push(`- ❌ ${e}`);
   for (const w of v.projectWarnings ?? []) lines.push(`- ⚠️ ${w}`);
   if (v.note) lines.push(`- ℹ️ ${v.note}`);
@@ -819,12 +971,16 @@ export function formatModgenGenerate(r: any): string {
   const out: string[] = [];
   if (r.dryRun) {
     out.push(`# 🟡 Mod Generator dry run — \`${m.name}\``);
-    out.push(`Would create ${r.files.length} files and write the blueprint below.`);
+    out.push(
+      `Would create ${r.files.length} files and write the blueprint below.`,
+    );
   } else {
     out.push(`# ✨ Generated mod \`${m.name}\` (${m.modName})`);
     out.push(`**Location**: workspace project \`${r.project}\``);
   }
-  out.push(`**Item**: ${m.displayName} (\`${m.itemName}\` · module \`${m.module}\` · icon \`${m.icon}\`)`);
+  out.push(
+    `**Item**: ${m.displayName} (\`${m.itemName}\` · module \`${m.module}\` · icon \`${m.icon}\`)`,
+  );
   const src = r.blueprint?.statsSource;
   out.push(
     src?.kind === "vanilla"
@@ -838,7 +994,10 @@ export function formatModgenGenerate(r: any): string {
   }
   if (r.validation) out.push("", modgenValidationBlock(r.validation));
   out.push("", "### Blueprint stats", modgenStatsTable(r.blueprint));
-  out.push("", "Reopen with `modgen_blueprint`, edit stats, and `modgen_regenerate` anytime.");
+  out.push(
+    "",
+    "Reopen with `modgen_blueprint`, edit stats, and `modgen_regenerate` anytime.",
+  );
   return out.join("\n");
 }
 
@@ -857,7 +1016,9 @@ export function formatModgenBlueprint(bp: any, project: string): string {
   const m = bp.mod;
   const out: string[] = [];
   out.push(`# Mod Generator blueprint — \`${project}\``);
-  out.push(`**Template**: ${bp.template} · **Mod**: ${m.modName} (id \`${m.id}\`) · **Item**: ${m.displayName} (\`${m.itemName}\`)`);
+  out.push(
+    `**Template**: ${bp.template} · **Mod**: ${m.modName} (id \`${m.id}\`) · **Item**: ${m.displayName} (\`${m.itemName}\`)`,
+  );
   const src = bp.statsSource;
   out.push(
     src?.kind === "vanilla"

@@ -63,6 +63,10 @@ describe('KnowledgeBaseManager', () => {
       assert.ok('title' in results[0]);
       assert.ok('snippet' in results[0]);
       assert.ok('score' in results[0]);
+      // path is optional — topics indexed from real files carry it.
+      if (results[0].path !== undefined) {
+        assert.ok(typeof results[0].path === 'string');
+      }
     });
 
     test('topic filter restricts results', async () => {

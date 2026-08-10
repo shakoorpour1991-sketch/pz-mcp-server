@@ -249,11 +249,14 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
 
   test('recognizes craftRecipe blocks with B42 "key = value" properties and outputs section', async () => {
     const engine = new ValidationEngine(dbStub);
+    // `tags` is required for Build 42 craftRecipe blocks (ZedScripts
+    // pz-scripts-data knowledge) — a recipe without it now fails validation.
     const script = [
       'module TestMod',
       '{',
       '    craftRecipe Make TestPlank',
       '    {',
+      '        tags = Test;,',
       '        category = Carpenters,',
       '        timedAction = SawLog,',
       '        Time = 150,',
@@ -271,6 +274,33 @@ describe('M1 F5/F6: B42 craftRecipe validation', () => {
     const result = await engine.validateScript(script, 'recipe');
     assert.deepEqual(result.errors, []);
     assert.equal(result.isValid, true);
+  });
+
+  test('craftRecipe without the Build 42 required tags parameter errors', async () => {
+    const engine = new ValidationEngine(dbStub);
+    const script = [
+      'module TestMod',
+      '{',
+      '    craftRecipe MakePlank',
+      '    {',
+      '        Time = 150,',
+      '        inputs',
+      '        {',
+      '            item 1 Base.Log,',
+      '        }',
+      '        outputs',
+      '        {',
+      '            item 1 Base.Plank,',
+      '        }',
+      '    }',
+      '}',
+    ].join('\n');
+    const result = await engine.validateScript(script, 'recipe');
+    assert.ok(
+      result.errors.some((e) => e.code === 'MISSING_PARAMETER' && /tags/.test(e.message)),
+      JSON.stringify(result.errors),
+    );
+    assert.equal(result.isValid, false);
   });
 
   test('craftRecipe without Result property and without outputs section errors', async () => {

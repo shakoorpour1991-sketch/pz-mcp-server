@@ -1,0 +1,66 @@
+{
+  "source": {
+    "generatedBy": "scripts/_extract_vanilla_verified.mjs",
+    "gameInstall": "D:/Games/ProjectZomboid",
+    "gameVersion": "42.20",
+    "scannedFiles": 1004,
+    "note": "Block keywords and parameters observed across the real vanilla script tree that the vendored pz-scripts-data dataset does not model. The game files themselves are the newest verified Build 42 documentation, so these are accepted silently instead of being flagged as unknown — this is the 'verified game data wins' conflict resolution. Re-run scripts/_extract_vanilla_verified.mjs after a game update to refresh this file."
+  },
+  "blockKeywords": [
+    "xuiConfig"
+  ],
+  "extraParameters": {
+    "attachment": [
+      "canAttach",
+      "updateconstraint"
+    ],
+    "character_trait_definition": [
+      "GrantedTraits"
+    ],
+    "component FluidContainer": [
+      "TransferRate"
+    ],
+    "component SpriteConfig": [
+      "BreakSound",
+      "canBePadlocked",
+      "debugItem",
+      "dontNeedFrame",
+      "isPole",
+      "lightRadius",
+      "lightsourceFuel",
+      "lightsourceItem",
+      "LogicClass",
+      "needToBeAgainstWall",
+      "needWindowFrame",
+      "previousStage"
+    ],
+    "contextEntry": [
+      "customSubmenu",
+      "extraParam",
+      "icon",
+      "time"
+    ],
+    "entity": [
+      "BuildDescription",
+      "Description"
+    ],
+    "evolvedrecipe": [
+      "Ingredients",
+      "Time"
+    ],
+    "part": [
+      "hasLightsRear",
+      "recipes"
+    ],
+    "passenger": [
+      "door2",
+      "hasRoof"
+    ],
+    "physics": [
+      "radius"
+    ],
+    "vehicle": [
+      "seatNumber"
+    ]
+  }
+}

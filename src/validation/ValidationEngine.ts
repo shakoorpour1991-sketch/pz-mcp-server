@@ -6,6 +6,11 @@ import {
   countBraces,
 } from "../utils/scriptScanner.js";
 import { BlockType } from "../utils/blockTypes.js";
+import {
+  runZedScriptsDiagnostics,
+  type ZedDiagnostic,
+} from "./zedScriptsRuleEngine.js";
+import { getZedScriptsKnowledge } from "./zedScriptsKnowledge.js";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -13,6 +18,17 @@ export interface ValidationResult {
   warnings: ValidationWarning[];
   suggestions: string[];
   score: number; // 0-100 quality score
+  /**
+   * ZedScripts knowledge-layer summary (set when the layer produced
+   * diagnostics): source metadata so findings stay traceable to their
+   * upstream dataset revision (version-aware integration).
+   */
+  zedScripts?: {
+    diagnostics: number;
+    source: string;
+    commit: string;
+    datasetVersion: string;
+  };
 }
 
 export interface ValidationError {
@@ -22,6 +38,35 @@ export interface ValidationError {
   severity: "error" | "warning" | "info";
   code: string;
   suggestion?: string;
+  /** Source file, when the script was read from disk. */
+  file?: string;
+  /** Diagnostic source marker: "zedscripts" for knowledge-layer findings. */
+  source?: string;
+  /**
+   * ZedScripts-layer provenance: "ORIGINAL_ZEDSCRIPT" = verbatim port of the
+   * extension's check; "dev_functionality" = this server's extension (deep
+   * scan / hierarchy checks). Absent for the server's own core checks.
+   */
+  provenance?: string;
+  /** The offending property / block keyword (ZedScripts layer). */
+  property?: string;
+  /** The offending value (ZedScripts layer). */
+  value?: string;
+  /** What the value should have been (ZedScripts layer). */
+  expected?: string;
+}
+
+/** Options for validateScript: file provenance + ZedScripts knowledge layer. */
+export interface ScriptValidationOptions {
+  /** File the content came from — attached to diagnostics (file-scoped). */
+  filePath?: string;
+  /**
+   * Run the ZedScripts knowledge-layer diagnostics (unknown parameters,
+   * wrong values/types, deprecations, required params, commas, IDs, ...).
+   * Default true — this is the deterministic diagnostic layer for
+   * AI-generated code.
+   */
+  zedScripts?: boolean;
 }
 
 export interface ValidationWarning extends ValidationError {
@@ -182,6 +227,7 @@ export class ValidationEngine {
     content: string,
     expectedType?: string,
     strict: boolean = false,
+    options: ScriptValidationOptions = {},
   ): Promise<ValidationResult> {
     const result: ValidationResult = {
       isValid: true,
@@ -205,6 +251,37 @@ export class ValidationEngine {
       // Type consistency check
       if (expectedType) {
         this.validateTypeConsistency(blocks, expectedType, result);
+      }
+
+      // ZedScripts knowledge layer (deterministic diagnostics for
+      // AI-generated scripts): unknown/missing/duplicate parameters, wrong
+      // values and types, deprecations, missing commas, ID rules, unknown
+      // block keywords and craftRecipe input/output shapes. This extends the
+      // existing validator with the vendored ZedScripts/pz-scripts-data
+      // knowledge instead of duplicating validation logic.
+      if (options.zedScripts !== false) {
+        const zedOptions =
+          options.filePath !== undefined ? { filePath: options.filePath } : {};
+        const zedDiagnostics = runZedScriptsDiagnostics(content, zedOptions);
+        let zedCount = 0;
+        for (const diag of zedDiagnostics) {
+          const entry = this.toValidationError(diag);
+          if (diag.severity === "error") {
+            result.errors.push(entry as ValidationError);
+          } else {
+            result.warnings.push(entry as ValidationWarning);
+          }
+          zedCount++;
+        }
+        if (zedCount > 0) {
+          const knowledge = getZedScriptsKnowledge();
+          result.zedScripts = {
+            diagnostics: zedCount,
+            source: knowledge.source.source,
+            commit: knowledge.source.commitShort,
+            datasetVersion: knowledge.source.commit,
+          };
+        }
       }
 
       // Calculate final validity and score
@@ -335,6 +412,26 @@ export class ValidationEngine {
     }
 
     return results;
+  }
+
+  /** Adopt a ZedScripts-layer diagnostic into the ValidationError shape. */
+  private toValidationError(diag: ZedDiagnostic): ValidationError {
+    const entry: ValidationError = {
+      line: diag.line,
+      message: diag.message,
+      severity:
+        diag.severity === "error" ? ("error" as const) : ("warning" as const),
+      code: diag.code,
+      source: "zedscripts",
+    };
+    if (diag.column !== undefined) entry.column = diag.column;
+    if (diag.file !== undefined) entry.file = diag.file;
+    if (diag.provenance !== undefined) entry.provenance = diag.provenance;
+    if (diag.property !== undefined) entry.property = diag.property;
+    if (diag.value !== undefined) entry.value = diag.value;
+    if (diag.expected !== undefined) entry.expected = diag.expected;
+    if (diag.suggestion !== undefined) entry.suggestion = diag.suggestion;
+    return entry;
   }
 
   private parseScriptBlocks(content: string): Array<{

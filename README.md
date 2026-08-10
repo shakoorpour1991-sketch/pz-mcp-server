@@ -56,7 +56,9 @@ A typical path is:
 ### `[ SEARCH ]` Find the source material
 
 - Search parsed vanilla **items, recipes, sounds, and vehicles**.
+- **Validate AI-generated scripts** with deterministic diagnostics ported from the [ZedScripts](https://github.com/PZ-Wiki-Modding/ZedScripts) extension (unknown parameters with typo suggestions, missing required parameters, invalid values, wrong types, deprecated parameters, missing commas, malformed blocks, craftRecipe input/output issues) — `validate_script` and `analyze_mod` report file/line/column + diagnostic code + suggestion so agents can fix and revalidate. The knowledge layer covers **all 97 dataset block types** (`entity`, `model`, `fluid`, `physics`, `timedAction`, `character_trait_definition`, `component *`, …) including **nested blocks** and hierarchy checks (`WRONG_PARENT`/`MISSING_PARENT`), and `modgen_generate`/`modgen_regenerate` surface the same structured diagnostics on every generated mod. **Verified game data wins:** block keywords and parameters the real game ships but the dataset omits (`xuiConfig`, SpriteConfig extras, `part` `hasLightsRear`, …) are accepted via a mechanically regenerable vanilla-verified table (`vanillaVerified.json` + `scripts/_extract_vanilla_verified.mjs`), so the engine reports zero errors over the entire vanilla script tree — its only warnings are genuine dataset-documented deprecations.
 - Index Markdown modding documentation into a searchable knowledge base.
+- Ingest **JavaDocs** (`index_javadocs`) — the repo ships the distilled per-type API reference (`knowledge-base/javadocs/`, ~4,700 types) so indexing works on any machine with no arguments; optionally re-ingest a raw generated JavaDocs HTML tree into structured API knowledge (packages, FQNs, methods, fields, params, return types, signatures, inheritance) indexed alongside the markdown docs.
 - List indexed knowledge topics.
 - Search the Project Zomboid Steam Workshop and retrieve item details.
 
@@ -99,23 +101,23 @@ Full reference: [`docs/mod-workspace.md`](docs/mod-workspace.md).
 The server finds your Project Zomboid installation **on any machine** and can install mods for you:
 
 - **Smart detection** — game install, user-data dir, mods dir and Steam Workshop dir, resolved via env override → Steam registry → `libraryfolders.vdf` → common install paths (Windows / Linux / macOS / WSL).
-- **Mod installer** — takes a `.zip` archive **or** a mod folder and installs every mod inside it into `<home>/Zomboid/mods`: single mods, Build-42 versioned folders (`MyMod/42/…`), multi-mod workshop packs and flat zips all work. Unsafe archives (zip-slip, symlinks, macOS junk) are refused/filtered, conflicts are detected by folder name *and* `mod.info` id and skipped by default, `dryRun` previews the plan with zero disk changes, and nothing is ever overwritten unless `overwrite: true`.
+- **Mod installer** — takes a `.zip` archive **or** a mod folder and installs every mod inside it into `<home>/Zomboid/mods`: single mods, Build-42 versioned folders (`MyMod/42/…`), multi-mod workshop packs and flat zips all work. Unsafe archives (zip-slip, symlinks, macOS junk) are refused/filtered, conflicts are detected by folder name _and_ `mod.info` id and skipped by default, `dryRun` previews the plan with zero disk changes, and nothing is ever overwritten unless `overwrite: true`.
 - **Control Deck Installer tab** — drag & drop `.zip` files or whole mod folders (or browse), watch uploads → install → result badges, and override the mods directory per machine (`PZ_MODS_DIR`).
 
 <p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
 ## Tool map
 
-| Channel | Tools |
-|---|---|
-| `DISCOVERY` | `search_vanilla` · `search_knowledge_base` · `list_knowledge_topics` |
-| `SCRIPT` | `generate_script` · `validate_script` · `check_references` · `export_mod_script` |
-| `LOCAL DATA` | `parse_game_files` · `index_knowledge_base` |
-| `ANALYSIS` | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts` |
-| `WORKSHOP` | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze` |
-| `WORKSPACE` | `workspace_list` · `workspace_create` · `workspace_inspect` |
+| Channel         | Tools                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `DISCOVERY`     | `search_vanilla` · `search_knowledge_base` · `list_knowledge_topics`                              |
+| `SCRIPT`        | `generate_script` · `validate_script` · `check_references` · `export_mod_script`                  |
+| `LOCAL DATA`    | `parse_game_files` · `index_knowledge_base` · `index_javadocs`                                    |
+| `ANALYSIS`      | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts`                                |
+| `WORKSHOP`      | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze`             |
+| `WORKSPACE`     | `workspace_list` · `workspace_create` · `workspace_inspect`                                       |
 | `MOD GENERATOR` | `modgen_templates` · `modgen_generate` · `modgen_list` · `modgen_blueprint` · `modgen_regenerate` |
-| `INSTALL` | `detect_pz_paths` · `install_mod` |
+| `INSTALL`       | `detect_pz_paths` · `install_mod`                                                                 |
 
 Tools are documented as returning human-readable text alongside machine-readable MCP `structuredContent`.
 
@@ -163,10 +165,10 @@ npm start
 
 ## Compatibility
 
-| Layer | Support |
-|---|---|
-| Node.js | **≥ 22.5** — required for the built-in `node:sqlite`; earlier versions fail at runtime |
-| OS | Windows 10/11 (primary), Linux, macOS; WSL is supported for game-path detection |
+| Layer           | Support                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js         | **≥ 22.5** — required for the built-in `node:sqlite`; earlier versions fail at runtime                                                   |
+| OS              | Windows 10/11 (primary), Linux, macOS; WSL is supported for game-path detection                                                          |
 | Project Zomboid | **Build 42.20 verified** (`PZ_GAME_VERSION`) — B42 grammar: items, `craftRecipe` (inputs/outputs), evolvedrecipe, fixing, sound, vehicle |
 
 ## Example workflows
@@ -177,11 +179,14 @@ npm start
 parse_game_files        # index the vanilla game into the SQLite DB
   → search_vanilla      # find the source material (item, recipe, sound, vehicle)
   → generate_script     # create a balanced script from a template
-  → validate_script     # syntax + reference check
+  → validate_script     # syntax + reference check + ZedScripts knowledge-layer diagnostics
+  → analyze_mod          # whole-mod report: structure, scripts (per-file/line diagnostics), Lua, balance
   → export_mod_script   # dry-run, then write into a mod's media/scripts
 ```
 
 **Knowledge base**: `index_knowledge_base` once, then `search_knowledge_base` / `list_knowledge_topics` for every lookup.
+
+**Java API docs**: `index_javadocs` (no arguments) indexes the **repo-shipped distilled JavaDocs markdown** (`knowledge-base/javadocs/` — one file per API type, ~4,700 classes/interfaces/enums/records from the Unofficial PZ JavaDocs) so it works on any machine. Then `search_knowledge_base` returns Java API results alongside your markdown notes — search a class, interface, method, or field name directly. To re-ingest from a raw generated JavaDocs HTML tree (e.g. after regenerating the docs), pass `source` pointing at the tree; the pipeline recursively discovers every class page, parses it programmatically (no manual file lists), and indexes one markdown doc per type under its fully-qualified name (`zombie.iso.IsoObject`), tagged with the docs version.
 
 **Mod/recipe analysis**: `analyze_mod` for structure/Lua/balance, `analyze_recipe_chain` to walk what makes/consumes an item, `detect_recipe_conflicts` for duplicate crafting paths.
 
@@ -215,21 +220,23 @@ The server is therefore not only a search index: the same MCP surface also reach
 
 ## Configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
-| `PZ_MCP_WORKSPACE_DIR` | `<data>/workspaces` | Mod workspace root — every `workspace_*` file operation is strictly confined here |
-| `PZ_MCP_KB_PATH` | `knowledge-base/` (shipped docs) | Knowledge-base documentation path |
-| `PZ_MCP_LOG_LEVEL` | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent` |
-| `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
-| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override Project Zomboid installation detection |
-| `PZ_MODS_DIR` | `<home>/Zomboid/mods` | Where `install_mod` drops mods (also settable from the Control Deck → Installer tab) |
-| `PZ_DECK_PORT` | `8787` | Admin dashboard port |
-| `PZ_WORKSHOP_DIR` | Steam install | Workshop download target (else `<Steam>/steamapps/workshop/content/108600`) |
-| `PZ_MCP_MAX_DOWNLOAD_BYTES` | `4294967296` (4 GiB) | Workshop download size cap — larger items are refused before downloading |
-| `STEAMCMD_PATH` | common paths | Path to the `steamcmd` binary (auto-probed if unset) |
-| `STEAMCMD_USER` / `STEAMCMD_PASS` | — | Credentials for non-anonymous workshop downloads (see SteamCMD setup) |
-| `STEAMCMD_USE_CREDENTIALS` | `0` | Set to `1` to allow passing credentials to steamcmd |
+| Variable                          | Default                              | Purpose                                                                                                                 |
+| --------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `PZ_MCP_DATA_DIR`                 | `./data`                             | SQLite database directory                                                                                               |
+| `PZ_MCP_WORKSPACE_DIR`            | `<data>/workspaces`                  | Mod workspace root — every `workspace_*` file operation is strictly confined here                                       |
+| `PZ_MCP_KB_PATH`                  | `knowledge-base/` (shipped docs)     | Knowledge-base documentation path                                                                                       |
+| `PZ_MCP_JAVADOCS_PATH`            | `knowledge-base/javadocs/` (shipped) | Distilled JavaDocs markdown dir that `index_javadocs` indexes by default                                                |
+| `PZ_MCP_JAVADOCS_KB_DIR`          | `<data>/javadocs-kb`                 | Where `index_javadocs` writes re-generated per-type markdown (when `source` is provided) before indexing it into the KB |
+| `PZ_MCP_LOG_LEVEL`                | `info`                               | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`                                                |
+| `PZ_GAME_VERSION`                 | `42.20`                              | Game build for compatibility checks                                                                                     |
+| `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect                          | Override Project Zomboid installation detection                                                                         |
+| `PZ_MODS_DIR`                     | `<home>/Zomboid/mods`                | Where `install_mod` drops mods (also settable from the Control Deck → Installer tab)                                    |
+| `PZ_DECK_PORT`                    | `8787`                               | Admin dashboard port                                                                                                    |
+| `PZ_WORKSHOP_DIR`                 | Steam install                        | Workshop download target (else `<Steam>/steamapps/workshop/content/108600`)                                             |
+| `PZ_MCP_MAX_DOWNLOAD_BYTES`       | `4294967296` (4 GiB)                 | Workshop download size cap — larger items are refused before downloading                                                |
+| `STEAMCMD_PATH`                   | common paths                         | Path to the `steamcmd` binary (auto-probed if unset)                                                                    |
+| `STEAMCMD_USER` / `STEAMCMD_PASS` | —                                    | Credentials for non-anonymous workshop downloads (see SteamCMD setup)                                                   |
+| `STEAMCMD_USE_CREDENTIALS`        | `0`                                  | Set to `1` to allow passing credentials to steamcmd                                                                     |
 
 The documented game-path detection covers standard Windows locations and WSL; set `PROJECTZOMBOID_PATH` when automatic detection misses the installation.
 
@@ -241,9 +248,10 @@ The SQLite databases live in `PZ_MCP_DATA_DIR` (default `./data`):
 
 - `pz_database.db` — parsed game/mod content (items, recipes, references)
 - `pz_knowledge.db` — indexed knowledge-base docs
+- `javadocs-kb/` — re-generated per-type Java API markdown (written by `index_javadocs` when `source` is provided, then indexed into `pz_knowledge.db`); the default shipped set lives in the repo at `knowledge-base/javadocs/`
 - `workshop_metadata.json` — 24h Workshop metadata cache
 
-The databases are a **disposable cache**, not persistent user state: they are rebuilt by `parse_game_files` / `index_knowledge_base`. To reset everything, stop the server and delete the `data/` directory (or pass `forceReparse: true` to `parse_game_files` to re-parse in place). The schema is versioned internally (`PRAGMA user_version`) and migrated automatically on boot.
+The databases are a **disposable cache**, not persistent user state: they are rebuilt by `parse_game_files` / `index_knowledge_base` / `index_javadocs`. To reset everything, stop the server and delete the `data/` directory (or pass `forceReparse: true` to `parse_game_files` to re-parse in place). The schema is versioned internally (`PRAGMA user_version`) and migrated automatically on boot.
 
 ### SteamCMD setup (workshop download / analyze)
 
@@ -257,16 +265,16 @@ Downloaded mods are read/analyzed only — they are never executed and never aut
 
 ## Development
 
-| Command | Purpose |
-|---|---|
-| `npm run build` | Compile TypeScript |
-| `npm run dev` | Run with `tsx` in development mode |
-| `npm start` | Run the compiled server |
-| `npm run lint` | Run ESLint |
-| `npm test` | Build + run the full test suite (299 tests / 70 suites) |
-| `npm run coverage` | Test coverage report (after `npm test` has built) |
-| `npm run benchmark` | Hermetic DB/FTS performance baselines |
-| `npm run verify:deck` | Admin dashboard smoke check |
+| Command               | Purpose                                                 |
+| --------------------- | ------------------------------------------------------- |
+| `npm run build`       | Compile TypeScript                                      |
+| `npm run dev`         | Run with `tsx` in development mode                      |
+| `npm start`           | Run the compiled server                                 |
+| `npm run lint`        | Run ESLint                                              |
+| `npm test`            | Build + run the full test suite (460 tests / 96 suites) |
+| `npm run coverage`    | Test coverage report (after `npm test` has built)       |
+| `npm run benchmark`   | Hermetic DB/FTS performance baselines                   |
+| `npm run verify:deck` | Admin dashboard smoke check                             |
 
 ## Current boundaries
 
@@ -278,11 +286,11 @@ It also avoids unsupported performance claims and compatibility promises.
 
 MCP clients can drive tools autonomously, so the server separates capabilities into three trust tiers:
 
-| Tier | Tools | Side effects |
-|---|---|---|
-| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script`, `workspace_list`, `workspace_inspect`, `modgen_templates`, `modgen_list`, `modgen_blueprint` | None — pure inspection |
-| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script`, `workspace_create`, `modgen_generate`, `modgen_regenerate` | Writes to the DB under `PZ_MCP_DATA_DIR`, the explicitly provided mod path (path-validated), or the workspace root only — traversal/symlink-escape rejected, atomic writes, dry-run for destructive ops |
-| **EXTERNAL SIDE EFFECTS** | `workshop_download`, `workshop_analyze` | SteamCMD subprocess + downloads into `PZ_WORKSHOP_DIR`; `dryRun` preview available |
+| Tier                      | Tools                                                                                                                                                                                                                                                                                     | Side effects                                                                                                                                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **READ-ONLY**             | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script`, `workspace_list`, `workspace_inspect`, `modgen_templates`, `modgen_list`, `modgen_blueprint` | None — pure inspection                                                                                                                                                                                  |
+| **LOCAL MUTATION**        | `parse_game_files`, `index_knowledge_base`, `index_javadocs`, `export_mod_script`, `workspace_create`, `modgen_generate`, `modgen_regenerate`                                                                                                                                             | Writes to the DB under `PZ_MCP_DATA_DIR`, the explicitly provided mod path (path-validated), or the workspace root only — traversal/symlink-escape rejected, atomic writes, dry-run for destructive ops |
+| **EXTERNAL SIDE EFFECTS** | `workshop_download`, `workshop_analyze`                                                                                                                                                                                                                                                   | SteamCMD subprocess + downloads into `PZ_WORKSHOP_DIR`; `dryRun` preview available                                                                                                                      |
 
 Hardening already in place:
 
@@ -294,18 +302,19 @@ Hardening already in place:
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `Node.js >= 22.5 is required` / server exits at boot | Update Node — `node:sqlite` is built-in from 22.5 |
-| `Invalid environment configuration: PZ_MCP_LOG_LEVEL …` | Check the listed variable — values are validated at startup |
-| `SteamCMD not found` | Install SteamCMD or set `STEAMCMD_PATH` (see SteamCMD setup) |
-| `Could not determine the workshop content directory` | Set `PZ_WORKSHOP_DIR` to a writable folder |
-| `Item … is … which exceeds the configured download limit` | Raise `PZ_MCP_MAX_DOWNLOAD_BYTES` if the item is legitimately large |
-| `search_vanilla` returns nothing | Run `parse_game_files` first (the DB starts empty); use `forceReparse: true` after game updates |
-| `Could not detect Project Zomboid installation` | Set `PROJECTZOMBOID_PATH` to the install dir |
-| `Index … Database already contains data` | Pass `forceReparse: true` (or delete `data/` to reset) |
-| Stale or missing knowledge results | Re-run `index_knowledge_base` (or `overwrite: true` for a full re-index) |
-| SQLite lock errors with the dashboard open | Both processes share the DB in WAL mode; wait a moment and retry |
+| Symptom                                                   | Fix                                                                                                                   |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Node.js >= 22.5 is required` / server exits at boot      | Update Node — `node:sqlite` is built-in from 22.5                                                                     |
+| `Invalid environment configuration: PZ_MCP_LOG_LEVEL …`   | Check the listed variable — values are validated at startup                                                           |
+| `SteamCMD not found`                                      | Install SteamCMD or set `STEAMCMD_PATH` (see SteamCMD setup)                                                          |
+| `Could not determine the workshop content directory`      | Set `PZ_WORKSHOP_DIR` to a writable folder                                                                            |
+| `Item … is … which exceeds the configured download limit` | Raise `PZ_MCP_MAX_DOWNLOAD_BYTES` if the item is legitimately large                                                   |
+| `search_vanilla` returns nothing                          | Run `parse_game_files` first (the DB starts empty); use `forceReparse: true` after game updates                       |
+| `Could not detect Project Zomboid installation`           | Set `PROJECTZOMBOID_PATH` to the install dir                                                                          |
+| `Index … Database already contains data`                  | Pass `forceReparse: true` (or delete `data/` to reset)                                                                |
+| Stale or missing knowledge results                        | Re-run `index_knowledge_base` (or `overwrite: true` for a full re-index)                                              |
+| Java API search returns nothing                           | Run `index_javadocs` (no arguments — indexes the repo-shipped distilled JavaDocs; re-run after regenerating the docs) |
+| SQLite lock errors with the dashboard open                | Both processes share the DB in WAL mode; wait a moment and retry                                                      |
 
 <p align="center">
   <img src="assets/divider.svg" width="100%" height="34" alt="">

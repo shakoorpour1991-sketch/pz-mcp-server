@@ -43,6 +43,7 @@ export interface StructureAnalysis {
 export interface Issue {
   file: string;
   line?: number;
+  column?: number;
   severity: "error" | "warning" | "info";
   message: string;
   code: string;
@@ -114,6 +115,8 @@ export class ModAnalyzer {
   constructor(db: DatabaseManager, parser: ProjectZomboidParser) {
     this.db = db;
     this.parser = parser;
+    // ZedScripts knowledge layer is enabled by default (deterministic
+    // diagnostics — unknown parameters, wrong values, deprecations, ...).
     this.validator = new ValidationEngine(db);
   }
 
@@ -473,10 +476,13 @@ export class ModAnalyzer {
   ): Promise<void> {
     try {
       const content = await readFile(filePath, "utf-8");
+      // ZedScripts knowledge layer on by default (deterministic diagnostics
+      // for AI-generated scripts); file-scoped so issues carry the path.
       const validation = await this.validator.validateScript(
         content,
         undefined,
         strict,
+        { filePath, zedScripts: true },
       );
 
       // Add validation issues to result
@@ -488,6 +494,7 @@ export class ModAnalyzer {
           message: error.message,
           code: error.code,
         };
+        if (error.column !== undefined) issue.column = error.column;
         if (error.suggestion !== undefined) {
           issue.suggestion = error.suggestion;
         }
@@ -502,6 +509,7 @@ export class ModAnalyzer {
           message: warning.message,
           code: warning.code,
         };
+        if (warning.column !== undefined) issue.column = warning.column;
         if (warning.suggestion !== undefined) {
           issue.suggestion = warning.suggestion;
         }

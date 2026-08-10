@@ -5,18 +5,29 @@ import type { z } from "zod";
 import {
   ParseGameFilesSchema,
   IndexKnowledgeBaseSchema,
+  IndexJavadocsSchema,
   SearchKnowledgeBaseSchema,
   ListKnowledgeTopicsSchema,
 } from "../schemas.js";
 import type { McpTool } from "./registry.js";
 import {
+  formatJavadocsIndexResults,
   formatKbIndexResults,
   formatKbSearchResults,
   formatKbTopics,
   formatParseResults,
 } from "../utils/formatters.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { knowledgeBasePath } from "../utils/config.js";
+import { isAbsolute, relative } from "path";
+import {
+  javadocsKbDir,
+  knowledgeBasePath,
+  shippedJavadocsPath,
+} from "../utils/config.js";
+import {
+  JavaDocIndexer,
+  type JavadocsIngestResult,
+} from "../knowledge/javadocs/JavaDocIndexer.js";
 
 export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
@@ -93,6 +104,106 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
           {
             type: "text",
             text: `Successfully indexed knowledge base from: ${resolvedPath}\n\n${formatKbIndexResults(result)}`,
+          },
+        ],
+        structuredContent: structuredClone(result),
+      };
+    },
+  },
+  {
+    name: "index_javadocs",
+    description:
+      "Index Java API docs into the knowledge base so search_knowledge_base returns class/interface/method results alongside markdown notes. With no source, the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs — one file per API type from the Unofficial PZ JavaDocs) is indexed directly, so it works on any machine. With source, a raw generated JavaDoc HTML tree is re-ingested: class pages are discovered by generator marker, parsed into structured API knowledge (package, type, FQN, constructors, methods, fields, params, return types, signatures, inheritance, descriptions), rendered as markdown, then indexed. Re-runnable — unchanged pages are skipped",
+    inputSchema: IndexJavadocsSchema,
+    handler: async (args, ctx) => {
+      // output only makes sense with an explicit source (re-ingest); with no
+      // source the repo-shipped distilled markdown is indexed in place.
+      if (args.output && !args.source) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "output requires source — with no source the repo-shipped distilled markdown is indexed directly",
+        );
+      }
+      const rawOutput = args.output || javadocsKbDir();
+
+      // Resolve the input: an explicit raw HTML javadocs tree (re-ingest) or
+      // the repo-shipped distilled markdown (default — works on any machine).
+      let sourcePath: string;
+      let outputPath: string | undefined;
+      try {
+        if (args.source) {
+          sourcePath = ctx.pathManager.validateInputPath(args.source, "dir");
+          outputPath = JavaDocIndexer.validateOutputDir(rawOutput);
+          // Never write generated docs into the source tree itself.
+          const rel = relative(sourcePath, outputPath);
+          if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+            throw new Error(
+              `output must not be inside the javadocs source directory: ${outputPath}`,
+            );
+          }
+        } else {
+          // No source: index the repo-shipped distilled markdown directly.
+          sourcePath = ctx.pathManager.validateInputPath(
+            shippedJavadocsPath(),
+            "dir",
+          );
+        }
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Invalid javadocs path: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
+      let ingest:
+        | JavadocsIngestResult
+        | {
+            mode: "shipped";
+            source: string;
+            output: string;
+            version: null;
+            classPages: number;
+            parsed: number;
+            written: number;
+            unchanged: number;
+            skippedNonClass: number;
+            removed: number;
+            errors: Array<{ file: string; message: string }>;
+          };
+      if (args.source) {
+        // outputPath is always assigned on this branch (validated above).
+        ingest = await new JavaDocIndexer().ingest(sourcePath, outputPath!);
+      } else {
+        // Shipped mode: no HTML re-parse — the markdown is already distilled.
+        ingest = {
+          mode: "shipped",
+          source: sourcePath,
+          output: sourcePath,
+          version: null,
+          classPages: 0,
+          parsed: 0,
+          written: 0,
+          unchanged: 0,
+          skippedNonClass: 0,
+          removed: 0,
+          errors: [],
+        };
+      }
+      const indexDir = args.source ? outputPath! : sourcePath;
+      const index = await ctx.knowledgeBaseManager.indexDirectory(indexDir, {
+        overwrite: args.overwrite,
+      });
+
+      const result = {
+        mode: (args.source ? "source" : "shipped") as "source" | "shipped",
+        ingest,
+        index,
+      };
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatJavadocsIndexResults(result),
           },
         ],
         structuredContent: structuredClone(result),

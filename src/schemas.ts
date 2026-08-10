@@ -113,11 +113,31 @@ export const GenerateScriptSchema = z.object({
     .describe("Include explanatory comments in the generated script"),
 });
 
-export const ValidateScriptSchema = z.object({
-  content: z.string().max(1_000_000).describe("Script content to validate"),
-  type: z.enum(BLOCK_TYPES).optional().describe("Expected script type"),
-  strict: z.boolean().default(false).describe("Enable strict validation mode"),
-});
+export const ValidateScriptSchema = z
+  .object({
+    content: z
+      .string()
+      .max(1_000_000)
+      .optional()
+      .describe(
+        "Script content to validate (required unless filePath is provided)",
+      ),
+    filePath: z
+      .string()
+      .max(4096)
+      .optional()
+      .describe(
+        "Absolute path to a .txt script file to validate — read from disk (content is ignored when filePath is provided); every diagnostic is then scoped to this file",
+      ),
+    type: z.enum(BLOCK_TYPES).optional().describe("Expected script type"),
+    strict: z
+      .boolean()
+      .default(false)
+      .describe("Enable strict validation mode"),
+  })
+  .refine((v) => v.content !== undefined || v.filePath !== undefined, {
+    message: "Either content or filePath is required",
+  });
 
 export const CheckReferencesSchema = z.object({
   references: z
@@ -280,6 +300,30 @@ export const ExportModScriptSchema = z.object({
     ),
 });
 
+export const IndexJavadocsSchema = z.object({
+  source: z
+    .string()
+    .min(1)
+    .max(4096)
+    .optional()
+    .describe(
+      "Optional path to a raw generated JavaDoc directory (the tree containing package folders + *.html class pages) to re-ingest from HTML. When omitted, the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs — one file per API type, extracted from the Unofficial PZ JavaDocs) is indexed directly, so index_javadocs works on any machine out of the box",
+    ),
+  output: z
+    .string()
+    .max(4096)
+    .optional()
+    .describe(
+      "Directory for the generated per-type markdown docs (default: PZ_MCP_JAVADOCS_KB_DIR env or <data>/javadocs-kb); only used when source is provided; then indexed into the knowledge base",
+    ),
+  overwrite: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Full re-index of the docs into the KB. Set to false for an mtime-based incremental sync (unchanged docs skipped)",
+    ),
+});
+
 export const SearchKnowledgeBaseSchema = z.object({
   query: z
     .string()
@@ -414,7 +458,10 @@ export const ModgenGenerateSchema = z.object({
   module: z
     .string()
     .max(64)
-    .regex(/^[A-Za-z0-9_]+$/, "Module names are alphanumeric (letters, digits, underscores)")
+    .regex(
+      /^[A-Za-z0-9_]+$/,
+      "Module names are alphanumeric (letters, digits, underscores)",
+    )
     .default("Base")
     .describe("Script module (default Base — item id is then just itemName)"),
   stats: z
@@ -470,22 +517,27 @@ export const ModgenRegenerateSchema = z.object({
     .min(1)
     .max(256)
     .optional()
-    .describe("New in-game item name (written into the ItemName translation file)"),
+    .describe(
+      "New in-game item name (written into the ItemName translation file)",
+    ),
   icon: z
     .string()
     .max(128)
     .optional()
-    .describe("New icon (vanilla texture to reuse, or a custom name — a generated placeholder texture is then shipped)"),
+    .describe(
+      "New icon (vanilla texture to reuse, or a custom name — a generated placeholder texture is then shipped)",
+    ),
   module: z
     .string()
     .max(64)
-    .regex(/^[A-Za-z0-9_]+$/, "Module names are alphanumeric (letters, digits, underscores)")
+    .regex(
+      /^[A-Za-z0-9_]+$/,
+      "Module names are alphanumeric (letters, digits, underscores)",
+    )
     .optional()
     .describe("New script module"),
   stats: z
-    .record(
-      z.union([z.number(), z.string(), z.boolean(), z.null()]),
-    )
+    .record(z.union([z.number(), z.string(), z.boolean(), z.null()]))
     .optional()
     .describe(
       "Stat patch keyed by property name; a null value resets that stat back to auto",
@@ -607,6 +659,7 @@ export const TOOL_SCHEMAS = {
   analyze_mod: AnalyzeModSchema,
   parse_game_files: ParseGameFilesSchema,
   index_knowledge_base: IndexKnowledgeBaseSchema,
+  index_javadocs: IndexJavadocsSchema,
   analyze_recipe_chain: AnalyzeRecipeChainSchema,
   detect_recipe_conflicts: DetectRecipeConflictsSchema,
   export_mod_script: ExportModScriptSchema,

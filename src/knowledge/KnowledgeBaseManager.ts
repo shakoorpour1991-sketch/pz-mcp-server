@@ -18,7 +18,12 @@ export class KnowledgeBaseManager {
   ) {
     // Directories/files skipped by collectMdFiles (qwen audit G5: were
     // hard-coded to ["wiki", "AdvancedGenerators"] + "README.md").
-    this.skipDirs = options?.skipDirs ?? ["AdvancedGenerators"];
+    // `javadocs` is excluded from the generic KB walk: the shipped distilled
+    // JavaDocs markdown lives at knowledge-base/javadocs/ and is indexed by
+    // the dedicated index_javadocs tool (which defaults to it), keeping the
+    // two tools' responsibilities distinct and index_knowledge_base's default
+    // scope unchanged (~200 docs, not ~4,900).
+    this.skipDirs = options?.skipDirs ?? ["AdvancedGenerators", "javadocs"];
     this.skipFiles = options?.skipFiles ?? ["README.md"];
     if (dataDir) {
       this.dbPath = join(dataDir, "pz_knowledge.db");
@@ -241,7 +246,14 @@ export class KnowledgeBaseManager {
     query: string,
     opts?: { topic?: string; limit?: number },
   ): Promise<
-    Array<{ topic: string; title: string; snippet: string; score: number }>
+    Array<{
+      topic: string;
+      title: string;
+      snippet: string;
+      score: number;
+      /** Source file path — javadocs results live under a javadocs-kb dir. */
+      path?: string;
+    }>
   > {
     const sanitized = this.sanitizeFtsQuery(query);
     if (sanitized.length === 0) {
@@ -254,7 +266,7 @@ export class KnowledgeBaseManager {
     // FTS5: bm25() is a scalar ranking function taking the table name.
     // It returns more-negative = more relevant; ASC surfaces best matches.
     let sql = `
-      SELECT k.topic, k.title, k.content, bm25(knowledge_fts) AS rank
+      SELECT k.topic, k.title, k.content, k.file_path, bm25(knowledge_fts) AS rank
       FROM knowledge_fts
       JOIN knowledge_docs k ON k.rowid = knowledge_fts.rowid
       WHERE knowledge_fts MATCH ?
@@ -273,6 +285,7 @@ export class KnowledgeBaseManager {
       topic: string;
       title: string;
       content: string;
+      file_path: string | null;
       rank: number;
     }>;
 
@@ -281,12 +294,20 @@ export class KnowledgeBaseManager {
     return rows.map((row) => {
       const snippet = this.buildSnippet(row.content, firstTerm);
       const score = Math.round(-row.rank * 1000) / 1000;
-      return {
+      const result: {
+        topic: string;
+        title: string;
+        snippet: string;
+        score: number;
+        path?: string;
+      } = {
         topic: row.topic,
         title: row.title,
         snippet,
         score,
       };
+      if (row.file_path !== null) result.path = row.file_path;
+      return result;
     });
   }
 
@@ -354,8 +375,13 @@ export class KnowledgeBaseManager {
   }
 
   close(): void {
+    // Idempotent: a second close (e.g. a test cleanup finally after an
+    // explicit close) must not throw on an already-closed handle. Nulling
+    // the field makes later close() calls no-ops and releases the file
+    // handle on Windows so temp dirs can be removed.
     if (this.db) {
       this.db.close();
+      this.db = undefined as unknown as DatabaseSync;
     }
   }
 

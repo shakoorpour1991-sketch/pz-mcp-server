@@ -19,13 +19,13 @@ Hermes references this file in every task prompt sent to OpenCode for this repo.
 
 ## Commands (canonical verify steps — run exactly these)
 
-| Purpose | Command |
-|---|---|
-| Compile | `npm run build` |
-| Tests (build + node:test) | `npm test` — 205 tests, 52 suites, must stay green |
-| Lint | `npm run lint` |
-| Format | `npm run format` |
-| Run server | `npm start` (compiled) / `npm run dev` (tsx) |
+| Purpose                   | Command                                            |
+| ------------------------- | -------------------------------------------------- |
+| Compile                   | `npm run build`                                    |
+| Tests (build + node:test) | `npm test` — 460 tests, 96 suites, must stay green |
+| Lint                      | `npm run lint`                                     |
+| Format                    | `npm run format`                                   |
+| Run server                | `npm start` (compiled) / `npm run dev` (tsx)       |
 
 Always run build + tests + lint before declaring a task done. Tests run on Node's built-in runner (`node --test "tests/**/*.test.js"`) — no Jest, no `--experimental-vm-modules`.
 
@@ -35,7 +35,7 @@ Always run build + tests + lint before declaring a task done. Tests run on Node'
 - `generators/` — script generation templates (`generate_script` tool: item/recipe/fixing/sound/evolvedrecipe/vehicle)
 - `validation/` — script syntax + reference validation (`validate_script`, `check_references`)
 - `database/` — SQLite layer (built-in `node:sqlite`)
-- `knowledge/` — knowledge-base indexing/search (FTS5 + bm25): `index_knowledge_base`, `search_knowledge_base`, `list_knowledge_topics`
+- `knowledge/` — knowledge-base indexing/search (FTS5 + bm25): `index_knowledge_base`, `search_knowledge_base`, `list_knowledge_topics`; `knowledge/javadocs/` — the `index_javadocs` pipeline (recursive class-page discovery by generator meta, dependency-free HTML parser, markdown renderer into the KB representation)
 - `analyzers/` — mod analysis (`analyze_mod`: structure, Lua syntax, balance, deprecated APIs) + recipe graph (`RecipeAnalyzer`: `analyze_recipe_chain`, `detect_recipe_conflicts`)
 - `utils/` — shared helpers (incl. `scriptSyntax.ts` — script-property parsing; `scriptScanner.ts` — shared block scanner used by parser/validator; `fts.ts` — shared FTS sanitizer; `config.ts` — env centralization; `blockTypes.ts` — the six block types, single source of truth)
 - `index.ts` — MCP server bootstrap + tool registration (zod schemas)
@@ -45,7 +45,7 @@ Always run build + tests + lint before declaring a task done. Tests run on Node'
 - **MCP stdio protocol**: stdout is the wire. The pino logger writes **stderr-only (fd 2)** — never print anything to stdout.
 - Game data for `parse_game_files`: Project Zomboid **Build 42.20** install at `D:\Games\ProjectZomboid\`. Path detection: hardcoded Windows paths, WSL paths, or explicit `gamePath` param.
 - Modding knowledge base docs are indexed with `index_knowledge_base`. The default is the repo-shipped `knowledge-base/` directory (portable — no machine-specific path); override with `PZ_MCP_KB_PATH`. This machine also has a personal docs copy at `D:\PZ-Modding\Documentation\`.
-- Workspace status (Aug 2026): 205/205 tests green (node:test runner, 52 suites), lint+build clean, `npm audit` 0 vulnerabilities.
+- Workspace status (Aug 2026): 460/460 tests green (node:test runner, 96 suites), lint+build clean, `npm audit` 0 vulnerabilities.
 
 ## Conventions
 

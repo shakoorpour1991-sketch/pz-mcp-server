@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-zed-data.mjs",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "dashboard": "node admin/bridge.mjs",

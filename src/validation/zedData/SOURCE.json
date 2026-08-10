@@ -1,0 +1,9 @@
+{
+  "source": "https://github.com/pz-wiki-modding/pz-scripts-data",
+  "dataset": "out/scriptsBlocks.json + out/roots.json + out/itemParameters.json",
+  "vendoredBy": "scripts/port_zed_scripts_data.mjs",
+  "vendoredAt": "2026-08-10T16:39:44.335Z",
+  "commit": "f531bb10f7077df3cb4f3c39630801cd89eee6c2",
+  "commitShort": "f531bb1",
+  "note": "Machine-readable Project Zomboid scripts knowledge bundled by the ZedScripts extension (https://github.com/PZ-Wiki-Modding/ZedScripts). Build 42 focused. This server treats it as a validation/diagnostic knowledge source; where it conflicts with this server's own Build 42.20-verified checks (e.g. required ItemType), the verified checks win and the data only adds diagnostics that do not contradict them."
+}

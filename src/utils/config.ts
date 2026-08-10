@@ -18,6 +18,13 @@ import { z } from "zod";
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 /** The repo's shipped research docs — the portable knowledge-base default. */
 const SHIPPED_KB_PATH = join(MODULE_DIR, "..", "..", "knowledge-base");
+/**
+ * The repo's shipped distilled JavaDocs markdown (one file per API type, e.g.
+ * `zombie.iso.IsoObject.md`) — the portable default input for index_javadocs
+ * so it works out of the box on any machine (no game install, no raw HTML
+ * javadocs tree required).
+ */
+const SHIPPED_JAVADOCS_PATH = join(SHIPPED_KB_PATH, "javadocs");
 
 /** Max allowed workshop download size in bytes (PZ_MCP_MAX_DOWNLOAD_BYTES). */
 export const DEFAULT_MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GiB
@@ -31,6 +38,10 @@ export const EnvSchema = z.object({
   PZ_MCP_DATA_DIR: z.string().min(1).optional(),
   PZ_MCP_WORKSPACE_DIR: z.string().min(1).optional(),
   PZ_MCP_KB_PATH: z.string().min(1).optional(),
+  /** Shipped distilled JavaDocs markdown dir used as index_javadocs default. */
+  PZ_MCP_JAVADOCS_PATH: z.string().min(1).optional(),
+  /** Where the javadocs ingestion pipeline writes generated markdown docs. */
+  PZ_MCP_JAVADOCS_KB_DIR: z.string().min(1).optional(),
   PZ_MCP_LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
     .optional(),
@@ -109,6 +120,29 @@ export function knowledgeDbPath(): string {
  */
 export function knowledgeBasePath(): string {
   return validateEnvConfig().PZ_MCP_KB_PATH || SHIPPED_KB_PATH;
+}
+
+/**
+ * The repo-shipped distilled JavaDocs markdown directory (index_javadocs
+ * default). One markdown file per API type, extracted from the Unofficial PZ
+ * JavaDocs HTML tree and shipped with the repository so index_javadocs works
+ * on any machine. Override with PZ_MCP_JAVADOCS_PATH to point at a different
+ * distilled set (e.g. your own regenerated copy).
+ */
+export function shippedJavadocsPath(): string {
+  return validateEnvConfig().PZ_MCP_JAVADOCS_PATH || SHIPPED_JAVADOCS_PATH;
+}
+
+/**
+ * Output directory for the javadocs ingestion pipeline (index_javadocs):
+ * generated per-type markdown docs that are then indexed into the KB like
+ * any other documentation. Override with PZ_MCP_JAVADOCS_KB_DIR; default
+ * sits next to the SQLite data so the server stays self-contained.
+ */
+export function javadocsKbDir(): string {
+  return (
+    validateEnvConfig().PZ_MCP_JAVADOCS_KB_DIR || join(dataDir(), "javadocs-kb")
+  );
 }
 
 /** pino log level. Override with PZ_MCP_LOG_LEVEL. */

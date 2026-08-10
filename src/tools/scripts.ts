@@ -3,7 +3,7 @@
  */
 import type { z } from "zod";
 import { join } from "path";
-import { mkdir, writeFile, rename, rm } from "fs/promises";
+import { mkdir, writeFile, rename, rm, readFile } from "fs/promises";
 import { randomUUID } from "crypto";
 import {
   GenerateScriptSchema,
@@ -54,14 +54,28 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "validate_script",
     description:
-      "Validate Project Zomboid script syntax and references with detailed error reporting",
+      "Validate Project Zomboid script syntax, structure and references with detailed error reporting — includes the ZedScripts knowledge-layer diagnostics (unknown parameters, wrong values/types, deprecations, required parameters, missing commas, malformed blocks, craftRecipe input/output issues) to catch AI-generated code that looks plausible but is invalid. Pass filePath to validate a script on disk (diagnostics are then file-scoped and include the absolute path)",
     inputSchema: ValidateScriptSchema,
     handler: async (args, ctx) => {
-      const { content, type, strict } = args;
+      const { content, filePath, type, strict } = args;
+      let script = content;
+      if (filePath !== undefined) {
+        let safePath: string;
+        try {
+          safePath = ctx.pathManager.validateInputPath(filePath, "file");
+        } catch (err) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Invalid filePath: ${(err as Error).message}`,
+          );
+        }
+        script = await readFile(safePath, "utf-8");
+      }
       const validation = await ctx.validator.validateScript(
-        content,
+        script ?? "",
         type,
         strict,
+        { filePath },
       );
 
       return {
