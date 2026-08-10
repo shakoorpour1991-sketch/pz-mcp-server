@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mod Workspace / Project Manager** — a rooted, safety-first project abstraction (`src/workspace/WorkspaceManager.ts`) plus an 11-tool `workspace_*` family: `workspace_list`, `workspace_create` (B42 scaffold: mod.info/workshop.txt/poster.png/common + versioned media, optional generated starter item script via `generate_script`), `workspace_inspect` (reuses `ModAnalyzer`), `workspace_status`, `workspace_validate` (missing id/name, duplicate keys, B42 layout, dependency resolution via the DB mods table), `workspace_list_files`, `workspace_read_file`, `workspace_write_file`, `workspace_patch_file`, `workspace_delete_file`, `workspace_rename_file`. Safety: root confinement (`PZ_MCP_WORKSPACE_DIR`, default `<data>/workspaces`), `..`/absolute/null-byte rejection, symlink/junction escape detection, atomic writes, no silent overwrites, `force` + `dryRun` for destructive ops, and `WorkspaceError` codes mapped to MCP error categories via `toMcpError`
+- **Workspace test suite** — `tests/unit/workspaceManager.unit.test.js` (47 tests): scaffolding, atomic writes, patch all-or-nothing, delete/rename guards, traversal + symlink-escape security, invalid-mod detection, dependency resolution, and the valid B42 fixture `tests/fixtures/mods/b42_mod/`
+- **Workspace documentation** — `docs/mod-workspace.md` (safety model, tool reference, create-from-scratch + AI workflow examples), TOOLS.md sections, README tool map/config/workflow/security updates
+
 ### Changed
+- Test suite now **346 tests / 73 suites** (was 299 / 70) — registry + integration snapshots updated for the 28 tools
 - **MCP entrypoint decomposed into a typed tool registry** (chatgpt audit P0) — `src/index.ts` shrank from ~1100 to ~390 lines; all 17 tool definitions moved to `src/tools/` (registry, discovery, scripts, analysis, localData, workshop). Each tool is one object (name, description, zod `inputSchema`, handler); `index.ts` is composition-only and both `tools/list` and `tools/call` derive from the registry
 - **Standardized MCP error handling** (audit P1) — new `src/utils/mcpErrors.ts`: one `toMcpError` funnel maps zod rejections → InvalidParams, deliberate McpErrors pass through, and everything else → sanitized InternalError (no stack traces; absolute local paths redacted)
 - **Centralized env validation** (audit P1) — `src/utils/config.ts` validates every `PZ_*`/`STEAMCMD_*` variable through one Zod schema, fail-fast at startup, including the new `PZ_MCP_MAX_DOWNLOAD_BYTES`

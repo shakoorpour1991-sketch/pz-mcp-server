@@ -322,6 +322,199 @@ export const WorkshopAnalyzeSchema = z.object({
 // 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
 export const ListKnowledgeTopicsSchema = z.object({});
 
+// ---------------------------------------------------------------------------
+// Mod Workspace / Project Manager
+// ---------------------------------------------------------------------------
+
+/** Workspace-relative paths are strictly confined to the configured roots. */
+export const WorkspaceProjectSchema = z.object({
+  project: z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z0-9_.-]+$/)
+    .describe(
+      "Project name — a folder directly under the workspace root (no slashes, no '..')",
+    ),
+});
+
+export const WorkspaceListSchema = z.object({});
+
+export const WorkspaceCreateSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z0-9_.-]+$/)
+    .describe("Project folder name (single path segment, no slashes)"),
+  modId: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .describe("Unique mod id used in mod.info (alphanumeric + _ or -)"),
+  modName: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Human-readable display name (defaults to modId)"),
+  author: z.string().max(256).optional().describe("Mod author"),
+  description: z.string().max(2000).optional().describe("Mod description"),
+  version: z
+    .string()
+    .max(64)
+    .optional()
+    .describe("Mod version written to mod.info (default 1.0)"),
+  buildVersion: z
+    .string()
+    .max(64)
+    .optional()
+    .describe("Numeric Build-42 version folder, e.g. 42 or 42.20 (default 42)"),
+  template: z
+    .enum(["minimal", "full"])
+    .default("full")
+    .describe(
+      "minimal = mod.info + poster + scripts dir; full adds lua/sound/textures/maps and a sample server script",
+    ),
+  requires: z
+    .array(z.string().max(256))
+    .max(50)
+    .optional()
+    .describe("Other mod ids this mod requires (mod.info require=)"),
+  sampleItem: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Also generate a starter item script via generate_script and place it in media/scripts",
+    ),
+  includePoster: z
+    .boolean()
+    .default(true)
+    .describe("Write a poster.png placeholder (default true)"),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe(
+      "If the project folder already exists, only add missing scaffold files — existing files are never modified",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe("Preview the scaffold — no disk changes"),
+});
+
+export const WorkspaceInspectSchema = WorkspaceProjectSchema.extend({
+  checkDependencies: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Resolve mod.info require= ids against known mods and report missing ones (default true)",
+    ),
+  includeFileList: z
+    .boolean()
+    .default(false)
+    .describe("Include the full recursive file list in the result"),
+});
+
+export const WorkspaceStatusSchema = WorkspaceProjectSchema.extend({});
+
+export const WorkspaceValidateSchema = WorkspaceProjectSchema.extend({});
+
+export const WorkspaceListFilesSchema = WorkspaceProjectSchema.extend({
+  path: z
+    .string()
+    .max(2048)
+    .optional()
+    .describe("Relative path within the project (default: project root)"),
+  recursive: z.boolean().default(true).describe("Recurse into subdirectories"),
+  maxDepth: z
+    .number()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Maximum directory depth to descend (default 12)"),
+  maxEntries: z
+    .number()
+    .min(1)
+    .max(5000)
+    .default(2000)
+    .describe("Cap on returned entries (default 2000)"),
+});
+
+export const WorkspaceReadFileSchema = WorkspaceProjectSchema.extend({
+  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
+});
+
+export const WorkspaceWriteFileSchema = WorkspaceProjectSchema.extend({
+  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
+  content: z.string().max(5_000_000).describe("File content (UTF-8 text)"),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Replace an existing file (default false — existing files are never silently overwritten)",
+    ),
+  dryRun: z.boolean().default(false).describe("Preview only — no disk changes"),
+});
+
+export const WorkspacePatchFileSchema = WorkspaceProjectSchema.extend({
+  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
+  patches: z
+    .array(
+      z.object({
+        oldText: z
+          .string()
+          .min(1)
+          .describe("Exact text to match (must exist in the file)"),
+        newText: z
+          .string()
+          .default("")
+          .describe("Replacement text (empty = delete the match)"),
+        count: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Require exactly this many matches (default: replace all)"),
+        description: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Human label shown in errors/results"),
+      }),
+    )
+    .min(1)
+    .max(50)
+    .describe("Ordered context patches — all must match or nothing is written"),
+});
+
+export const WorkspaceDeleteFileSchema = WorkspaceProjectSchema.extend({
+  path: z.string().min(1).max(2048).describe("Workspace-relative path"),
+  force: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Explicit intent required for any deletion (set to true to proceed)",
+    ),
+  recursive: z
+    .boolean()
+    .default(false)
+    .describe("Allow deleting a non-empty directory"),
+  dryRun: z
+    .boolean()
+    .default(true)
+    .describe("Preview the deletion — no disk changes (default true)"),
+});
+
+export const WorkspaceRenameFileSchema = WorkspaceProjectSchema.extend({
+  from: z.string().min(1).max(2048).describe("Source workspace-relative path"),
+  to: z.string().min(1).max(2048).describe("Target workspace-relative path"),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe("Replace the target if it exists (default false)"),
+});
+
 /**
  * Tool name → input schema. Imported by admin/bridge.mjs so the dashboard can
  * (1) normalize every tools/list reply into proper JSON Schema from the live
@@ -345,4 +538,15 @@ export const TOOL_SCHEMAS = {
   workshop_download: WorkshopDownloadSchema,
   workshop_analyze: WorkshopAnalyzeSchema,
   list_knowledge_topics: ListKnowledgeTopicsSchema,
+  workspace_list: WorkspaceListSchema,
+  workspace_create: WorkspaceCreateSchema,
+  workspace_inspect: WorkspaceInspectSchema,
+  workspace_status: WorkspaceStatusSchema,
+  workspace_validate: WorkspaceValidateSchema,
+  workspace_list_files: WorkspaceListFilesSchema,
+  workspace_read_file: WorkspaceReadFileSchema,
+  workspace_write_file: WorkspaceWriteFileSchema,
+  workspace_patch_file: WorkspacePatchFileSchema,
+  workspace_delete_file: WorkspaceDeleteFileSchema,
+  workspace_rename_file: WorkspaceRenameFileSchema,
 };

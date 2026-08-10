@@ -96,6 +96,10 @@ export class KnowledgeBaseManager {
       )
     `);
 
+    const selectDocStmt = this.db.prepare(
+      "SELECT topic, mtime FROM knowledge_docs WHERE topic = ?",
+    );
+
     const insertDocStmt = this.db.prepare(`
       INSERT OR REPLACE INTO knowledge_docs (topic, title, source, content, mtime, file_path)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -106,78 +110,88 @@ export class KnowledgeBaseManager {
       VALUES (last_insert_rowid(), ?, ?, ?, ?)
     `);
 
-    for (const filePath of files) {
-      try {
-        // mtime is the change signal for incremental sync (N5).
-        const mtime = String((await stat(filePath)).mtimeMs);
-        const rawContent = await readFile(filePath, "utf-8");
-        // Strip any YAML frontmatter block: its title/source keys are used
-        // as metadata below, and it must not be indexed as body text.
-        const { meta, body } = this.parseFrontmatter(rawContent);
-        const content = body;
-        const filename = filePath.split(/[/\\]/).pop() || "";
-        const topic = filename.replace(/\.md$/, "");
-
-        if (!overwrite) {
-          // Incremental: skip only when the stored mtime matches the file's.
-          const existing = this.db
-            .prepare("SELECT topic, mtime FROM knowledge_docs WHERE topic = ?")
-            .get(topic) as unknown as
-            { topic: string; mtime: string | null } | undefined;
-          if (existing && existing.mtime === mtime) {
-            skipped++;
-            continue;
-          }
-        }
-
-        const lines = content.split("\n");
-        // Title priority: frontmatter `title`, then first H1, then filename.
-        const fmTitle = meta.title?.trim() || "";
-        let title: string;
-        if (fmTitle.length > 0) {
-          title = fmTitle;
-        } else {
-          title = filename;
-          for (const line of lines) {
-            if (line.startsWith("# ")) {
-              title = line.slice(2).trim();
-              break;
-            }
-          }
-        }
-
-        // Source priority: frontmatter `source`, then `> Source:` blockquote.
-        const fmSource = meta.source?.trim() || "";
-        let source: string;
-        if (fmSource.length > 0) {
-          source = fmSource;
-        } else {
-          source = "";
-          for (const line of lines) {
-            if (line.startsWith("> Source:")) {
-              source = line.slice("> Source:".length).trim();
-              break;
-            }
-          }
-        }
-
-        this.db.exec("BEGIN");
+    // One transaction for the whole pass (was: BEGIN/COMMIT per file — a
+    // full re-index of ~100 docs meant ~100 separate transactions). Per-file
+    // SAVEPOINTs keep a single bad file from rolling back the rest while
+    // preserving all-or-nothing semantics per file.
+    this.db.exec("BEGIN");
+    try {
+      for (const filePath of files) {
         try {
-          deleteFtsStmt.run(topic);
-          insertDocStmt.run(topic, title, source, content, mtime, filePath);
-          insertFtsStmt.run(topic, title, source, content);
-          this.db.exec("COMMIT");
-        } catch (e) {
-          this.db.exec("ROLLBACK");
-          throw e;
-        }
+          // mtime is the change signal for incremental sync (N5).
+          const mtime = String((await stat(filePath)).mtimeMs);
+          const rawContent = await readFile(filePath, "utf-8");
+          // Strip any YAML frontmatter block: its title/source keys are used
+          // as metadata below, and it must not be indexed as body text.
+          const { meta, body } = this.parseFrontmatter(rawContent);
+          const content = body;
+          const filename = filePath.split(/[/\\]/).pop() || "";
+          const topic = filename.replace(/\.md$/, "");
 
-        topics++;
-        totalChars += content.length;
-      } catch (err: any) {
-        errors.push({ file: filePath, message: err.message || String(err) });
-        logger.error(err, "Failed to index file: %s", filePath);
+          if (!overwrite) {
+            // Incremental: skip only when the stored mtime matches the file's.
+            const existing = selectDocStmt.get(topic) as unknown as
+              { topic: string; mtime: string | null } | undefined;
+            if (existing && existing.mtime === mtime) {
+              skipped++;
+              continue;
+            }
+          }
+
+          const lines = content.split("\n");
+          // Title priority: frontmatter `title`, then first H1, then filename.
+          const fmTitle = meta.title?.trim() || "";
+          let title: string;
+          if (fmTitle.length > 0) {
+            title = fmTitle;
+          } else {
+            title = filename;
+            for (const line of lines) {
+              if (line.startsWith("# ")) {
+                title = line.slice(2).trim();
+                break;
+              }
+            }
+          }
+
+          // Source priority: frontmatter `source`, then `> Source:` blockquote.
+          const fmSource = meta.source?.trim() || "";
+          let source: string;
+          if (fmSource.length > 0) {
+            source = fmSource;
+          } else {
+            source = "";
+            for (const line of lines) {
+              if (line.startsWith("> Source:")) {
+                source = line.slice("> Source:".length).trim();
+                break;
+              }
+            }
+          }
+
+          this.db.exec("SAVEPOINT idx_file");
+          try {
+            deleteFtsStmt.run(topic);
+            insertDocStmt.run(topic, title, source, content, mtime, filePath);
+            insertFtsStmt.run(topic, title, source, content);
+            this.db.exec("RELEASE idx_file");
+          } catch (e) {
+            this.db.exec("ROLLBACK TO idx_file");
+            this.db.exec("RELEASE idx_file");
+            throw e;
+          }
+
+          topics++;
+          totalChars += content.length;
+        } catch (err: any) {
+          errors.push({ file: filePath, message: err.message || String(err) });
+          logger.error(err, "Failed to index file: %s", filePath);
+        }
       }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
     }
 
     // Incremental sync: prune topics whose source file has disappeared from

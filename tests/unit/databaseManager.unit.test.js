@@ -829,4 +829,33 @@ describe('DatabaseManager D2/D3 fixes', () => {
       assert.deepEqual(tagItem.tags, ['base:flour', 'base:minoringredient']);
     });
   });
+
+  describe('checkReferencesBatch / describeReferencesBatch', () => {
+    test('batches existence + detail with the same type semantics as the per-item path', async () => {
+      // Reference-table-only entries (sprite/model) resolve under 'all' and
+      // 'sprite' but not under a concrete item type filter.
+      await db.insertItem({
+        id: 'OwnerItem', name: 'OwnerItem', displayName: 'OwnerItem', type: 'item',
+        module: 'Base', properties: {}, rawContent: 'item OwnerItem {}', filePath: 'x.txt',
+      });
+      await db.addReference('OwnerItem', 'SpriteOnly', 'sprite', 'Icon');
+
+      const all = await db.checkReferencesBatch(['SpriteOnly', 'GhostBatch'], 'all');
+      assert.ok(all.has('SpriteOnly'));
+      assert.ok(!all.has('GhostBatch'));
+
+      const sprite = await db.checkReferencesBatch(['SpriteOnly'], 'sprite');
+      assert.ok(sprite.has('SpriteOnly'));
+
+      const item = await db.checkReferencesBatch(['SpriteOnly'], 'item');
+      assert.ok(!item.has('SpriteOnly'));
+
+      const detail = await db.describeReferencesBatch(['SpriteOnly', 'GhostBatch']);
+      assert.equal(detail.get('SpriteOnly').defined, false);
+      assert.ok(detail.get('SpriteOnly').referenceCount > 0);
+      // Ids absent from both tables are simply not present in the map (callers
+      // default missing entries to defined:false / referenceCount:0).
+      assert.equal(detail.get('GhostBatch'), undefined);
+    });
+  });
 });

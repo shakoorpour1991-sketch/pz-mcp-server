@@ -83,6 +83,17 @@ The analysis tools cover:
 - duplicate crafting-path detection,
 - Workshop download and analysis through SteamCMD.
 
+### `[ MANAGE ]` Build and manage mod projects
+
+The Mod Workspace turns the server into a dev environment for **creating** mods, not just reading them:
+
+- scaffold a valid Build-42 mod (metadata, poster, `common/` + versioned `media/`),
+- inspect, validate, and report project status (metadata, builds, dependencies, content types, errors),
+- list/read/write/patch/delete/rename project files — all strictly confined to the workspace root,
+- atomic writes, explicit overwrite intent, safe context patches, and dry-run previews for every destructive op.
+
+Full reference: [`docs/mod-workspace.md`](docs/mod-workspace.md).
+
 <p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
 ## Tool map
@@ -94,6 +105,7 @@ The analysis tools cover:
 | `LOCAL DATA` | `parse_game_files` · `index_knowledge_base` |
 | `ANALYSIS` | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts` |
 | `WORKSHOP` | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze` |
+| `WORKSPACE` | `workspace_list` · `workspace_create` · `workspace_inspect` · `workspace_status` · `workspace_validate` · `workspace_list_files` · `workspace_read_file` · `workspace_write_file` · `workspace_patch_file` · `workspace_delete_file` · `workspace_rename_file` |
 
 Tools are documented as returning human-readable text alongside machine-readable MCP `structuredContent`.
 
@@ -165,6 +177,8 @@ parse_game_files        # index the vanilla game into the SQLite DB
 
 **Workshop (external)**: `workshop_search` → `workshop_get_details` → `workshop_download` (dry-run first) → `workshop_analyze` for a full Mod Report.
 
+**Mod workspace (local dev)**: `workspace_create` a project → `workspace_write_file` / `workspace_patch_file` to iterate → `workspace_validate` after every change → `workspace_inspect` for the full report. Full walkthrough in [`docs/mod-workspace.md`](docs/mod-workspace.md).
+
 ## Internal map
 
 ```mermaid
@@ -189,6 +203,7 @@ The server is therefore not only a search index: the same MCP surface also reach
 | Variable | Default | Purpose |
 |---|---|---|
 | `PZ_MCP_DATA_DIR` | `./data` | SQLite database directory |
+| `PZ_MCP_WORKSPACE_DIR` | `<data>/workspaces` | Mod workspace root — every `workspace_*` file operation is strictly confined here |
 | `PZ_MCP_KB_PATH` | `knowledge-base/` (shipped docs) | Knowledge-base documentation path |
 | `PZ_MCP_LOG_LEVEL` | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent` |
 | `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
@@ -239,7 +254,7 @@ Downloaded mods are read/analyzed only — they are never executed and never aut
 
 ## Current boundaries
 
-This README does **not** claim that the server can automatically create, launch, or play-test a Project Zomboid mod. That is not established by the supplied repository documentation.
+This README does **not** claim that the server can automatically **launch or play-test** a Project Zomboid mod — the workspace can create, edit, validate, and inspect mod projects, but game launching/testing is out of scope for now. The Mod Workspace layer (`src/workspace/`) is the intended foundation for that next step.
 
 It also avoids unsupported performance claims and compatibility promises.
 
@@ -249,8 +264,8 @@ MCP clients can drive tools autonomously, so the server separates capabilities i
 
 | Tier | Tools | Side effects |
 |---|---|---|
-| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script` | None — pure inspection |
-| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script` | Writes only to the DB under `PZ_MCP_DATA_DIR` or the explicitly provided mod path (path-validated, dry-run default for export) |
+| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script`, `workspace_list`, `workspace_inspect`, `workspace_status`, `workspace_validate`, `workspace_list_files`, `workspace_read_file` | None — pure inspection |
+| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script`, `workspace_create`, `workspace_write_file`, `workspace_patch_file`, `workspace_delete_file`, `workspace_rename_file` | Writes to the DB under `PZ_MCP_DATA_DIR`, the explicitly provided mod path (path-validated), or the workspace root only — traversal/symlink-escape rejected, atomic writes, dry-run + explicit `force` for destructive ops |
 | **EXTERNAL SIDE EFFECTS** | `workshop_download`, `workshop_analyze` | SteamCMD subprocess + downloads into `PZ_WORKSHOP_DIR`; `dryRun` preview available |
 
 Hardening already in place:

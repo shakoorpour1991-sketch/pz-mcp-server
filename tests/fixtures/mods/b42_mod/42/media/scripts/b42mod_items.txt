@@ -1,0 +1,8 @@
+module B42Fixture {
+	item B42FixtureAxe
+	{
+		Type = Weapon,
+		DisplayName = B42 Fixture Axe,
+		Icon = Axe,
+	}
+}

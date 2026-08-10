@@ -29,6 +29,7 @@ export const DEFAULT_MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GiB
  */
 export const EnvSchema = z.object({
   PZ_MCP_DATA_DIR: z.string().min(1).optional(),
+  PZ_MCP_WORKSPACE_DIR: z.string().min(1).optional(),
   PZ_MCP_KB_PATH: z.string().min(1).optional(),
   PZ_MCP_LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
@@ -75,6 +76,18 @@ export function validateEnvConfig(): EnvConfig {
 /** Directory for SQLite databases. Override with PZ_MCP_DATA_DIR. */
 export function dataDir(): string {
   return validateEnvConfig().PZ_MCP_DATA_DIR || join(process.cwd(), "data");
+}
+
+/**
+ * Root directory for the mod workspace (projects the workspace_* tools may
+ * create and modify). Override with PZ_MCP_WORKSPACE_DIR. Defaults to a
+ * dedicated `workspaces/` folder next to the SQLite data so the server is
+ * self-contained and never writes outside its own tree unless told to.
+ */
+export function workspaceRoot(): string {
+  return (
+    validateEnvConfig().PZ_MCP_WORKSPACE_DIR || join(dataDir(), "workspaces")
+  );
 }
 
 /** Main vanilla-game database path. */

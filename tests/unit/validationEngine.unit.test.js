@@ -136,6 +136,30 @@ describe('ValidationEngine', () => {
     const invalidRefs = result.warnings.filter((w) => w.code === 'INVALID_REFERENCE');
     assert.ok(invalidRefs.length > 0);
   });
+
+  // Performance (tool audit): lists of 8+ references take the batched DB
+  // path (2 queries instead of ~4 per reference) with identical results.
+  test('checkReferences batches large lists with identical results', async () => {
+    await db.addReference('TestSword', 'TestSwordIcon', 'sprite', 'Icon');
+    const refs = [
+      'TestSword', 'TestSwordIcon', 'GhostItem',
+      'Nope1', 'Nope2', 'Nope3', 'Nope4', 'Nope5', 'Nope6', 'Nope7',
+    ];
+    const results = await validator.checkReferences(refs, 'all');
+    assert.equal(results.length, refs.length);
+    const byName = Object.fromEntries(results.map((r) => [r.reference, r]));
+    assert.equal(byName.TestSword.isValid, true);
+    assert.equal(byName.TestSword.detail, 'defined');
+    // Sprite lives only in the references table → referenced, not defined.
+    assert.equal(byName.TestSwordIcon.detail, 'referenced');
+    assert.ok(byName.TestSwordIcon.referenceCount > 0);
+    for (const name of ['GhostItem', 'Nope1', 'Nope7']) {
+      assert.equal(byName[name].isValid, false);
+      assert.equal(byName[name].detail, 'missing');
+      assert.equal(byName[name].referenceCount, 0);
+      assert.notEqual(byName[name].error, undefined);
+    }
+  });
 });
 
 describe('D11: brace counting uses shared comment-stripping', () => {

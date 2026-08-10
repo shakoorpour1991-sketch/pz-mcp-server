@@ -1,0 +1,6 @@
+name=B42 Fixture Mod
+id=b42_fixture
+author=Test Author
+description=Valid Build 42 fixture mod used by the workspace test suite.
+version=1.0.0
+poster=poster.png

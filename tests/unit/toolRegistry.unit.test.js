@@ -29,10 +29,21 @@ const EXPECTED_TOOLS = [
   'workshop_get_details',
   'workshop_download',
   'workshop_analyze',
+  'workspace_create',
+  'workspace_delete_file',
+  'workspace_inspect',
+  'workspace_list',
+  'workspace_list_files',
+  'workspace_patch_file',
+  'workspace_read_file',
+  'workspace_rename_file',
+  'workspace_status',
+  'workspace_validate',
+  'workspace_write_file',
 ];
 
 describe('tool registry (audit P2)', () => {
-  test('registers exactly the 17 documented tools', () => {
+  test('registers exactly the documented tools', () => {
     const names = ALL_TOOLS.map((t) => t.name).sort();
     assert.deepEqual(names, [...EXPECTED_TOOLS].sort());
   });

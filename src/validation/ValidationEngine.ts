@@ -193,6 +193,47 @@ export class ValidationEngine {
   ): Promise<ReferenceValidationResult[]> {
     const results: ReferenceValidationResult[] = [];
 
+    // Batch path for large reference lists (check_references N+1): two DB
+    // queries — one existence set, one completeness-detail map — instead of
+    // ~4 prepared queries per reference. Small arrays keep the per-item path
+    // so tests (and any caller with a hand-rolled DB stub) keep the simple
+    // per-reference contract. getSimilarItems stays per-reference and runs
+    // only for missing ids, which are usually a small fraction of the batch.
+    const canBatch =
+      references.length >= 8 &&
+      typeof (this.db as unknown as { checkReferencesBatch?: unknown })
+        .checkReferencesBatch === "function" &&
+      typeof (this.db as unknown as { describeReferencesBatch?: unknown })
+        .describeReferencesBatch === "function";
+    let foundSet: Set<string> | null = null;
+    let detailMap: Map<
+      string,
+      {
+        defined: boolean;
+        itemType?: string;
+        referenceTypes: string[];
+        referenceCount: number;
+      }
+    > | null = null;
+    if (canBatch) {
+      const batched = this.db as unknown as {
+        checkReferencesBatch(refs: string[], t?: string): Promise<Set<string>>;
+        describeReferencesBatch(refs: string[]): Promise<
+          Map<
+            string,
+            {
+              defined: boolean;
+              itemType?: string;
+              referenceTypes: string[];
+              referenceCount: number;
+            }
+          >
+        >;
+      };
+      foundSet = await batched.checkReferencesBatch(references, type);
+      detailMap = await batched.describeReferencesBatch(references);
+    }
+
     for (const reference of references) {
       const result: ReferenceValidationResult = {
         reference,
@@ -203,10 +244,12 @@ export class ValidationEngine {
 
       try {
         // Check if reference exists in database
-        const exists = await this.db.checkReference(
-          reference,
-          type === "all" ? undefined : type,
-        );
+        const exists = canBatch
+          ? (foundSet as Set<string>).has(reference)
+          : await this.db.checkReference(
+              reference,
+              type === "all" ? undefined : type,
+            );
 
         if (exists) {
           result.isValid = true;
@@ -220,7 +263,23 @@ export class ValidationEngine {
 
         // Completeness detail: is this reference defined as an item, only
         // referenced elsewhere, or missing entirely (freebuff N-series)?
-        const detail = await this.db.describeReference(reference);
+        const detail = canBatch
+          ? ((
+              detailMap as Map<
+                string,
+                {
+                  defined: boolean;
+                  itemType?: string;
+                  referenceTypes: string[];
+                  referenceCount: number;
+                }
+              >
+            ).get(reference) ?? {
+              defined: false,
+              referenceTypes: [],
+              referenceCount: 0,
+            })
+          : await this.db.describeReference(reference);
         result.detail = detail.defined
           ? "defined"
           : detail.referenceCount > 0

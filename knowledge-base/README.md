@@ -36,13 +36,58 @@ Project Zomboid Build 42 modding research, organized from analysis of a local Pr
 | `Mods_Analysis/StarlitLibrary.md` | Foundational utility library: reusable components for common modding tasks |
 | `Mods_Analysis/TanksHavePropane.md` | Refill propane tanks/blowtorches at Fossoil storage tanks |
 
-## Wiki References (Cleaned)
+## Wiki References (Cleaned, 36 files)
+
+### Workflow, structure & packaging
 
 | File | What It Covers |
 |------|----------------|
 | `wiki/Mod-structure.md` | Build 42 versioning, common/mandatory folder, media subfolders, workshop vs mods folder |
 | `wiki/Mod-optimization.md` | Lua performance: local vars, caching, load balancing, newrandom(), benchmarking |
 | `wiki/Startup-parameters.md` | Debug flags, JVM args (Xmx, Xms), modfolders, server args, launcher config |
+| `wiki/Modding.md` | Modding guide overview: getting started, what a mod can do |
+| `wiki/Modding_projects.md` | Modding project layout, folder conventions, versioning |
+| `wiki/Mods.md` | How mods load, folder priorities, mod order |
+| `wiki/Mod.info.md` | `mod.info` metadata: name, id, description, poster, requirement |
+| `wiki/App_ID.md` | Steam App ID for Project Zomboid (used by launcher/tools) |
+| `wiki/Workshop_ID.md` | Workshop item IDs and how they map to mods |
+| `wiki/Workshop.txt.md` | `workshop.txt` metadata file format |
+| `wiki/SteamCMD.md` | SteamCMD: workshop upload/download automation |
+| `wiki/Java.md` | Java requirement and version notes for modding tools |
+| `wiki/IntelliJ_IDEA.md` | IntelliJ IDEA setup for PZ Lua modding |
+| `wiki/Visual_Studio_Code.md` | VS Code setup for PZ Lua modding |
+| `wiki/Debug_mode.md` | Debug mode: console, commands, Lua debugging |
+| `wiki/Hot_reloading.md` | Hot reloading: live-reload Lua during development |
+
+### Official tools
+
+| File | What It Covers |
+|------|----------------|
+| `wiki/AnimZed.md` | AnimZed: animation editor for Build 42 |
+| `wiki/CartoZed.md` | CartoZed: official texture/tile editor |
+| `wiki/ItemZed.md` | ItemZed: item editor tool |
+| `wiki/WordZed.md` | WordZed: map editor for Build 42 |
+| `wiki/Spiffos_Workshop.md` | Spiffo's Workshop: map editor tool |
+| `wiki/Mapping_tools_official.md` | Official mapping tools overview |
+
+### Game systems & scripting
+
+| File | What It Covers |
+|------|----------------|
+| `wiki/Lua_API.md` | Lua API reference: globals, events, common calls |
+| `wiki/Scripts.md` | Script files (.txt): item/recipe/vehicle syntax |
+| `wiki/Registries.md` | Script registries: recipes, items, vehicles, translations |
+| `wiki/Item_tag.md` | Item tags: category flags used by recipes, loot, UI |
+| `wiki/Food_types.md` | Food types: hunger/calorie values, decay, perishability |
+| `wiki/Animation.md` | Character animation system: AnimSets, clips, events, states |
+| `wiki/Translation.md` | Translation/localization: UI text files, languages |
+| `wiki/Language.txt.md` | `language.txt`: locale and language file format |
+| `wiki/User_Interface.md` | UI modding: widgets, screens, styling |
+| `wiki/Rendering.md` | Rendering: graphics pipeline, layers, shaders |
+| `wiki/Modeling.md` | 3D modeling pipeline for Build 42 assets |
+| `wiki/Mapping.md` | Mapping: tiles, cells, map editor workflow |
+| `wiki/GUID.md` | GUID system: unique IDs for items, recipes, mod content |
+| `wiki/Spawnpoints.lua.md` | `spawnpoints.lua`: spawn point file format |
 
 ## Proof-of-Concept Mod
 

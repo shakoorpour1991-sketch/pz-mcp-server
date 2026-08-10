@@ -36,7 +36,8 @@ import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
 import { PathManager } from "./utils/PathManager.js";
 import { SteamWorkshopClient } from "./workshop/SteamWorkshopClient.js";
 import { SteamCmdDownloader } from "./workshop/SteamCmdDownloader.js";
-import { validateEnvConfig } from "./utils/config.js";
+import { WorkspaceManager } from "./workspace/WorkspaceManager.js";
+import { validateEnvConfig, workspaceRoot } from "./utils/config.js";
 import { toMcpError } from "./utils/mcpErrors.js";
 import { ALL_TOOLS, ToolRegistry } from "./tools/index.js";
 import type { ServerResult } from "@modelcontextprotocol/sdk/types.js";
@@ -106,6 +107,11 @@ async function initializeServer() {
     const workshopClient = new SteamWorkshopClient();
     const steamCmdDownloader = new SteamCmdDownloader();
 
+    // Mod workspace: rooted + safety-first project manager (workspace_* tools).
+    // All file operations are strictly confined to this root.
+    const workspaceManager = new WorkspaceManager([workspaceRoot()]);
+    await workspaceManager.ensureRoots();
+
     ctx = {
       dbManager,
       parser,
@@ -118,6 +124,7 @@ async function initializeServer() {
       workshopClient,
       steamCmdDownloader,
       activeWorkshopDownloads,
+      workspaceManager,
     };
 
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");

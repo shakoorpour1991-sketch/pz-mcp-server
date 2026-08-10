@@ -622,3 +622,136 @@ export function formatBytes(n: number): string {
   }
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+/* ==================== Mod Workspace ==================== */
+
+export function formatWorkspaceProjects(projects: any[]): string {
+  if (!projects.length) {
+    return `No projects in the workspace yet — use workspace_create to scaffold one.`;
+  }
+  let out = `# Workspace Projects (${projects.length})\n\n`;
+  for (const p of projects) {
+    out += `- **${p.name}** ${p.hasModInfo ? "✅" : "⚠️ no mod.info"} — ${p.path}\n`;
+  }
+  return out;
+}
+
+export function formatWorkspaceCreated(result: any): string {
+  if (result.dryRun) {
+    return `🟡 Dry run — no disk changes.\n\nWould scaffold project **${result.project}** at ${result.root} with ${result.created.length} files:\n\n${result.created.map((f: string) => `  ${f}`).join("\n")}`;
+  }
+  return `✅ Scaffolded project **${result.project}** at ${result.root}\n\nCreated ${result.created.length} files:\n\n${result.created.map((f: string) => `  ${f}`).join("\n")}\n\nRun workspace_status or workspace_inspect to verify it.`;
+}
+
+export function formatWorkspaceInspect(insp: any): string {
+  let out = `# Workspace Inspect — ${insp.project}\n\n`;
+  out += `**Path**: ${insp.path}\n`;
+  out += `**Mod ID**: ${insp.modId ?? "—"} · **Name**: ${insp.modName ?? "—"} · **Version**: ${insp.version ?? "—"}\n`;
+  if (insp.description) out += `**Description**: ${insp.description}\n`;
+  out += `**Supported builds**: ${insp.supportedBuilds.length ? insp.supportedBuilds.join(", ") : "—"}\n`;
+  out += `**Content types**: ${insp.contentTypes.length ? insp.contentTypes.join(", ") : "—"}\n`;
+  out += `**Files**: ${insp.files.scriptCount} scripts · ${insp.files.luaCount} lua · ${insp.files.assetCount} assets\n`;
+  const deps = insp.dependencies;
+  out += `**Dependencies**: ${deps.listed.length ? deps.listed.join(", ") : "none"}`;
+  if (deps.missing.length) out += ` (⚠️ missing: ${deps.missing.join(", ")})`;
+  out += `\n`;
+  if (insp.incompatible.length) {
+    out += `**Incompatible with**: ${insp.incompatible.join(", ")}\n`;
+  }
+  const v = insp.validation;
+  out += `\n## Validation ${v.valid ? "✅ valid" : "❌ issues found"}\n`;
+  if (v.missingFiles.length) {
+    out += `- Missing files: ${v.missingFiles.join(", ")}\n`;
+  }
+  if (v.unexpectedFiles.length) {
+    out += `- Unexpected entries: ${v.unexpectedFiles.join(", ")}\n`;
+  }
+  for (const e of v.errors) {
+    out += `- ❌ ${e.file}: ${e.message}\n`;
+  }
+  for (const w of v.warnings) {
+    out += `- ⚠️ ${w.file}: ${w.message}\n`;
+  }
+  for (const i of v.info) {
+    out += `- ℹ️ ${i.file}: ${i.message}\n`;
+  }
+  if (insp.recommendations.length) {
+    out += `\n## Recommendations\n${insp.recommendations.map((r: string) => `- ${r}`).join("\n")}\n`;
+  }
+  return out;
+}
+
+export function formatWorkspaceStatus(st: any): string {
+  let out = `# Workspace Status — ${st.project}\n\n`;
+  out += `**Path**: ${st.path}\n`;
+  out += `**Mod ID**: ${st.modId ?? "—"} · **Name**: ${st.modName ?? "—"} · **Version**: ${st.version ?? "—"}\n`;
+  if (st.description) out += `**Description**: ${st.description}\n`;
+  out += `**Supported builds**: ${st.supportedBuilds.length ? st.supportedBuilds.join(", ") : "—"}\n`;
+  out += `**Files**: ${st.fileCount} total · ${st.scriptCount} scripts · ${st.luaCount} lua\n`;
+  out += `**Content types**: ${st.contentTypes.length ? st.contentTypes.join(", ") : "—"}\n`;
+  out += `**Verdict**: ${st.ok ? "✅ ready" : st.hasModInfo ? "⚠️ needs work (no content yet)" : "❌ missing mod.info"}\n`;
+  return out;
+}
+
+export function formatWorkspaceValidate(v: any): string {
+  let out = `# Workspace Validate — ${v.project}\n\n`;
+  out += `**Verdict**: ${v.valid ? "✅ valid" : "❌ invalid"}\n`;
+  if (v.modId || v.modName || v.version) {
+    out += `**Metadata**: ${v.modId ?? "?"} · ${v.modName ?? "?"} · v${v.version ?? "?"}\n`;
+  }
+  out += `**Supported builds**: ${v.supportedBuilds.length ? v.supportedBuilds.join(", ") : "—"}\n`;
+  const deps = v.dependencies;
+  out += `**Dependencies**: ${deps.listed.length ? deps.listed.join(", ") : "none"}`;
+  if (deps.missing.length) out += ` (❌ missing: ${deps.missing.join(", ")})`;
+  out += `\n\n`;
+  for (const e of v.errors) {
+    out += `- ❌ [${e.code}] ${e.message}\n`;
+  }
+  for (const w of v.warnings) {
+    out += `- ⚠️ [${w.code}] ${w.message}\n`;
+  }
+  for (const i of v.info) {
+    out += `- ℹ️ [${i.code}] ${i.message}\n`;
+  }
+  if (!v.errors.length && !v.warnings.length) out += `- No issues.\n`;
+  return out;
+}
+
+export function formatWorkspaceFileList(entries: any[], rel: string): string {
+  const files = entries.filter((e) => e.type === "file");
+  const dirs = entries.filter((e) => e.type === "dir");
+  let out = `# Files — ${rel} (${files.length} files, ${dirs.length} dirs)\n\n`;
+  for (const e of entries) {
+    out += `- ${e.type === "dir" ? "📁" : "📄"} ${e.path}${e.size !== undefined ? ` (${formatBytes(e.size)})` : ""}\n`;
+  }
+  return out;
+}
+
+export function formatWorkspaceFileRead(r: any): string {
+  return `# ${r.path} (${formatBytes(r.size)})\n\n\`\`\`\n${r.content}\n\`\`\``;
+}
+
+export function formatWorkspaceFileWrite(r: any): string {
+  if (r.dryRun) {
+    return `🟡 Dry run — would write ${formatBytes(r.bytes)} to ${r.abs}`;
+  }
+  return `✅ Wrote ${formatBytes(r.bytes)} to ${r.abs}`;
+}
+
+export function formatWorkspaceFilePatch(r: any): string {
+  if (!r.changed) {
+    return `ℹ️ No changes — patches matched nothing new in ${r.path}`;
+  }
+  return `✅ Patched ${r.path} — ${r.changes.length} replacement(s) applied\n${r.changes.map((c: any) => `  - ${c.description || c.oldText.slice(0, 60)} → ${c.newText.slice(0, 40) || "(removed)"}`).join("\n")}`;
+}
+
+export function formatWorkspaceFileDelete(r: any): string {
+  if (r.dryRun) {
+    return `🟡 Dry run — would delete ${r.type} ${r.path} (${r.abs})`;
+  }
+  return `🗑️ Deleted ${r.type} ${r.path}`;
+}
+
+export function formatWorkspaceFileRename(r: any): string {
+  return `✅ Moved ${r.from} → ${r.to}`;
+}

@@ -18,6 +18,7 @@
  */
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
+import { WorkspaceError } from "../workspace/WorkspaceManager.js";
 
 /**
  * Redact local filesystem layout from an error message where practical:
@@ -50,6 +51,22 @@ export function toMcpError(error: unknown): McpError {
   }
   if (error instanceof McpError) {
     return error;
+  }
+
+  // Workspace domain errors (workspace_* tools): map stable codes to the
+  // right JSON-RPC category — invalid input vs missing/refused resources vs
+  // genuine I/O failures — instead of collapsing into InternalError.
+  if (error instanceof WorkspaceError) {
+    const code =
+      error.code === "PATH_ESCAPE" || error.code === "INVALID_PATH"
+        ? ErrorCode.InvalidParams
+        : error.code === "IO"
+          ? ErrorCode.InternalError
+          : ErrorCode.InvalidRequest;
+    return new McpError(
+      code,
+      `Workspace ${error.code}: ${error.message}${error.path ? ` (${error.path})` : ""}`,
+    );
   }
 
   // Everything else is an internal/domain error: sanitize (no stack traces,

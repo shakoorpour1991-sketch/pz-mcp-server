@@ -1243,6 +1243,120 @@ export class DatabaseManager {
   }
 
   /**
+   * Batch existence check for many references at once (check_references with
+   * large arrays). Mirrors checkReference semantics exactly — sprite type
+   * looks only in the references table, a concrete type filters items rows,
+   * and 'all'/undefined additionally resolves references-table entries — but
+   * with two queries instead of one per reference.
+   */
+  async checkReferencesBatch(
+    referenceIds: string[],
+    referenceType?: string,
+  ): Promise<Set<string>> {
+    const found = new Set<string>();
+    if (referenceIds.length === 0) return found;
+    const ph = referenceIds.map(() => "?").join(",");
+
+    if (referenceType === "sprite") {
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT reference_id FROM "references" WHERE reference_id IN (${ph}) AND reference_type = 'sprite'`,
+        )
+        .all(...referenceIds) as unknown as Array<{ reference_id: string }>;
+      for (const r of rows) found.add(r.reference_id);
+      return found;
+    }
+
+    let sql = `SELECT id FROM items WHERE id IN (${ph})`;
+    const params: any[] = [...referenceIds];
+    if (referenceType && referenceType !== "all") {
+      sql += " AND type = ?";
+      params.push(referenceType);
+    }
+    const itemRows = this.db.prepare(sql).all(...params) as unknown as Array<{
+      id: string;
+    }>;
+    for (const r of itemRows) found.add(r.id);
+
+    // 'all' (no type filter): fall back to the references table so sprite/
+    // model references that are not item rows still resolve.
+    if (!referenceType || referenceType === "all") {
+      const refRows = this.db
+        .prepare(
+          `SELECT DISTINCT reference_id FROM "references" WHERE reference_id IN (${ph})`,
+        )
+        .all(...referenceIds) as unknown as Array<{ reference_id: string }>;
+      for (const r of refRows) found.add(r.reference_id);
+    }
+    return found;
+  }
+
+  /**
+   * Batch completeness detail for many references (check_references large
+   * arrays): defined-in-items status, item type, and reference-table counts
+   * in two GROUP BY queries instead of three per reference. Same shape as
+   * describeReference per id.
+   */
+  async describeReferencesBatch(referenceIds: string[]): Promise<
+    Map<
+      string,
+      {
+        defined: boolean;
+        itemType?: string;
+        referenceTypes: string[];
+        referenceCount: number;
+      }
+    >
+  > {
+    const map = new Map<
+      string,
+      {
+        defined: boolean;
+        itemType?: string;
+        referenceTypes: string[];
+        referenceCount: number;
+      }
+    >();
+    if (referenceIds.length === 0) return map;
+    const ph = referenceIds.map(() => "?").join(",");
+
+    const itemRows = this.db
+      .prepare(`SELECT id, type FROM items WHERE id IN (${ph})`)
+      .all(...referenceIds) as unknown as Array<{ id: string; type: string }>;
+    for (const r of itemRows) {
+      map.set(r.id, {
+        defined: true,
+        itemType: r.type,
+        referenceTypes: [],
+        referenceCount: 0,
+      });
+    }
+
+    const refRows = this.db
+      .prepare(
+        `SELECT reference_id, COUNT(*) AS c, GROUP_CONCAT(DISTINCT reference_type) AS types
+         FROM "references" WHERE reference_id IN (${ph}) GROUP BY reference_id`,
+      )
+      .all(...referenceIds) as unknown as Array<{
+      reference_id: string;
+      c: number;
+      types: string | null;
+    }>;
+    for (const r of refRows) {
+      const entry = map.get(r.reference_id) ?? {
+        defined: false,
+        referenceTypes: [] as string[],
+        referenceCount: 0,
+      };
+      entry.referenceCount = r.c;
+      entry.referenceTypes = (r.types ?? "").split(",").filter(Boolean);
+      map.set(r.reference_id, entry);
+    }
+
+    return map;
+  }
+
+  /**
    * Items produced by more than one recipe (duplicate crafting paths — the
    * recipe-conflict signal for RecipeAnalyzer.detectConflicts, freebuff N3).
    */

@@ -209,6 +209,135 @@ Fetch & analyze: downloads the mod (skips if already present), parses its script
 
 ---
 
+### `workspace_list`
+List mod projects in the workspace (`PZ_MCP_WORKSPACE_DIR`, default `<data>/workspaces`) with their `mod.info` presence.
+
+**Output:** Project names, paths, and whether each has a `mod.info`.
+
+---
+
+### `workspace_create`
+Scaffold a new Build-42 mod project (`mod.info`, `workshop.txt`, `poster.png`, `common/` + versioned `media/` tree). Existing files are never modified; `dryRun` previews.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Project folder name (single path segment) |
+| `modId` | string | Yes | Unique mod id (`mod.info` `id=`) |
+| `modName` | string | No | Display name (default: modId) |
+| `author` | string | No | Mod author |
+| `description` | string | No | Mod description |
+| `version` | string | No | Mod version (default: `1.0`) |
+| `buildVersion` | string | No | Numeric B42 version folder (default: `42`) |
+| `template` | enum | No | `minimal` \| `full` (default: `full`) |
+| `requires` | string[] | No | Other mod ids for `mod.info` `require=` |
+| `sampleItem` | boolean | No | Generate a starter item script via `generate_script` |
+| `includePoster` | boolean | No | Write `poster.png` (default: `true`) |
+| `overwrite` | boolean | No | If the folder exists, only add missing scaffold (never edits existing files) |
+| `dryRun` | boolean | No | Preview only — no disk changes (default: `false`) |
+
+---
+
+### `workspace_inspect`
+Full structured inspection: metadata, supported builds, dependencies (+ missing), content types, file counts, and validation errors/warnings — same engine as `analyze_mod`.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `checkDependencies` | boolean | No | Resolve `require=` ids against known mods (default: `true`) |
+| `includeFileList` | boolean | No | Include the recursive file list (default: `false`) |
+
+---
+
+### `workspace_status`
+Fast project status: metadata, file/script/lua counts, content types, and an `ok` verdict (no script parsing).
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+
+---
+
+### `workspace_validate`
+Validate structure + metadata: `mod.info` presence/well-formedness (missing `id`/`name`, duplicate keys), B42 layout (`common/`, version folder, content), dependency resolution.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+
+---
+
+### `workspace_list_files`
+Recursively list files and directories inside a project (workspace-relative, root-confined).
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `path` | string | No | Relative path within the project (default: root) |
+| `recursive` | boolean | No | Recurse into subdirectories (default: `true`) |
+| `maxDepth` | number | No | Max directory depth (default: 12) |
+| `maxEntries` | number | No | Cap on entries (default: 2000) |
+
+---
+
+### `workspace_read_file`
+Read a text file from a project.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `path` | string | Yes | Workspace-relative file path |
+
+---
+
+### `workspace_write_file`
+Write/create a file atomically (temp + rename). Refuses to overwrite unless `overwrite:true`.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `path` | string | Yes | Workspace-relative file path |
+| `content` | string | Yes | File content (UTF-8) |
+| `overwrite` | boolean | No | Replace an existing file (default: `false`) |
+| `dryRun` | boolean | No | Preview only (default: `false`) |
+
+---
+
+### `workspace_patch_file`
+Safely patch a file with context-matched replacements — every patch must match or nothing is written.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `path` | string | Yes | Workspace-relative file path |
+| `patches` | array | Yes | `{ oldText, newText?, count?, description? }[]` — ordered, all-or-nothing |
+
+---
+
+### `workspace_delete_file`
+Delete a file or directory. Requires `force:true` (+ `recursive:true` for non-empty dirs); `dryRun` previews by default.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `path` | string | Yes | Workspace-relative path |
+| `force` | boolean | No | Explicit intent required for deletion (default: `false`) |
+| `recursive` | boolean | No | Allow deleting a non-empty directory |
+| `dryRun` | boolean | No | Preview only (default: `true`) |
+
+---
+
+### `workspace_rename_file`
+Rename/move a file or directory within the project.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | Yes | Project name |
+| `from` | string | Yes | Source workspace-relative path |
+| `to` | string | Yes | Target workspace-relative path |
+| `overwrite` | boolean | No | Replace the target if it exists (default: `false`) |
+
+---
+
 ## Dependencies
 
 - `@modelcontextprotocol/sdk` 1.30

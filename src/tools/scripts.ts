@@ -3,7 +3,8 @@
  */
 import type { z } from "zod";
 import { join } from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, rename, rm } from "fs/promises";
+import { randomUUID } from "crypto";
 import {
   GenerateScriptSchema,
   ValidateScriptSchema,
@@ -169,7 +170,21 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
       }
 
       await mkdir(scriptsDir, { recursive: true });
-      await writeFile(targetPath, script, "utf-8");
+      // Atomic write (temp + rename): a crash or failed write can never leave
+      // a truncated half-file in the mod's scripts folder (same guarantee the
+      // workspace_* tools provide). The random suffix keeps interleaved calls
+      // for the same script name from racing on one temp path.
+      const tmpPath = join(
+        scriptsDir,
+        `.${safeName}.txt.tmp-${process.pid}-${randomUUID()}`,
+      );
+      try {
+        await writeFile(tmpPath, script, "utf-8");
+        await rename(tmpPath, targetPath);
+      } catch (err) {
+        await rm(tmpPath, { force: true }).catch(() => {});
+        throw err;
+      }
       return {
         content: [
           {

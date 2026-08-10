@@ -143,6 +143,17 @@ const TOOLS = [
   'workshop_get_details',
   'workshop_download',
   'workshop_analyze',
+  'workspace_create',
+  'workspace_delete_file',
+  'workspace_inspect',
+  'workspace_list',
+  'workspace_list_files',
+  'workspace_patch_file',
+  'workspace_read_file',
+  'workspace_rename_file',
+  'workspace_status',
+  'workspace_validate',
+  'workspace_write_file',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -182,7 +193,7 @@ describe('pz-mcp-server integration', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('tools/list exposes all 17 MCP tools', async () => {
+  test('tools/list exposes all MCP tools', async () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());
