@@ -3349,7 +3349,10 @@ function genBasicsHTML(g){
     f('author','Author', m.author, 'Your name') +
     f('itemName','Item ID *', m.itemName, 'e.g. MyWeaponItem') +
     f('displayName','In-game item name', m.displayName, m.itemName || 'e.g. My Weapon') +
-    f('icon','Icon sprite', m.icon, 'e.g. Sword') +
+    '<label class="gen-fld"><span>Icon sprite <em class="gen-hint" title="The default reuses a verified vanilla texture. Any other name ships a generated placeholder texture in 42/media/textures/.">?</em></span><input id="genb-icon" data-gen-basic="icon" value="'+esc(m.icon||'')+'" placeholder="'+esc((g.tpl && g.tpl.defaultIcon) || 'Axe')+'" list="genIconSug" spellcheck="false"></label>' +
+    (g.tpl && g.tpl.iconSuggestions && g.tpl.iconSuggestions.length
+      ? '<datalist id="genIconSug">'+g.tpl.iconSuggestions.map(i => '<option value="'+esc(i)+'"></option>').join('')+'</datalist>'
+      : '') +
     '<label class="gen-fld gen-fld-wide"><span>Description</span><input id="genb-description" data-gen-basic="description" value="'+esc(m.description||'')+'" placeholder="A short description of your mod (optional)" spellcheck="false"></label>';
 }
 
@@ -3415,11 +3418,15 @@ function genResultHTML(g){
         : '<span class="badge b-warn">'+ICONS.warn+' Needs attention</span>') +
       (v && v.scriptValid ? '<span class="badge b-ok">script valid</span>' : '<span class="badge b-warn">script issues</span>') +
       (v && v.projectValid ? '<span class="badge b-ok">folder valid</span>' : '<span class="badge b-warn">folder issues</span>') +
+      (v && (!v.b42Errors || !v.b42Errors.length) ? '<span class="badge b-ok">Build 42 ✅</span>' : '<span class="badge b-warn">Build 42 issues</span>') +
       '<span class="badge b-dim" style="margin-left:auto;font-family:var(--font-mono)">'+esc(last.absPath||'')+'</span>' +
     '</div>' +
-    ((v && (v.note || v.scriptWarnings.length || v.projectErrors.length || v.projectWarnings.length))
+    ((v && (v.note || (v.b42Errors||[]).length || (v.b42Warnings||[]).length || (v.b42Info||[]).length || v.scriptWarnings.length || v.projectErrors.length || v.projectWarnings.length))
       ? '<ul class="gen-issues">' +
           (v.note ? '<li class="info">'+esc(v.note)+'</li>' : '') +
+          (v.b42Errors||[]).map(e => '<li class="err">🔴 '+esc(e)+'</li>').join('') +
+          (v.b42Warnings||[]).map(w => '<li class="warn">⚡ '+esc(w)+'</li>').join('') +
+          (v.b42Info||[]).map(i => '<li class="info">'+esc(i)+'</li>').join('') +
           v.scriptWarnings.map(w => '<li class="warn">⚠️ '+esc(w)+'</li>').join('') +
           v.projectErrors.map(e => '<li class="err">❌ '+esc(e)+'</li>').join('') +
           v.projectWarnings.map(w => '<li class="warn">⚠️ '+esc(w)+'</li>').join('') +
@@ -3457,7 +3464,11 @@ function genRender(){
     else if (!g.templates.length) tpls.innerHTML = '<div class="tcap">No templates — is the server live?</div>';
     else tpls.innerHTML = g.templates.map(t =>
       '<button class="gen-tpl'+(t.id===g.template?' sel':'')+'" data-act="gen-pick" data-template="'+t.id+'" role="radio" aria-checked="'+(t.id===g.template)+'">' +
-        '<b>'+esc(t.label)+'</b><span>'+esc(t.short)+'</span>' +
+        '<span class="gen-tpl-top"><b>'+esc(t.label)+'</b>' +
+        '<span class="gen-mat '+(t.maturity==='beta'?'beta':'ready')+'" title="'+esc(t.maturityNote||'')+'">'+(t.maturity==='beta'?'🟡 beta':'✅ ready')+'</span></span>' +
+        '<span>'+esc(t.short)+'</span>' +
+        '<em class="gen-tpl-type">'+esc(t.itemType)+'</em>' +
+        (t.maturity==='beta' ? '<em class="gen-mat-note">'+esc(t.maturityNote)+'</em>' : '') +
         (t.vanilla ? '<em>⚡ balanced against '+t.vanilla.sampleCount+' '+esc(t.vanilla.label)+'</em>'
                   : '<em>⚡ balanced defaults (parse the game data in the Database tab for real vanilla stats)</em>') +
       '</button>').join('');
@@ -3469,7 +3480,7 @@ function genRender(){
   const stats = $('#genStats');
   if (stats && g.tpl){
     g.srcNote = g.vanilla
-      ? '⚡ Unpinned stats are auto-balanced against <b>'+g.vanilla.sampleCount+'</b> '+esc(g.vanilla.label)+' from the vanilla database. Edit any stat to pin it, or click 🎲 to roll it inside the vanilla range.'
+      ? '⚡ Unpinned stats are auto-balanced against <b>'+g.vanilla.sampleCount+'</b> '+esc(g.vanilla.label)+' from the vanilla database'+(g.vanilla.sourceFiles?(' ('+g.vanilla.sourceFiles+' vanilla files)'):'')+(g.vanilla.gameVersion?(' — game '+esc(g.vanilla.gameVersion)):'')+'. Edit any stat to pin it, or click 🎲 to roll it inside the vanilla range.'
       : '⚡ Auto-balance uses sensible defaults because the vanilla game data isn\'t indexed yet. Open the <b>Database</b> tab → <b>Parse game files</b>, then regenerate for data-driven stats.';
     stats.innerHTML = genStatsHTML(g);
   }

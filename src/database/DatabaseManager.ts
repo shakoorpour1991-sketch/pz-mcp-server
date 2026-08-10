@@ -1073,17 +1073,18 @@ export class DatabaseManager {
   }
 
   /**
-   * Items whose properties[propertyKey] matches exactly (e.g. Type="Weapon").
-   * The precise baseline query for ModAnalyzer balance analysis and the Mod
-   * Generator's vanilla auto-stats. `propertyKey` defaults to "Type" but can
-   * target the Build 42 spelling ("ItemType", values like "base:weapon").
+   * Items whose properties[propertyKey] matches exactly (e.g.
+   * ItemType="base:weapon"). The precise baseline query for ModAnalyzer
+   * balance analysis and the Mod Generator's vanilla auto-stats. `propertyKey`
+   * defaults to the Build 42 spelling "ItemType" (values like "base:weapon");
+   * the legacy B41 `Type` property no longer exists in parsed data.
    * Replaces an FTS keyword search + in-memory filter, which could both miss
-   * and over-match (mod-analyzer review: exact Type baseline).
+   * and over-match (mod-analyzer review: exact ItemType baseline).
    */
   async getItemsByPropertyType(
     propertyType: string,
     limit: number = 1000,
-    propertyKey: string = "Type",
+    propertyKey: string = "ItemType",
   ): Promise<GameItem[]> {
     const rows = this.db
       .prepare(

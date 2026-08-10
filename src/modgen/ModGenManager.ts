@@ -3,21 +3,23 @@
  * creation on top of the existing infrastructure.
  *
  * Reuses (never duplicates):
- *  - ScriptGenerator for the item script (templates + vanilla balancing),
  *  - DatabaseManager vanilla item data for realistic auto-stats,
- *  - ValidationEngine.validateScript for script validation,
+ *  - ValidationEngine for script syntax parsing,
+ *  - B42Validator for Build 42 semantic checks (the final authority on
+ *    whether the generated item is B42-correct),
  *  - the workspace tools' inspectProject (ModAnalyzer) for folder validation,
  *  - WorkspaceManager for rooted, atomic file operations and scaffolding.
  *
  * The artifact of a generation is a complete, ready-to-ship mod folder in the
  * workspace plus an editable `modgen.blueprint.json` — reopen the blueprint,
  * change stats/content, and regenerate.
+ *
+ * Build 42 correctness: items are emitted with `ItemType = base:*` (never the
+ * legacy `Type = ...`), display names go into the ItemName translation file,
+ * and assets (poster + custom icon placeholder) are really generated.
  */
-import {
-  DatabaseManager,
-  type GameItem,
-} from "../database/DatabaseManager.js";
-import type { ScriptGenerator } from "../generators/ScriptGenerator.js";
+import { isAbsolute } from "node:path";
+import type { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
 import type { ValidationEngine } from "../validation/ValidationEngine.js";
 import type { WorkspaceManager } from "../workspace/WorkspaceManager.js";
 import type { ToolContext } from "../tools/registry.js";
@@ -28,6 +30,14 @@ import {
   type ModgenTemplateId,
   type StatField,
 } from "./templates.js";
+import { B42Validator } from "./b42Validator.js";
+import {
+  buildItemScript,
+  buildItemTranslation,
+  ITEM_NAME_TRANSLATION_PATH,
+  safeIconFileName,
+} from "./b42Script.js";
+import { makeIconPng, makePosterPng } from "./assets.js";
 import { inspectProject } from "../tools/workspace.js";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +58,10 @@ export interface ModgenStatsSource {
   label: string;
   sampleCount: number;
   ranges: Record<string, ModgenRange>;
+  /** Game version the vanilla data was parsed from (PZ_GAME_VERSION env). */
+  gameVersion?: string;
+  /** Distinct game files the samples were drawn from (provenance). */
+  sourceFiles?: number;
 }
 
 export interface ModgenModInfo {
@@ -81,6 +95,11 @@ export interface ModgenValidation {
   scriptWarnings: string[];
   projectErrors: string[];
   projectWarnings: string[];
+  /** Build 42 semantic check results (the generator's final authority). */
+  b42Errors: string[];
+  b42Warnings: string[];
+  b42Info: string[];
+  dataChecked: boolean;
   note?: string;
 }
 
@@ -152,7 +171,6 @@ function clamp(v: number, min: number, max: number): number {
 function roundToStep(v: number, field: StatField): number {
   if (field.integer) return Math.round(v);
   const step = field.step ?? 0.1;
-  // Deterministic decimals table — no float log10 edge cases.
   const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
   return Number(v.toFixed(Math.min(4, decimals)));
 }
@@ -172,13 +190,24 @@ function percentile(sorted: number[], q: number): number {
   return sorted[idx];
 }
 
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, "/").toLowerCase();
+}
+
 export class ModGenManager {
+  private readonly b42: B42Validator;
+  /** Cached detected game install root (provenance filter). */
+  private gameRootCache: string | null | undefined;
+  /** Cached set of icon names used by vanilla items (invalidated on reparse). */
+  private iconCache: { at: number; set: Set<string> } | null = null;
+
   constructor(
     private readonly db: DatabaseManager,
-    private readonly generator: ScriptGenerator,
     private readonly validator: ValidationEngine,
     private readonly workspaceManager: WorkspaceManager,
-  ) {}
+  ) {
+    this.b42 = new B42Validator(db);
+  }
 
   // -------------------------------------------------------------------------
   // Template surface
@@ -191,54 +220,96 @@ export class ModGenManager {
       short: t.short,
       description: t.description,
       category: t.category,
+      itemType: t.itemType,
       defaultIcon: t.defaultIcon,
+      iconSuggestions: t.iconSuggestions,
+      maturity: t.maturity,
+      maturityNote: t.maturityNote,
+      color: t.color,
       fields: t.fields,
       defaults: t.defaultStats,
       kbRefs: t.kbRefs,
       vanilla: null as null | {
         sampleCount: number;
         label: string;
+        sourceFiles?: number;
+        gameVersion?: string;
         ranges: Record<string, ModgenRange>;
       },
     }));
   }
 
   /** Vanilla-derived stat ranges per auto field (null when no data parsed). */
-  async vanillaFor(templateId: ModgenTemplateId): Promise<{
+  async vanillaFor(
+    templateId: ModgenTemplateId,
+    ctx: ToolContext,
+  ): Promise<{
     sampleCount: number;
     label: string;
+    sourceFiles?: number;
+    gameVersion?: string;
     ranges: Record<string, ModgenRange>;
   } | null> {
     const tpl = getModgenTemplate(templateId);
     if (!tpl) return null;
-    return this.vanillaRanges(tpl);
+    return this.vanillaRanges(tpl, ctx);
   }
 
+  /** Detect the game install root once (used to keep the baseline vanilla-only). */
+  private async gameRoot(ctx: ToolContext): Promise<string | null> {
+    if (this.gameRootCache !== undefined) return this.gameRootCache;
+    try {
+      this.gameRootCache =
+        (await ctx.pathManager?.detectProjectZomboidPath?.()) ?? null;
+    } catch {
+      this.gameRootCache = null;
+    }
+    return this.gameRootCache;
+  }
+
+  /**
+   * Vanilla baselines. Samples are restricted to the game install when one is
+   * detected (mods/workshop parses that land in the same DB are excluded),
+   * so `kind: "vanilla"` is honest provenance (review item #10).
+   */
   private async vanillaRanges(
     tpl: ModgenTemplate,
+    ctx: ToolContext,
   ): Promise<{
     sampleCount: number;
     label: string;
+    sourceFiles?: number;
+    gameVersion?: string;
     ranges: Record<string, ModgenRange>;
   } | null> {
     const totals = await this.db.getStats().catch(() => ({ total: 0 }));
     if (!totals.total) return null;
-    // Union of the Build 42 spelling (ItemType="base:weapon") and the legacy
-    // spelling (Type="Weapon") so any parse yields a real baseline.
+    const gameRoot = await this.gameRoot(ctx);
+    const gameRootNorm = gameRoot ? normalizePath(gameRoot) : null;
+
+    // Build 42 spelling only (ItemType="base:weapon") — the legacy B41
+    // `Type` property no longer exists in parsed data, so there is no
+    // fallback query to union (B41 data audit).
     const b = tpl.baseline;
-    const queries: Array<[string, string]> = [
-      [b.propertyKey, b.propertyType],
-    ];
-    if (b.legacy) queries.push([b.legacy.propertyKey, b.legacy.propertyType]);
     const seen = new Set<string>();
     const refs: GameItem[] = [];
-    for (const [key, value] of queries) {
+    {
       const rows = await this.db
-        .getItemsByPropertyType(value, 800, key)
+        .getItemsByPropertyType(b.propertyType, 800, b.propertyKey)
         .catch(() => []);
       for (const row of rows) {
         if (seen.has(row.id)) continue;
         seen.add(row.id);
+        // Vanilla-only guard: keep relative/unknown paths and game-install
+        // files; drop absolute paths that live outside the game install
+        // (those are mod/workshop parses, not vanilla).
+        if (row.filePath) {
+          if (isAbsolute(row.filePath) && gameRootNorm) {
+            if (!normalizePath(row.filePath).startsWith(gameRootNorm)) continue;
+          } else if (isAbsolute(row.filePath) && !gameRootNorm) {
+            // No install detected — nothing to filter against, keep it.
+          }
+        }
         if (tpl.baseline.filter && !tpl.baseline.filter(row.properties)) continue;
         refs.push(row);
       }
@@ -246,6 +317,15 @@ export class ModGenManager {
     // A zero-sample baseline (no matching vanilla items) is "no data" — the
     // caller must fall back to defaults rather than label stats as vanilla.
     if (refs.length === 0) return null;
+
+    const sourceFiles = new Set(
+      refs
+        .map((r) => r.filePath)
+        .filter((p): p is string => Boolean(p))
+        .map(normalizePath),
+    );
+    const gameVersion = process.env.PZ_GAME_VERSION;
+
     const ranges: Record<string, ModgenRange> = {};
     for (const field of tpl.fields) {
       if (!field.auto || field.kind !== "number") continue;
@@ -262,7 +342,46 @@ export class ModGenManager {
         count: values.length,
       };
     }
-    return { sampleCount: refs.length, label: tpl.baseline.label, ranges };
+    return {
+      sampleCount: refs.length,
+      label: tpl.baseline.label,
+      sourceFiles: sourceFiles.size,
+      ...(gameVersion ? { gameVersion } : {}),
+      ranges,
+    };
+  }
+
+  /** Icon names used by vanilla items — cached, invalidated when the DB re-parses. */
+  private async vanillaIcons(ctx: ToolContext): Promise<Set<string>> {
+    const totals = await ctx.dbManager
+      .getStats()
+      .catch(() => ({ total: 0 }));
+    if (this.iconCache && this.iconCache.at === totals.total) {
+      return this.iconCache.set;
+    }
+    const items = await ctx.dbManager.getItemsByType("item");
+    const set = new Set<string>();
+    for (const i of items) {
+      const v = i.properties?.Icon;
+      if (typeof v === "string" && v) set.add(v);
+    }
+    this.iconCache = { at: totals.total, set };
+    return set;
+  }
+
+  /**
+   * An icon needs a generated texture only when it is neither the template's
+   * verified default nor a name used by vanilla items (with an empty DB every
+   * non-default icon gets a real placeholder so the texture always resolves).
+   */
+  private async iconIsCustom(
+    tpl: ModgenTemplate,
+    icon: string,
+    ctx: ToolContext,
+  ): Promise<boolean> {
+    if (icon === tpl.defaultIcon) return false;
+    const icons = await this.vanillaIcons(ctx);
+    return !icons.has(icon);
   }
 
   // -------------------------------------------------------------------------
@@ -281,9 +400,10 @@ export class ModGenManager {
     tpl: ModgenTemplate,
     pinned: Record<string, any>,
     random: boolean,
-    useVanilla: boolean = true,
+    useVanilla: boolean,
+    ctx: ToolContext,
   ): Promise<{ stats: Record<string, any>; source: ModgenStatsSource }> {
-    const vanilla = useVanilla ? await this.vanillaRanges(tpl) : null;
+    const vanilla = useVanilla ? await this.vanillaRanges(tpl, ctx) : null;
     const stats: Record<string, any> = {};
 
     for (const field of tpl.fields) {
@@ -301,7 +421,12 @@ export class ModGenManager {
           }
         } else if (typeof def === "number") {
           value = def;
-          if (field.auto && random && field.min !== undefined && field.max !== undefined) {
+          if (
+            field.auto &&
+            random &&
+            field.min !== undefined &&
+            field.max !== undefined
+          ) {
             value = field.min + Math.random() * (field.max - field.min);
           }
         }
@@ -322,26 +447,31 @@ export class ModGenManager {
       }
     }
 
-    // Pinned user values override everything (never clamped — the validator
-    // is the referee for out-of-range values).
+    // Pinned user values override everything (never clamped — validation is
+    // the referee for out-of-range values).
     for (const [key, value] of Object.entries(pinned)) {
       if (value === null || value === undefined || value === "") continue;
       stats[key] = value;
     }
 
-    const source: ModgenStatsSource = useVanilla && vanilla
-      ? {
-          kind: "vanilla",
-          label: vanilla.label,
-          sampleCount: vanilla.sampleCount,
-          ranges: vanilla.ranges,
-        }
-      : {
-          kind: "defaults",
-          label: useVanilla ? "balanced defaults" : "manual / defaults",
-          sampleCount: 0,
-          ranges: {},
-        };
+    const source: ModgenStatsSource =
+      useVanilla && vanilla
+        ? {
+            kind: "vanilla",
+            label: vanilla.label,
+            sampleCount: vanilla.sampleCount,
+            ranges: vanilla.ranges,
+            ...(vanilla.gameVersion
+              ? { gameVersion: vanilla.gameVersion }
+              : {}),
+            ...(vanilla.sourceFiles ? { sourceFiles: vanilla.sourceFiles } : {}),
+          }
+        : {
+            kind: "defaults",
+            label: useVanilla ? "balanced defaults" : "manual / defaults",
+            sampleCount: 0,
+            ranges: {},
+          };
 
     return { stats, source };
   }
@@ -366,6 +496,7 @@ export class ModGenManager {
       args.stats ?? {},
       args.randomize === true,
       args.autoStats !== false,
+      ctx,
     );
 
     const blueprint: ModgenBlueprint = {
@@ -394,47 +525,48 @@ export class ModGenManager {
       updatedAt: isoNow(),
     };
 
-    const script = await this.buildScript(tpl, blueprint);
-    const files = [
-      "mod.info",
-      "workshop.txt",
-      "poster.png",
-      "common/media/.gitkeep",
-      `42/media/scripts/${args.modId}${SCRIPT_SUFFIX}`,
-      README_FILE,
-      BLUEPRINT_FILE,
-    ];
+    const script = buildItemScript(tpl, blueprint);
+    const iconIsCustom = await this.iconIsCustom(tpl, icon, ctx);
+
+    // Build 42 semantic validation BEFORE anything is written — a generated
+    // mod that fails B42 checks never reaches the disk (review items #1/#2).
+    const b42 = await this.b42.validate(
+      tpl,
+      {
+        ...stats,
+        ItemType: tpl.itemType,
+        DisplayCategory: tpl.displayCategory,
+        Icon: icon,
+      },
+      { itemName: args.itemName, module, icon },
+    );
+    if (b42.errors.length > 0 && args.dryRun !== true) {
+      throw new Error(
+        `Build 42 validation failed:\n- ${b42.errors.join("\n- ")}`,
+      );
+    }
+
+    const plan = this.planFiles({
+      modId: args.modId,
+      icon,
+      iconIsCustom,
+    });
 
     if (args.dryRun === true) {
-      const scriptVal = await this.validator.validateScript(script, "item", false);
-      const scriptWarnings = scriptVal.warnings.filter(
-        (w) => w.code !== "UNKNOWN_PROPERTY",
-      );
-      const validation: ModgenValidation = {
-        scriptValid: scriptVal.isValid,
-        projectValid: true,
-        ready: scriptVal.isValid,
-        scriptWarnings: scriptWarnings.map((w) => w.message),
-        projectErrors: [],
-        projectWarnings: [],
-        ...(source.kind === "defaults"
-          ? {
-              note: "Vanilla game data not indexed yet — stats are balanced defaults. Run parse_game_files to enable data-driven stats.",
-            }
-          : {}),
-      };
+      const validation = await this.validateFolder(ctx, null, script, source, b42);
       return {
         project: args.name,
         absPath: this.workspaceManager.resolve(args.name).abs,
         dryRun: true,
         blueprint,
         script,
-        files,
+        files: plan,
         validation,
       };
     }
 
-    // Real scaffold (B42 layout + mod.info + workshop.txt + poster + script).
+    // Real scaffold (B42 layout + mod.info + workshop.txt; the poster is
+    // generated by us, so the 1×1 placeholder is not used).
     await this.workspaceManager.createProject(args.name, {
       modId: args.modId,
       modName: args.modName,
@@ -442,7 +574,7 @@ export class ModGenManager {
       template: "minimal",
       buildVersion: "42",
       sampleItemScript: script,
-      includePoster: true,
+      includePoster: false,
       ...(args.author !== undefined && args.author !== ""
         ? { author: args.author }
         : {}),
@@ -451,11 +583,13 @@ export class ModGenManager {
         : {}),
     });
 
-    // Blueprint + README make the folder complete and self-documenting.
+    // Complete the folder: generated poster, blueprint, README, translation.
+    await this.writeAssets(args.name, tpl, blueprint, iconIsCustom);
     await this.writeBlueprint(args.name, blueprint);
     await this.writeReadme(args.name, blueprint);
+    await this.writeTranslation(args.name, blueprint);
 
-    const validation = await this.validateFolder(ctx, args.name, script, source);
+    const validation = await this.validateFolder(ctx, args.name, script, source, b42);
 
     const entries = await this.workspaceManager.listFiles(args.name, {});
     const realFiles = entries
@@ -471,6 +605,32 @@ export class ModGenManager {
       files: realFiles,
       validation,
     };
+  }
+
+  /**
+   * The exact file plan a generation produces — dry runs report precisely what
+   * a real generation will write (review item #16: dry-run parity).
+   */
+  private planFiles(opts: {
+    modId: string;
+    icon: string;
+    iconIsCustom: boolean;
+  }): string[] {
+    const plan = [
+      "mod.info",
+      "workshop.txt",
+      "poster.png",
+      "common/media/.gitkeep",
+      `42/media/scripts/${opts.modId}${SCRIPT_SUFFIX}`,
+      "42/media/scripts/.gitkeep",
+      ITEM_NAME_TRANSLATION_PATH,
+    ];
+    if (opts.iconIsCustom) {
+      const file = safeIconFileName(opts.icon);
+      if (file) plan.push(`42/media/textures/${file}`);
+    }
+    plan.push(README_FILE, BLUEPRINT_FILE);
+    return plan;
   }
 
   /** Reopen a generated mod's blueprint. */
@@ -514,7 +674,14 @@ export class ModGenManager {
     return out;
   }
 
-  /** Re-roll and/or patch a saved blueprint, then rewrite the whole folder. */
+  /**
+   * Re-roll and/or patch a saved blueprint, then rewrite the whole folder.
+   *
+   * The rewrite is staged: the new script is built and Build 42-validated
+   * first; if validation fails, nothing on disk is touched. Only after that
+   * are all artifacts rewritten (each write is atomic) — the mod can never be
+   * left half-updated by a failed validation (review items #7/#8).
+   */
   async regenerate(
     ctx: ToolContext,
     args: ModgenRegenerateArgs,
@@ -522,6 +689,11 @@ export class ModGenManager {
     const blueprint = await this.loadBlueprint(ctx, args.project);
     const tpl = getModgenTemplate(blueprint.template);
     if (!tpl) throw new Error(`Unknown template: ${blueprint.template}`);
+
+    // Capture the previous icon so a custom → vanilla (or renamed) switch can
+    // remove the now-stale generated texture (review fix: stale icon files).
+    const oldIcon = blueprint.mod.icon;
+    const oldIconCustom = await this.iconIsCustom(tpl, oldIcon, ctx);
 
     const mod = { ...blueprint.mod };
     if (args.modName !== undefined) mod.modName = args.modName;
@@ -555,12 +727,8 @@ export class ModGenManager {
 
     // Re-roll requested keys against the current vanilla ranges (or bounds).
     if (args.randomize?.length) {
-      const vanilla = await this.vanillaRanges(tpl);
-      const fresh = await this.deriveStats(
-        tpl,
-        {},
-        true, // random
-      );
+      const vanilla = await this.vanillaRanges(tpl, ctx);
+      const fresh = await this.deriveStats(tpl, {}, true, true, ctx);
       for (const key of args.randomize) {
         const field = tpl.fields.find((f) => f.key === key);
         if (!field || field.kind !== "number") continue;
@@ -581,35 +749,80 @@ export class ModGenManager {
     // Keys removed from the blueprint (stats: null) fall back to auto:
     // re-derive unpinned auto fields from vanilla data / defaults so a
     // "reset to auto" never leaves a stat missing from the script.
-    const auto = await this.deriveStats(tpl, {}, false);
+    const auto = await this.deriveStats(tpl, {}, false, true, ctx);
     for (const field of tpl.fields) {
       if (!field.auto) continue;
       if (stats[field.key] === undefined && auto.stats[field.key] !== undefined) {
         stats[field.key] = auto.stats[field.key];
       }
     }
+    // Prune stat keys the template no longer declares (old blueprints that
+    // carry pre-refactor properties) — keeps blueprints canonical and silences
+    // property-set warnings.
+    for (const key of Object.keys(stats)) {
+      if (!tpl.fields.some((f) => f.key === key)) delete stats[key];
+    }
 
+    // Review item #7: the stats source is ALWAYS recomputed on regenerate —
+    // if the vanilla DB has been parsed since generation, the blueprint (and
+    // the README rendered from it) now truthfully reports where stats came
+    // from, with fresh sample counts and ranges.
+    blueprint.statsSource = auto.source;
     blueprint.mod = mod;
     blueprint.stats = stats;
     blueprint.updatedAt = isoNow();
 
-    const script = await this.buildScript(tpl, blueprint);
+    const script = buildItemScript(tpl, blueprint);
+    const iconIsCustom = await this.iconIsCustom(tpl, mod.icon, ctx);
+    const b42 = await this.b42.validate(
+      tpl,
+      {
+        ...stats,
+        ItemType: tpl.itemType,
+        DisplayCategory: tpl.displayCategory,
+        Icon: mod.icon,
+      },
+      { itemName: mod.itemName, module: mod.module, icon: mod.icon },
+    );
+    if (b42.errors.length > 0) {
+      throw new Error(
+        `Build 42 validation failed — nothing was written:\n- ${b42.errors.join("\n- ")}`,
+      );
+    }
 
-    // Rewrite every generated artifact (all idempotent, all overwrite:true).
+    // Staged rewrite of every generated artifact (all idempotent, overwrite).
     await this.writeModInfo(args.project, blueprint);
     await this.workspaceManager.writeFile(
       `${args.project}/42/media/scripts/${mod.id}${SCRIPT_SUFFIX}`,
       script,
       { overwrite: true },
     );
+    await this.writeAssets(args.project, tpl, blueprint, iconIsCustom);
+    // Icon switched away from a generated texture? Remove the stale file so
+    // the shipped mod never carries dead assets.
+    if (oldIconCustom && oldIcon !== mod.icon) {
+      const oldFile = safeIconFileName(oldIcon);
+      if (oldFile) {
+        try {
+          await this.workspaceManager.delete(
+            `${args.project}/42/media/textures/${oldFile}`,
+            { force: true },
+          );
+        } catch {
+          // already gone — fine
+        }
+      }
+    }
     await this.writeBlueprint(args.project, blueprint);
     await this.writeReadme(args.project, blueprint);
+    await this.writeTranslation(args.project, blueprint);
 
     const validation = await this.validateFolder(
       ctx,
       args.project,
       script,
       blueprint.statsSource,
+      b42,
     );
 
     const entries = await this.workspaceManager.listFiles(args.project, {});
@@ -639,29 +852,6 @@ export class ModGenManager {
       : p.startsWith(project + "/")
         ? p.slice(project.length + 1)
         : p;
-  }
-
-  private async buildScript(
-    tpl: ModgenTemplate,
-    blueprint: ModgenBlueprint,
-  ): Promise<string> {
-    const specs: Record<string, any> = {
-      ...tpl.defaultStats,
-      ...blueprint.stats,
-      DisplayName: blueprint.mod.displayName,
-      Icon: blueprint.mod.icon,
-      Type: tpl.pzType,
-      DisplayCategory: tpl.displayCategory,
-      // consumed by the generator for template selection, stripped from output
-      category: tpl.category,
-    };
-    if (tpl.damageCategory && specs.DamageCategory === undefined) {
-      specs.DamageCategory = tpl.damageCategory;
-    }
-    return this.generator.generateScript("item", blueprint.mod.itemName, specs, blueprint.mod.module, {
-      includeComments: true,
-      balance: "custom",
-    });
   }
 
   private async writeModInfo(
@@ -695,6 +885,42 @@ export class ModGenManager {
     );
   }
 
+  /** Build 42 ItemName translation file (module.itemId → display name). */
+  private async writeTranslation(
+    project: string,
+    blueprint: ModgenBlueprint,
+  ): Promise<void> {
+    await this.workspaceManager.writeFile(
+      `${project}/${ITEM_NAME_TRANSLATION_PATH}`,
+      buildItemTranslation(blueprint),
+      { overwrite: true },
+    );
+  }
+
+  /** Generated assets: real poster always; placeholder icon for custom icons. */
+  private async writeAssets(
+    project: string,
+    tpl: ModgenTemplate,
+    blueprint: ModgenBlueprint,
+    iconIsCustom: boolean,
+  ): Promise<void> {
+    await this.workspaceManager.writeFile(
+      `${project}/poster.png`,
+      makePosterPng(tpl.color),
+      { overwrite: true },
+    );
+    if (iconIsCustom) {
+      const file = safeIconFileName(blueprint.mod.icon);
+      if (file) {
+        await this.workspaceManager.writeFile(
+          `${project}/42/media/textures/${file}`,
+          makeIconPng(tpl.color),
+          { overwrite: true },
+        );
+      }
+    }
+  }
+
   private async writeReadme(
     project: string,
     blueprint: ModgenBlueprint,
@@ -704,8 +930,15 @@ export class ModGenManager {
     const labelFor = (key: string): string =>
       tpl?.fields.find((f) => f.key === key)?.label ?? key;
 
+    const src = blueprint.statsSource;
     const statRows = Object.entries(blueprint.stats)
-      .map(([key, value]) => `| ${labelFor(key)} | \`${key}\` | ${String(value)} |`)
+      .map(([key, value]) => {
+        const samples =
+          src.kind === "vanilla"
+            ? ` (${src.ranges[key]?.count ?? "?"} vanilla samples)`
+            : "";
+        return `| ${labelFor(key)} | \`${key}\` | ${String(value)}${samples} |`;
+      })
       .join("\n");
 
     const kbSection = tpl?.kbRefs.length
@@ -715,9 +948,20 @@ export class ModGenManager {
       : "";
 
     const sourceLine =
-      blueprint.statsSource.kind === "vanilla"
-        ? `Auto-balanced against **${blueprint.statsSource.sampleCount}** ${blueprint.statsSource.label} from the vanilla game database.`
+      src.kind === "vanilla"
+        ? `Auto-balanced against **${src.sampleCount}** ${src.label}${
+            src.sourceFiles ? ` from ${src.sourceFiles} vanilla files` : ""
+          }${src.gameVersion ? ` (game ${src.gameVersion})` : ""}.`
         : "Stats are sensible defaults — parse the vanilla game data (parse_game_files) and regenerate to get data-driven balanced stats.";
+
+    const iconLine =
+      blueprint.mod.icon === tpl?.defaultIcon
+        ? `- **Icon**: \`${m.icon}\` (vanilla texture, reused)`
+        : `- **Icon**: \`${m.icon}\`${
+            src.kind === "vanilla"
+              ? " (vanilla texture if it exists, otherwise a generated placeholder)"
+              : " (a generated placeholder texture is included)"
+          }`;
 
     const readme = `# ${m.modName}
 
@@ -729,21 +973,25 @@ ${m.description ? `${m.description}\n\n` : ""}${sourceLine}
 ${m.name}/
 ├── mod.info                # metadata the game launcher reads
 ├── workshop.txt            # Steam Workshop title/description
-├── poster.png              # preview image shown in the mod list
+├── poster.png              # generated preview image shown in the mod list
 ├── README.md               # this file
 ├── modgen.blueprint.json   # editable blueprint — reopen & regenerate
 ├── common/media/           # Build 42 shared assets (mandatory folder)
 └── 42/
-    └── media/
-        └── scripts/
-            └── ${m.id}${SCRIPT_SUFFIX}   # the item script
+    ├── media/
+    │   ├── scripts/
+    │   │   └── ${m.id}${SCRIPT_SUFFIX}   # the item script
+    │   └── lua/shared/Translate/EN/
+    │       └── ItemName.json            # the item's display name
+    └── (textures/ItemX.png when a custom icon is generated)
 \`\`\`
 
 ## The item
 
 - **Item id**: \`${m.itemName}\` (module \`${m.module}\`)
-- **Display name**: ${m.displayName}
-- **Icon**: \`${m.icon}\`
+- **Display name**: ${m.displayName} (via the ItemName translation file)
+${iconLine}
+- **Build 42 class**: \`${tpl?.itemType ?? "?"}\`
 
 ### Generated stats
 
@@ -764,11 +1012,9 @@ enable it in the in-game Mods menu.
 
 1. Run \`modgen_blueprint project=${m.name}\` to reopen this mod's blueprint.
 2. Change any stat (or pass \`randomize: ["MaxDamage", ...]\` to re-roll it).
-3. Run \`modgen_regenerate\` — the script, stats table and validation are all
-   rewritten from the blueprint, so the mod never drifts out of sync.
-
-You can also edit the script directly under \`42/media/scripts/\` and use
-\`workspace_inspect\` to validate the folder.
+3. Run \`modgen_regenerate\` — the script, stats table, translation and
+   validation are all rewritten from the blueprint, so the mod never drifts
+   out of sync.
 ${kbSection}
 ---
 *Generated by the pz-mcp-server Mod Generator — ${blueprint.updatedAt.slice(0, 10)}.*
@@ -780,47 +1026,75 @@ ${kbSection}
     );
   }
 
+  /**
+   * Combined validation for a generated mod:
+   *  - script syntax (ValidationEngine),
+   *  - Build 42 semantics (B42Validator — the authority),
+   *  - folder structure (workspace inspectProject; a thrown inspection is a
+   *    FAILURE, never a pass — review item #9).
+   */
   private async validateFolder(
     ctx: ToolContext,
-    project: string,
+    project: string | null,
     script: string,
-    source: ModgenStatsSource,
+    _source: ModgenStatsSource,
+    b42: Awaited<ReturnType<B42Validator["validate"]>>,
   ): Promise<ModgenValidation> {
     const scriptVal = await this.validator.validateScript(script, "item", false);
-    // UNKNOWN_PROPERTY warnings are validator-coverage noise (the validator
-    // only catalogs a subset of PZ properties) — hide them from the modgen
-    // report so "ready" reads clean while real issues stay visible.
-    const scriptWarnings = scriptVal.warnings.filter(
-      (w) => w.code !== "UNKNOWN_PROPERTY",
-    );
-    let insp;
-    try {
-      insp = await inspectProject(ctx, project, {
-        checkDependencies: false,
-        includeFileList: false,
-      });
-    } catch {
-      insp = null;
+    // The generic validator only catalogs a subset of PZ properties —
+    // UNKNOWN_PROPERTY noise is B42Validator's domain, and INVALID_REFERENCE
+    // for Icon/WeaponSprite is expected (icons are vanilla-reused or a
+    // generated texture, verified by the B42 checks).
+    const scriptWarnings = scriptVal.warnings
+      .filter((w) => w.code !== "UNKNOWN_PROPERTY")
+      .filter(
+        (w) =>
+          !(w.code === "INVALID_REFERENCE" && /Icon|WeaponSprite/.test(w.message)),
+      )
+      .map((w) => w.message);
+
+    let insp: Awaited<ReturnType<typeof inspectProject>> | null = null;
+    let inspectError: string | null = null;
+    if (project) {
+      try {
+        insp = await inspectProject(ctx, project, {
+          checkDependencies: false,
+          includeFileList: false,
+        });
+      } catch (error) {
+        inspectError =
+          error instanceof Error ? error.message : String(error);
+      }
     }
+
     const projectErrors = (insp?.validation.errors ?? []).map(
       (e: any) => `${e.file ?? e.code}: ${e.message}`,
     );
     const projectWarnings = (insp?.validation.warnings ?? []).map(
       (w: any) => `${w.file ?? w.code}: ${w.message}`,
     );
+    if (inspectError) projectErrors.push(`inspection failed: ${inspectError}`);
+
     const scriptValid = scriptVal.isValid;
-    const projectValid = insp ? insp.validation.valid : true;
+    // A folder inspection that THROWS is a validation failure, not a pass.
+    const projectValid = project ? insp !== null && insp.validation.valid : true;
+    const ready =
+      scriptValid && projectValid && b42.errors.length === 0;
 
     const validation: ModgenValidation = {
       scriptValid,
       projectValid,
-      ready: scriptValid && projectValid,
-      scriptWarnings: scriptWarnings.map((w) => w.message),
+      ready,
+      scriptWarnings,
       projectErrors,
       projectWarnings,
-      ...(source.kind === "defaults"
+      b42Errors: b42.errors,
+      b42Warnings: b42.warnings,
+      b42Info: b42.info,
+      dataChecked: b42.dataChecked,
+      ...(project === null
         ? {
-            note: "Vanilla game data not indexed yet — stats are balanced defaults. Run parse_game_files to enable data-driven stats.",
+            note: "Dry run — script + Build 42 checks only; folder inspection happens after generation.",
           }
         : {}),
     };

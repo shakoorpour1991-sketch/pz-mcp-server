@@ -138,13 +138,13 @@ export const TOOL_GUIDES = {
     ex:'source: "C:/Downloads/MyMod.zip" · targetDir: "C:/Users/you/Zomboid/mods" (optional)',
   },
   modgen_templates: {
-    what:'List the five Mod Generator templates with every editable stat field and the vanilla data each balances against.',
-    how:'No arguments needed — press Run. Shows Simple Item, Melee Weapon, Food, Tool and Clothing with each stat\'s range, unit and hint.',
+    what:'List the five Mod Generator templates with every editable stat field, its maturity level (ready/beta), icon suggestions and the vanilla data each balances against.',
+    how:'No arguments needed — press Run. Shows Simple Item, Melee Weapon, Food, Tool and Clothing with each stat\'s range, unit, hint and vanilla sample count.',
     ex:'—',
   },
   modgen_generate: {
-    what:'Generate a complete ready-to-ship mod folder from a template — script, mod.info, workshop.txt, README and an editable blueprint.',
-    how:'<b>template</b>, <b>name</b>, <b>modId</b>, <b>modName</b> and <b>itemName</b> are required. Unpinned stats are auto-balanced from real vanilla game data. Optional: <b>author</b>, <b>description</b>, <b>displayName</b>, <b>icon</b>, <b>module</b>, <b>stats</b> (pin values), <b>autoStats</b>, <b>randomize</b> (roll within the vanilla range) and <b>dryRun</b>.',
+    what:'Generate a complete ready-to-ship Build 42 mod folder from a template — ItemType item script, ItemName translation, generated poster, mod.info, workshop.txt, README and an editable blueprint.',
+    how:'<b>template</b>, <b>name</b>, <b>modId</b>, <b>modName</b> and <b>itemName</b> are required. Unpinned stats are auto-balanced from real vanilla game data. Optional: <b>author</b>, <b>description</b>, <b>displayName</b>, <b>icon</b> (vanilla texture to reuse, or a custom name — a placeholder texture is generated), <b>module</b>, <b>stats</b> (pin values), <b>autoStats</b>, <b>randomize</b> and <b>dryRun</b> (previews the exact file plan). Build 42 checks run before anything is written.',
     ex:'template: "melee_weapon" · name: "MyWeapon" · modId: "my_weapon" · modName: "My Weapon" · itemName: "MyWeaponItem"',
   },
   modgen_list: {
@@ -158,8 +158,8 @@ export const TOOL_GUIDES = {
     ex:'project: "MyWeapon"',
   },
   modgen_regenerate: {
-    what:'Rewrite a generated mod after editing its blueprint — script, mod.info, README and validation stay in sync.',
-    how:'<b>project</b> is required. Pass <b>stats</b> to pin new values (null resets a stat to auto), <b>randomize</b> (array of stat keys) to re-roll them inside the vanilla range, or change <b>modName</b>/<b>author</b>/<b>description</b>/<b>displayName</b>/<b>icon</b>/<b>module</b>.',
+    what:'Rewrite a generated mod after editing its blueprint — script, translation, mod.info, README and validation stay in sync, and the stats source is re-derived from the current vanilla database.',
+    how:'<b>project</b> is required. Pass <b>stats</b> to pin new values (null resets a stat to auto), <b>randomize</b> (array of stat keys) to re-roll them inside the vanilla range, or change <b>modName</b>/<b>author</b>/<b>description</b>/<b>displayName</b>/<b>icon</b>/<b>module</b>. Build 42 checks run first — nothing is written if they fail.',
     ex:'project: "MyWeapon" · stats: { MaxDamage: 2.2 } · randomize: ["CriticalChance"]',
   },
 };
@@ -180,9 +180,9 @@ export const GUIDE_STEPS = [
 
 export const EXAMPLES = {
   search_vanilla: { query:'axe', limit:10 },
-  validate_script: { content:'module Base {\n  item MyAxe {\n    Type = Weapon,\n    DisplayName = My Axe,\n    Weight = 3,\n    MaxDamage = 15,\n    MinDamage = 8,\n  }\n}', strict:false },
+  validate_script: { content:'module Base {\n  item MyAxe {\n    ItemType = base:weapon,\n    DisplayName = My Axe,\n    Weight = 3,\n    MaxDamage = 15,\n    MinDamage = 8,\n  }\n}', strict:false },
   generate_script: { type:'item', name:'Katana_Custom', module:'Base',
-    properties:{ category:'Weapon', DisplayName:'Custom Katana', Icon:'Katana', Type:'Weapon', Weight:1.6, MaxDamage:22, MinDamage:12, ConditionMax:30, Categories:'LongBlade', DamageCategory:'Slash', SwingTime:1.2 } },
+    properties:{ category:'Weapon', DisplayName:'Custom Katana', Icon:'Katana', ItemType:'base:weapon', Weight:1.6, MaxDamage:22, MinDamage:12, ConditionMax:30, Categories:'LongBlade', SubCategory:'Swinging', SwingTime:1.2 } },
   check_references: { references:['Axe','HandAxe','Sound_AxeSwing'], type:'all' },
   analyze_mod: { modPath:'C:/Users/you/Zomboid/mods/MyMod' },
   parse_game_files: {},

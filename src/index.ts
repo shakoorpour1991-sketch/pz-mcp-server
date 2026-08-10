@@ -117,11 +117,11 @@ async function initializeServer() {
     // Smart mod installer (detect_pz_paths / install_mod).
     const modInstaller = new ModInstaller(pathManager);
 
-    // Beginner-friendly mod generator (modgen_*) — reuses the generator,
-    // validator, vanilla DB and the rooted workspace above.
+    // Beginner-friendly mod generator (modgen_*) — emits Build 42 item
+    // scripts (ItemType = base:*), reuses the validator, vanilla DB and the
+    // rooted workspace above.
     const modGenManager = new ModGenManager(
       dbManager,
-      generator,
       validator,
       workspaceManager,
     );

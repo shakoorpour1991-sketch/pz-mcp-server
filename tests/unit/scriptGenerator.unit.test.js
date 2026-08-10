@@ -43,6 +43,10 @@ describe('ScriptGenerator', () => {
     assert.ok(script.includes('item TestAxe'));
     assert.ok(script.includes('DisplayName = Test Axe,'));
     assert.ok(script.includes('MaxDamage = 2.5,'));
+    // B41 data audit: the legacy `Type` spec is mapped to the Build 42
+    // spelling and must never leak `Type = ...` into generated scripts.
+    assert.ok(script.includes('ItemType = base:weapon,'));
+    assert.ok(!/\bType = /.test(script), 'no legacy Type = property emitted');
   });
 
   test('balance=powerful scales weapon stats (MaxDamage 1.0 -> 1.5)', async () => {
@@ -84,6 +88,10 @@ describe('ScriptGenerator', () => {
     assert.ok(script.includes('MaxRange = 20'));
     assert.ok(script.includes('Categories = Firearm'));
     assert.ok(!script.includes('MaxDamage'));
+    // B41 data audit: MaxHitCount was removed in Build 42 (0 items in the
+    // 42.20 vanilla DB) and must not appear in generated output.
+    assert.ok(!script.includes('MaxHitCount'));
+    assert.ok(script.includes('ItemType = base:weapon,'));
   });
 
   test('category "item" does not hijack into the food template', async () => {
@@ -95,6 +103,18 @@ describe('ScriptGenerator', () => {
     );
     assert.ok(!script.includes('HungerChange'));
     assert.ok(script.includes('Categories = Tool'));
+  });
+
+  test('an explicit ItemType spec is kept and legacy Type is dropped', async () => {
+    const script = await generator.generateScript(
+      'item',
+      'ExplicitItem',
+      { Type: 'Food', ItemType: 'base:weapon', DisplayName: 'Explicit', category: 'Weapon' },
+      'Base'
+    );
+    assert.ok(script.includes('ItemType = base:weapon,'));
+    assert.ok(!/\bType = /.test(script), 'legacy Type spec must not leak');
+    assert.ok(!script.includes('HungerChange'));
   });
 
   test('generates a recipe with ingredients and result', async () => {

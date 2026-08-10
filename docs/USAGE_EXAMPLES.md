@@ -33,7 +33,7 @@ const toolScript = await mcp.callTool('generate_script', {
   properties: {
     DisplayName: 'Reinforced Hammer',
     DisplayCategory: 'Tool',
-    Type: 'Normal',
+    ItemType: 'base:normal',
     Weight: 1.8,
     Icon: 'Hammer',
     ConditionMax: 25,
@@ -70,7 +70,7 @@ const foodScript = await mcp.callTool('generate_script', {
   properties: {
     DisplayName: 'Power Bar',
     DisplayCategory: 'Food',
-    Type: 'Food',
+    ItemType: 'base:food',
     Weight: 0.1,
     Icon: 'CandyBar',
     HungerChange: -20,
@@ -125,7 +125,7 @@ const balancedWeapon = await mcp.callTool('generate_script', {
   properties: {
     DisplayName: 'Craftsman Katana',
     DisplayCategory: 'Weapon',
-    Type: 'Weapon',
+    ItemType: 'base:weapon',
     Weight: 2.2,
     Icon: 'Katana',
     AttachmentType: 'Sword',
@@ -135,7 +135,7 @@ const balancedWeapon = await mcp.callTool('generate_script', {
     ConditionMax: 15,
     ConditionLowerChanceOneIn: 25,
     Categories: 'LongBlade',
-    DamageCategory: 'Slash',
+    SubCategory: 'Swinging',
     SwingSound: 'KatanaSwing',
     HitSound: 'Katanahit',
     BreakSound: 'Katanabreak',
@@ -170,32 +170,31 @@ console.log('Balanced weapon script:\n', balancedWeapon);
 // Generate a balanced firearm
 const firearmScript = await mcp.callTool('generate_script', {
   type: 'item',
-  name: 'HuntingCrossbow',
+  name: 'HuntingShotgun',
   properties: {
-    DisplayName: 'Hunting Crossbow',
+    DisplayName: 'Hunting Shotgun',
     DisplayCategory: 'Weapon',
-    Type: 'Weapon',
+    ItemType: 'base:weapon',
     Weight: 3.5,
-    Icon: 'Crossbow',
+    Icon: 'Shotgun',
     MaxRange: 15,
     MinRange: 0.8,
     AimingTime: 35,
     RecoilDelay: 0,
     ConditionMax: 20,
-    Categories: 'Archery',
-    SubCategory: 'Crossbow',
+    Categories: 'Firearm',
+    SubCategory: 'Firearm',
     RequiresEquippedBothHands: true,
     ProjectileCount: 1,
     ShareDamage: false,
-    MaxHitCount: 1,
-    AmmoType: 'CrossbowBolt',
+    AmmoType: 'ShotgunShells',
     HitChance: 85,
-    SwingSound: 'CrossbowFire',
-    ClickSound: 'CrossbowClick'
+    SwingSound: 'ShotgunFire',
+    ClickSound: 'ShotgunClick'
   }
 });
 
-console.log('Crossbow script:\n', firearmScript);
+console.log('Shotgun script:\n', firearmScript);
 ```
 
 ## Recipe Development
@@ -372,7 +371,7 @@ for (const weapon of weaponSeries) {
     properties: {
       DisplayName: weapon.name.replace(/([A-Z])/g, ' $1').trim(),
       DisplayCategory: 'Weapon',
-      Type: 'Weapon',
+      ItemType: 'base:weapon',
       Weight: weapon.weight,
       MaxDamage: weapon.damage,
       MinDamage: weapon.damage * 0.8,
@@ -464,12 +463,12 @@ async function developCompleteWeaponMod() {
       name: weapon.name,
       properties: {
         DisplayName: weapon.displayName,
-        Type: 'Weapon',
+        ItemType: 'base:weapon',
         Weight: weapon.weight,
         MaxDamage: weapon.damage,
         MinDamage: weapon.damage * 0.8,
         Categories: weapon.name.includes('Knife') ? 'SmallBlade' : 'LongBlade',
-        DamageCategory: 'Slash'
+        SubCategory: 'Swinging'
       }
     });
     weaponScripts.push(script);

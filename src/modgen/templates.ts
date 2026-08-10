@@ -1,19 +1,23 @@
 /**
  * Mod Generator templates — the five beginner-friendly starting points.
  *
- * Each template describes:
- *  - how its script is produced (the existing ScriptGenerator's item template
- *    is reused via `category`; the generator merges these stats over it),
- *  - every editable stat field (label, type, range, unit, plain-language hint,
- *    group) so the deck can render a form and clients can validate input,
+ * Each template is a complete Build 42 item definition:
+ *  - `itemType` — the Build 42 item class emitted as `ItemType = base:*`
+ *    (never the legacy `Type = ...` model),
+ *  - every editable stat field (label, type, range, unit, hint, group),
  *  - a vanilla baseline query (DatabaseManager.getItemsByPropertyType + an
  *    optional in-memory filter) used to derive realistic balanced stats from
- *    real game data when the DB has been parsed,
- *  - sane fallback defaults for machines where vanilla data isn't indexed yet,
+ *    real parsed game data when the DB is populated,
+ *  - sane fallback defaults for machines where vanilla data isn't indexed,
+ *  - a maturity level so the UI never over-promises (clothing reuses a
+ *    vanilla outfit; a fully custom 3D outfit needs external assets),
  *  - knowledge-base references surfaced as "learn more" hints.
  *
- * Ranges mirror the ValidationEngine's property validators (see
- * src/validation/ValidationEngine.ts) so generated scripts always validate.
+ * Field names, enum values and defaults were verified against the parsed
+ * Build 42.20 vanilla database (5,088 items) — e.g. weapon damage type is
+ * `SubCategory` (Swinging/Stab/Spear), clothing uses registry-style
+ * `BodyLocation = base:tshirt`, and `DisplayCategory` values come from real
+ * vanilla categories (there is no "Misc" in Build 42).
  */
 
 export type ModgenTemplateId =
@@ -48,6 +52,9 @@ export interface StatField {
   auto?: boolean;
 }
 
+/** How ready this template's output is for a typical beginner. */
+export type ModgenMaturity = "ready" | "beta";
+
 export interface ModgenTemplate {
   id: ModgenTemplateId;
   /** Short display label ("Melee Weapon"). */
@@ -56,33 +63,37 @@ export interface ModgenTemplate {
   short: string;
   /** Longer description for the build screen. */
   description: string;
-  /** ScriptGenerator category — selects the item template + balances. */
-  category: "Misc" | "Weapon" | "Food" | "Tool" | "Clothing";
-  /** Validator-accepted Type value for the generated item. */
-  pzType: "Normal" | "Weapon" | "Food" | "Clothing";
-  /** Default DisplayCategory (validator enum). */
+  /** Build 42 item class — emitted as `ItemType = <value>`. */
+  itemType: "base:normal" | "base:weapon" | "base:food" | "base:clothing";
+  /** Display category (real Build 42 value — validated against vanilla data). */
   displayCategory: string;
-  /** Default DamageCategory for weapons (validator enum). */
-  damageCategory?: "Slash" | "Stab" | "Blunt" | "Burn" | "Bite";
-  /** Default sprite reference for the Icon property. */
+  /** Category label shown in the UI (informational only). */
+  category: string;
+  /** Default sprite reference for the Icon property (verified vanilla icon). */
   defaultIcon: string;
+  /** Icons the user can pick from (all verified vanilla icon names). */
+  iconSuggestions: string[];
+  /** Properties that must be present for the item to be valid. */
+  requiredProps: string[];
+  /** Emit WeaponSprite = Icon (melee weapons — the in-world weapon model). */
+  emitWeaponSprite?: boolean;
+  /** Extra emitted properties not represented as editable fields. */
+  extraProps?: string[];
+  /** How complete/safe the output is for a beginner. */
+  maturity: ModgenMaturity;
+  /** Plain-language caveat shown next to the maturity badge. */
+  maturityNote: string;
+  /** Brand colour used for the generated poster + placeholder icon. */
+  color: [number, number, number];
   /**
    * Vanilla baseline: getItemsByPropertyType(propertyType, …, propertyKey)
-   * then the filter. The filter narrows the big buckets (e.g. ItemType
-   * base:normal holds tools AND miscellaneous junk) so auto-stats come from
-   * comparable items.
-   *
-   * Build 42.20 parses items with `ItemType` (lowercase tag values like
-   * "base:weapon"); older parses use `Type` ("Weapon"). `legacy` is queried
-   * too and the results are unioned so either dataset works.
+   * then the filter. Targets the Build 42.20 spelling — `ItemType` with
+   * lowercase tag values like "base:weapon". The legacy B41 `Type`
+   * spelling was removed (no item in the parsed DB has it).
    */
   baseline: {
-    /** Property name to match (B42: "ItemType"). */
     propertyKey: string;
-    /** Value to match (B42: "base:weapon"; legacy: "Weapon"). */
     propertyType: string;
-    /** Pre-B42 spelling (Type=Weapon) — queried in addition. */
-    legacy?: { propertyKey: string; propertyType: string };
     label: string;
     filter?: (p: Record<string, any>) => boolean;
   };
@@ -96,12 +107,6 @@ export interface ModgenTemplate {
 
 const str = (p: Record<string, any>, key: string): string =>
   String(p[key] ?? "");
-const categoriesInclude = (p: Record<string, any>, cat: string): boolean =>
-  str(p, "Categories")
-    .split(/[;,]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .some((s) => s.toLowerCase() === cat.toLowerCase());
 
 export const MODGEN_TEMPLATES: ModgenTemplate[] = [
   {
@@ -110,24 +115,30 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     short: "A collectible or utility item that stacks in your inventory.",
     description:
       "The classic starting point: a non-equippable item (junk, a unique collectible, a crafting material) with weight, durability and a metal value.",
+    itemType: "base:normal",
+    displayCategory: "Junk",
     category: "Misc",
-    pzType: "Normal",
-    displayCategory: "Misc",
     defaultIcon: "Pen",
+    iconSuggestions: ["Pen", "IDcard", "CreditCard", "BusinessCard", "PopEmpty", "Flier"],
+    requiredProps: ["Weight", "Icon"],
+    maturity: "ready",
+    maturityNote: "Plain item with real Build 42 junk styling — no extra assets needed.",
+    color: [96, 116, 148],
     baseline: {
       propertyKey: "ItemType",
       propertyType: "base:normal",
-      legacy: { propertyKey: "Type", propertyType: "Normal" },
-      label: "miscellaneous items",
-      filter: (p) => ["Misc", "Junk"].includes(str(p, "DisplayCategory")),
+      label: "collectible junk items",
+      // base:normal is a huge bucket — keep only junk/memento collectibles so
+      // auto-stats come from comparable items.
+      filter: (p) =>
+        ["Junk", "Memento"].includes(str(p, "DisplayCategory")),
     },
     defaultStats: {
       Weight: 0.5,
       ConditionMax: 10,
       ConditionLowerChanceOneIn: 40,
       MetalValue: 5,
-      Categories: "Misc",
-      Icon: "Pen",
+      Categories: "",
     },
     fields: [
       {
@@ -181,9 +192,8 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       {
         key: "Categories",
         label: "Categories",
-        kind: "enum",
-        enumValues: ["Misc", "Junk", "Tool", "Key", "Furniture"],
-        hint: "Tags that recipes and gameplay reference (e.g. junk items can be ripped for cloth).",
+        kind: "string",
+        hint: "Optional tags recipes can reference (e.g. base:write, base:canbeplowed). Leave empty if unsure.",
         group: "Basics",
       },
     ],
@@ -198,15 +208,19 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     short: "A balanced melee weapon with damage, crits and durability.",
     description:
       "A full melee weapon (sword, bat, axe…) with damage, critical hits, knockdown physics, stamina cost and durability — auto-balanced against the real melee arsenal.",
-    category: "Weapon",
-    pzType: "Weapon",
+    itemType: "base:weapon",
     displayCategory: "Weapon",
-    damageCategory: "Slash",
-    defaultIcon: "Sword",
+    category: "Weapon",
+    defaultIcon: "Axe",
+    iconSuggestions: ["Axe", "ClubHammer", "KnifeButter", "UmbrellaWhite", "Pen"],
+    requiredProps: ["MaxDamage", "MinDamage", "ConditionMax", "Icon"],
+    emitWeaponSprite: true,
+    maturity: "ready",
+    maturityNote: "Full melee weapon with the in-world weapon sprite tied to your icon.",
+    color: [166, 64, 56],
     baseline: {
       propertyKey: "ItemType",
       propertyType: "base:weapon",
-      legacy: { propertyKey: "Type", propertyType: "Weapon" },
       label: "melee weapons",
       // base:weapon is the melee bucket; exclude anything firearm-like
       // (AmmoType / Firearm subcategory) so the baseline stays melee-only.
@@ -214,7 +228,7 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         !str(p, "AmmoType") && str(p, "SubCategory") !== "Firearm",
     },
     defaultStats: {
-      Weight: 1.0,
+      Weight: 1.5,
       MaxDamage: 1.1,
       MinDamage: 0.8,
       CriticalChance: 40,
@@ -223,12 +237,10 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       DoorDamage: 5,
       TreeDamage: 0,
       EnduranceMod: 1.0,
-      RunSpeedModifier: 1.0,
       MaxHitcount: 1,
       ConditionMax: 15,
       ConditionLowerChanceOneIn: 20,
-      DamageCategory: "Slash",
-      Icon: "Sword",
+      SubCategory: "Swinging",
     },
     fields: [
       {
@@ -290,11 +302,11 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         auto: true,
       },
       {
-        key: "DamageCategory",
-        label: "Damage type",
+        key: "SubCategory",
+        label: "Swing type",
         kind: "enum",
-        enumValues: ["Slash", "Stab", "Blunt", "Burn", "Bite"],
-        hint: "Determines the wound type: Slash cuts, Stab pierces, Blunt crushes.",
+        enumValues: ["Swinging", "Stab", "Spear"],
+        hint: "How the weapon attacks: Swinging = blunt & slash swings (bats, axes), Stab = thrusting blades (knives), Spear = polearms.",
         group: "Damage",
       },
       {
@@ -342,24 +354,13 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         auto: true,
       },
       {
-        key: "RunSpeedModifier",
-        label: "Movement speed",
-        kind: "number",
-        min: 0.5,
-        max: 1.5,
-        step: 0.05,
-        hint: "How fast you move while holding it (1.0 = normal, 0.9 = big heavy weapon).",
-        group: "Combat feel",
-        auto: true,
-      },
-      {
         key: "MaxHitcount",
         label: "Max hits per swing",
         kind: "number",
         min: 1,
         max: 10,
         integer: true,
-        hint: "How many zombies one swing can hit. 1 is standard; 2 makes crowd control much easier (vanilla Build 42 spelling: MaxHitcount).",
+        hint: "How many zombies one swing can hit. 1 is standard; 2 makes crowd control much easier.",
         group: "Combat feel",
         auto: true,
       },
@@ -400,14 +401,18 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     short: "A balanced food item with hunger, thirst, calories and spoilage.",
     description:
       "A complete food item: how much it fills hunger and thirst, its calories and macros, how long it stays fresh, and whether it can be cooked.",
-    category: "Food",
-    pzType: "Food",
+    itemType: "base:food",
     displayCategory: "Food",
+    category: "Food",
     defaultIcon: "BeefJerky",
+    iconSuggestions: ["BeefJerky", "BeerBottle", "WaterBottle", "JarBrown", "PotFull"],
+    requiredProps: ["Calories", "Weight", "Icon"],
+    maturity: "ready",
+    maturityNote: "Complete food item — no extra assets needed.",
+    color: [98, 152, 82],
     baseline: {
       propertyKey: "ItemType",
       propertyType: "base:food",
-      legacy: { propertyKey: "Type", propertyType: "Food" },
       label: "food items",
     },
     defaultStats: {
@@ -422,7 +427,6 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       DaysTotallyRotten: 14,
       IsCookable: true,
       PoisonPower: 0,
-      Icon: "BeefJerky",
     },
     fields: [
       {
@@ -560,29 +564,27 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     short: "A durable utility tool for crafting, farming or salvaging.",
     description:
       "A working tool (hammer, trowel, screwdriver…) with durability tuned against the real tool set — or a simple usable object with wear.",
-    category: "Tool",
-    pzType: "Normal",
+    itemType: "base:normal",
     displayCategory: "Tool",
-    defaultIcon: "Hammer",
+    category: "Tool",
+    defaultIcon: "Wrench",
+    iconSuggestions: ["Wrench", "Shovel", "Pliers", "Fork", "Shovel2"],
+    requiredProps: ["Weight", "ConditionMax", "Icon"],
+    maturity: "ready",
+    maturityNote: "Durable utility item — no extra assets needed.",
+    color: [192, 142, 62],
     baseline: {
       propertyKey: "ItemType",
       propertyType: "base:normal",
-      legacy: { propertyKey: "Type", propertyType: "Normal" },
       label: "tools",
-      // base:normal is a big bucket — keep only DisplayCategory Tool or items
-      // whose Categories carry the Tool tag.
-      filter: (p) =>
-        str(p, "DisplayCategory") === "Tool" ||
-        categoriesInclude(p, "Tool"),
+      // base:normal is a big bucket — keep only DisplayCategory Tool items.
+      filter: (p) => str(p, "DisplayCategory") === "Tool",
     },
     defaultStats: {
       Weight: 0.6,
       ConditionMax: 10,
       ConditionLowerChanceOneIn: 30,
       MetalValue: 5,
-      UseWhileEquipped: false,
-      CanBeEquipped: false,
-      Icon: "Hammer",
     },
     fields: [
       {
@@ -631,20 +633,6 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         group: "Crafting",
         auto: true,
       },
-      {
-        key: "UseWhileEquipped",
-        label: "Use while equipped",
-        kind: "bool",
-        hint: "Whether the tool works from your hands slot (true) or needs to be in your inventory (false).",
-        group: "Basics",
-      },
-      {
-        key: "CanBeEquipped",
-        label: "Can be equipped",
-        kind: "bool",
-        hint: "Whether the tool can be held in a hand slot.",
-        group: "Basics",
-      },
     ],
     kbRefs: [
       { label: "KB — Crafting & Skills", path: "knowledge-base/Build42_Crafting_Skills_Research.md" },
@@ -656,26 +644,31 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     label: "Clothing",
     short: "A wearable garment with insulation and weather protection.",
     description:
-      "A wearable clothing item (jacket, shirt, pants…) with body location, insulation, wind/water resistance and movement speed effects.",
-    category: "Clothing",
-    pzType: "Clothing",
+      "A wearable clothing item (jacket, shirt, pants…) with a Build 42 body location, outfit reference, insulation and weather protection.",
+    itemType: "base:clothing",
     displayCategory: "Clothing",
-    defaultIcon: "Shirt_White",
+    category: "Clothing",
+    defaultIcon: "TshirtGeneric",
+    iconSuggestions: ["TshirtGeneric", "ShirtGeneric", "Bandeau_Burlap", "Bandeau_Denim"],
+    requiredProps: ["BodyLocation", "ClothingItem", "Icon"],
+    maturity: "beta",
+    maturityNote:
+      "Renders using a vanilla t-shirt outfit (ClothingItem). A fully custom look needs 3D clothing assets.",
+    color: [74, 122, 162],
     baseline: {
       propertyKey: "ItemType",
       propertyType: "base:clothing",
-      legacy: { propertyKey: "Type", propertyType: "Clothing" },
       label: "clothing items",
     },
     defaultStats: {
       Weight: 0.3,
-      BodyLocation: "Torso",
+      BodyLocation: "base:tshirt",
+      ClothingItem: "Tshirt_DefaultTEXTURE",
+      BloodLocation: "Shirt",
       Insulation: 0.5,
       WindResistance: 0.2,
       WaterResistance: 0.1,
-      RunSpeedModifier: 1.0,
       FabricType: "Cotton",
-      Icon: "Shirt_White",
     },
     fields: [
       {
@@ -694,8 +687,31 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         key: "BodyLocation",
         label: "Body location",
         kind: "enum",
-        enumValues: ["Torso", "Legs", "Feet", "Head", "Hands", "FullSuit", "Neck", "Groin"],
-        hint: "Which body slot the item occupies.",
+        enumValues: [
+          "base:tshirt", "base:shirt", "base:sweater", "base:jacket",
+          "base:pants", "base:shorts", "base:shoes", "base:hat",
+          "base:skirt", "base:dress", "base:longskirt", "base:longdress",
+          "base:mask", "base:scarf", "base:fullsuit",
+        ],
+        hint: "Which body slot the item occupies (Build 42 registry values — e.g. base:tshirt, base:jacket, base:pants).",
+        group: "Basics",
+      },
+      {
+        key: "ClothingItem",
+        label: "Outfit reference",
+        kind: "string",
+        hint: "Binds the item to an outfit definition (clothing.xml). Defaults to a vanilla t-shirt outfit; a custom look needs 3D clothing assets.",
+        group: "Basics",
+      },
+      {
+        key: "BloodLocation",
+        label: "Blood location",
+        kind: "enum",
+        enumValues: [
+          "Shirt", "ShirtLongSleeves", "ShirtNoSleeves", "UpperBody",
+          "Jacket", "Trousers", "Head", "Shoes", "Groin", "Neck", "Hands",
+        ],
+        hint: "Which body regions show blood on the garment (vanilla values like Shirt, UpperBody, Jacket).",
         group: "Basics",
       },
       {
@@ -729,17 +745,6 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         step: 0.05,
         hint: "How well it keeps rain out.",
         group: "Protection",
-        auto: true,
-      },
-      {
-        key: "RunSpeedModifier",
-        label: "Movement speed",
-        kind: "number",
-        min: 0.5,
-        max: 1.5,
-        step: 0.05,
-        hint: "Speed while wearing it — heavy armor slows you down (0.9–0.95).",
-        group: "Basics",
         auto: true,
       },
       {

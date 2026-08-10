@@ -504,7 +504,7 @@ export class WorkspaceManager {
   /** Write a file atomically (temp file + rename) with overwrite protection. */
   async writeFile(
     relPath: string,
-    content: string,
+    content: string | Buffer,
     opts: WriteOptions = {},
   ): Promise<{ dryRun: boolean; path: string; abs: string; bytes: number }> {
     const { root, abs } = this.resolve(relPath);

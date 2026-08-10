@@ -28,7 +28,7 @@ export const modgenTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "modgen_templates",
     description:
-      "List the Mod Generator templates (Simple Item, Melee Weapon, Food, Tool, Clothing) with every editable stat field, its range and hint, plus the vanilla-data sample each template auto-balances against",
+      "List the Mod Generator templates (Simple Item, Melee Weapon, Food, Tool, Clothing) with every editable stat field, its range, hint, maturity level and icon suggestions, plus the vanilla-data sample each template auto-balances against",
     inputSchema: ModgenTemplatesSchema,
     handler: async (_args, ctx) => {
       const templates = ctx.modGenManager.listTemplates();
@@ -37,6 +37,7 @@ export const modgenTools: McpTool<z.ZodTypeAny>[] = [
       for (const t of templates) {
         const vanilla = await ctx.modGenManager.vanillaFor(
           t.id as Parameters<typeof ctx.modGenManager.vanillaFor>[0],
+          ctx,
         );
         t.vanilla = vanilla;
       }
@@ -49,7 +50,7 @@ export const modgenTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "modgen_generate",
     description:
-      "Generate a complete, ready-to-ship Project Zomboid mod folder from a template: mod.info, workshop.txt, poster, B42 media tree, item script, README and an editable blueprint. Unpinned stats are auto-balanced from real vanilla game data (or sensible defaults when the DB isn't parsed); pass stats to pin values, randomize to roll inside the vanilla range, dryRun to preview without creating anything",
+      "Generate a complete, ready-to-ship Build 42 Project Zomboid mod folder from a template: mod.info, workshop.txt, a generated poster, B42 media tree, an ItemType = base:* item script, ItemName translation file, README and an editable blueprint. Unpinned stats are auto-balanced from real vanilla game data (or sensible defaults when the DB isn't parsed); pass stats to pin values, randomize to roll inside the vanilla range, dryRun to preview the exact file plan without creating anything. Every generation is validated against Build 42 semantics BEFORE anything is written",
     inputSchema: ModgenGenerateSchema,
     handler: async (args, ctx) => {
       const result = await ctx.modGenManager.generate(ctx, args);
@@ -101,7 +102,7 @@ export const modgenTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "modgen_regenerate",
     description:
-      "Rewrite a generated mod from its blueprint after editing: patch any stat (null resets it to auto), re-roll individual stats with randomize, or change the item/mod metadata — the script, mod.info, README and validation are all regenerated atomically",
+      "Rewrite a generated mod from its blueprint after editing: patch any stat (null resets it to auto), re-roll individual stats with randomize, or change the item/mod metadata — the script, mod.info, README, translation and validation are regenerated in a single validated pass (Build 42 checks run first; nothing is written if they fail), and the stats source is re-derived from the current vanilla database",
     inputSchema: ModgenRegenerateSchema,
     handler: async (args, ctx) => {
       const result = await ctx.modGenManager.regenerate(ctx, args);

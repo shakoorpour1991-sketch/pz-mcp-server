@@ -24,14 +24,14 @@ const GAME_SCRIPT = [
   'module Base {',
   'item TestSword',
   '{',
-  '\tType = Weapon,',
+  '\tItemType = base:weapon,',
   '\tDisplayName = Test Sword,',
   '\tMaxDamage = 10,',
   '\tWeight = 2,',
   '}',
   'item TestHelmet',
   '{',
-  '\tType = Clothing,',
+  '\tItemType = base:clothing,',
   '\tDisplayName = Test Helmet,',
   '}',
   'recipe TestSwordRecipe',
@@ -43,7 +43,6 @@ const GAME_SCRIPT = [
   '{',
   '\tName = TestCar,',
   '\tDisplayName = Test Car,',
-  '\tType = NormalCar,',
   '\tWeight = 1200,',
   '}',
   '}',
@@ -58,7 +57,7 @@ const MOD_INFO = [
 const MOD_SCRIPT = [
   'item ModDagger',
   '{',
-  '\tType = Weapon,',
+  '\tItemType = base:weapon,',
   '\tDisplayName = Mod Dagger,',
   '\tMaxDamage = 5,',
   '}',
@@ -202,7 +201,7 @@ describe('pz-mcp-server integration', () => {
   test('install_mod installs a mod from a zip; detect_pz_paths reports paths', async () => {
     const zip = new AdmZip();
     zip.addFile('MyInstalledMod/mod.info', Buffer.from('id=MyInstalledMod\nname=My Installed Mod\nversion=1.0\n'));
-    zip.addFile('MyInstalledMod/media/scripts/items.txt', Buffer.from('item InstalledDagger { Type = Weapon, }'));
+    zip.addFile('MyInstalledMod/media/scripts/items.txt', Buffer.from('item InstalledDagger { ItemType = base:weapon, }'));
     const zipPath = path.join(tmpDir, 'my-installed-mod.zip');
     zip.writeZip(zipPath);
 
@@ -234,7 +233,7 @@ describe('pz-mcp-server integration', () => {
     const templates = tpl.structuredContent.templates;
     assert.equal(templates.length, 5);
     assert.ok(templates.some((t) => t.id === 'melee_weapon'));
-    assert.ok(templates.every((t) => t.fields.length >= 5 && t.fields[0].label));
+    assert.ok(templates.every((t) => t.fields.length >= 4 && t.fields[0].label));
 
     const gen = await client.call('tools/call', {
       name: 'modgen_generate',
@@ -252,9 +251,14 @@ describe('pz-mcp-server integration', () => {
     assert.equal(g.blueprint.mod.id, 'gen_sword');
     assert.equal(g.blueprint.mod.itemName, 'GenSwordItem');
     assert.equal(g.validation.ready, true);
+    assert.ok(g.script.includes('ItemType = base:weapon'), 'B42 item class emitted');
+    assert.ok(!/^\s*Type\s*=/.test(g.script), 'no legacy Type property');
+    assert.ok(!g.script.includes('DisplayName'), 'no DisplayName — translation used');
     assert.ok(g.files.includes('modgen.blueprint.json'));
     assert.ok(g.files.includes('README.md'));
     assert.ok(g.files.includes('mod.info'));
+    assert.ok(g.files.includes('poster.png'));
+    assert.ok(g.files.includes('42/media/lua/shared/Translate/EN/ItemName.json'));
     assert.ok(g.files.includes('42/media/scripts/gen_sword_items.txt'));
 
     const list = await client.call('tools/call', { name: 'modgen_list', arguments: {} });
@@ -272,6 +276,7 @@ describe('pz-mcp-server integration', () => {
     assert.equal(r.blueprint.stats.MaxDamage, 2.2);
     assert.equal(r.validation.ready, true);
     assert.ok(r.script.includes('MaxDamage = 2.2'));
+    assert.ok(r.script.includes('ItemType = base:weapon'));
   });
 
   test('parse_game_files parses fixture game scripts', async () => {
@@ -326,7 +331,7 @@ describe('pz-mcp-server integration', () => {
     });
     const text = result.content[0].text;
     assert.ok(text.includes('TestSword'));
-    assert.ok(text.includes('Weapon'));
+    assert.ok(text.includes('base:weapon'));
     // N2: structured results accompany the human text. Search is now
     // prefix-based (search-as-you-type), so the fixture recipe also matches
     // via its own id ('TestSwordRecipe') AND its 'Result: TestSword=1,'
@@ -391,7 +396,7 @@ describe('pz-mcp-server integration', () => {
     const result = await client.call('tools/call', {
       name: 'validate_script',
       arguments: {
-        content: 'item SampleKnife\n{\n\tType = Weapon,\n\tDisplayName = Sample Knife,\n}',
+        content: 'item SampleKnife\n{\n\tItemType = base:weapon,\n\tDisplayName = Sample Knife,\n}',
         type: 'item',
       },
     });

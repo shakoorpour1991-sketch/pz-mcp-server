@@ -389,7 +389,7 @@ export class RecipeAnalyzer {
       // Rich item stats — the curated columns the admin inspector shows
       // (recipe-chain roadmap #1: rich inspector).
       const props: Record<string, any> = {};
-      if (info.properties?.Type) props.Type = info.properties.Type;
+      if (info.properties?.ItemType) props.ItemType = info.properties.ItemType;
       if (info.category) props.category = info.category;
       if (typeof info.weight === "number") props.weight = info.weight;
       if (typeof info.calories === "number") props.calories = info.calories;

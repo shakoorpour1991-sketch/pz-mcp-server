@@ -1008,33 +1008,37 @@ export class ModAnalyzer {
   }
 
   /**
-   * Category configs for balance comparison. Each category maps a PZ
-   * properties.Type to the vanilla search keyword and the stats that
-   * matter for that category (P4 #23).
+   * Category configs for balance comparison. Each category maps a Build 42
+   * properties.ItemType (base:*) to the stats that matter for that
+   * category (P4 #23).
    */
+  // Build 42 item classes (ItemType = base:*), verified against the parsed
+  // 42.20 vanilla database. The legacy B41 `Type` values ("Weapon", "Food",
+  // "Armor", "Ammo", ...) no longer exist on any parsed item, so baselines
+  // keyed on them were always empty; armor is `base:clothing` in Build 42.
   private static readonly BALANCE_CATEGORIES = [
     {
-      type: "Weapon",
+      type: "base:weapon",
       stats: ["MaxDamage", "MinDamage", "Weight"],
     },
     {
-      type: "Armor",
-      stats: ["BiteDefense", "ScratchDefense", "BulletDefense", "Weight"],
+      type: "base:clothing",
+      stats: [
+        "BiteDefense",
+        "ScratchDefense",
+        "BulletDefense",
+        "Insulation",
+        "WindResistance",
+        "WaterResistance",
+        "Weight",
+      ],
     },
     {
-      type: "Clothing",
-      stats: ["Insulation", "WindResistance", "WaterResistance", "Weight"],
-    },
-    {
-      type: "Food",
+      type: "base:food",
       stats: ["HungerChange", "ThirstChange", "Calories", "Weight"],
     },
     {
-      type: "Ammo",
-      stats: ["Damage", "Weight"],
-    },
-    {
-      type: "Container",
+      type: "base:container",
       stats: ["Capacity", "Weight"],
     },
   ] as const;
@@ -1112,12 +1116,14 @@ export class ModAnalyzer {
     balance: BalanceAnalysis,
   ): Promise<void> {
     for (const category of ModAnalyzer.BALANCE_CATEGORIES) {
-      // Exact Type baseline (mod-analyzer review): a WHERE json_extract(properties,
-      // '$.Type') = ? query replaces the FTS keyword search + in-memory filter,
-      // which could both miss items and fetch unrelated rows.
+      // Exact ItemType baseline (mod-analyzer review): a WHERE
+      // json_extract(properties, '$.ItemType') = ? query replaces the FTS
+      // keyword search + in-memory filter, which could both miss items and
+      // fetch unrelated rows. Uses the Build 42 spelling (base:*).
       const vanillaItems = await this.db.getItemsByPropertyType(
         category.type,
         10000,
+        "ItemType",
       );
       if (vanillaItems.length === 0) continue;
 
@@ -1137,9 +1143,9 @@ export class ModAnalyzer {
         vanillaStats[stat] = { mean, sd: Math.sqrt(variance) };
       }
 
-      // Find outliers in mod items of this category
+      // Find outliers in mod items of this category (Build 42 ItemType)
       for (const item of modItems) {
-        if (item.properties.Type !== category.type) continue;
+        if (item.properties.ItemType !== category.type) continue;
         for (const stat of category.stats) {
           const value = item.properties[stat];
           const baseline = vanillaStats[stat];

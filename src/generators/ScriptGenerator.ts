@@ -1,6 +1,23 @@
 import { DatabaseManager, GameItem } from "../database/DatabaseManager.js";
 import { formatScriptValue } from "../utils/scriptSyntax.js";
 
+/**
+ * Legacy B41 `Type = ...` classes mapped to the Build 42 `ItemType = base:*`
+ * spelling. Only the classes that map to real Build 42 item classes are
+ * listed; unknown legacy values fall back to the template's ItemType.
+ * (B41 data audit: `Type` no longer exists in Build 42 scripts — the parsed
+ * 42.20 vanilla database contains zero items with a `Type` property.)
+ */
+const LEGACY_TYPE_TO_ITEMTYPE: Record<string, string> = {
+  normal: "base:normal",
+  weapon: "base:weapon",
+  food: "base:food",
+  clothing: "base:clothing",
+  container: "base:container",
+  drainable: "base:drainable",
+  literature: "base:literature",
+};
+
 export interface ItemTemplate {
   type: string;
   category: string;
@@ -42,7 +59,7 @@ export class ScriptGenerator {
       category: "Weapon",
       baseStats: {
         DisplayCategory: "Weapon",
-        Type: "Weapon",
+        ItemType: "base:weapon",
         Weight: 1.0,
         BaseSpeed: 1.0,
         MaxDamage: 1.0,
@@ -50,13 +67,13 @@ export class ScriptGenerator {
         ConditionMax: 10,
         ConditionLowerChanceOneIn: 20,
         Categories: "SmallBlade",
-        DamageCategory: "Slash",
+        SubCategory: "Swinging",
         SwingTime: 3,
         KnockBackOnNoDeath: true,
         TreeDamage: 0,
         DoorDamage: 5,
       },
-      requiredProperties: ["DisplayName", "Icon", "Type", "Weight"],
+      requiredProperties: ["DisplayName", "Icon", "ItemType", "Weight"],
       optionalProperties: [
         "AttachmentType",
         "WeaponSprite",
@@ -76,7 +93,7 @@ export class ScriptGenerator {
       category: "Weapon",
       baseStats: {
         DisplayCategory: "Weapon",
-        Type: "Weapon",
+        ItemType: "base:weapon",
         Weight: 2.0,
         MaxRange: 20,
         MinRange: 0.8,
@@ -89,9 +106,8 @@ export class ScriptGenerator {
         HitChance: 75,
         ProjectileCount: 1,
         ShareDamage: false,
-        MaxHitCount: 1,
       },
-      requiredProperties: ["DisplayName", "Icon", "Type", "Weight", "AmmoType"],
+      requiredProperties: ["DisplayName", "Icon", "ItemType", "Weight", "AmmoType"],
       optionalProperties: [
         "WeaponSprite",
         "SwingSound",
@@ -110,7 +126,7 @@ export class ScriptGenerator {
       category: "Food",
       baseStats: {
         DisplayCategory: "Food",
-        Type: "Food",
+        ItemType: "base:food",
         Weight: 0.1,
         HungerChange: -10,
         ThirstChange: 0,
@@ -122,7 +138,7 @@ export class ScriptGenerator {
         DaysTotallyRotten: 14,
         IsCookable: true,
       },
-      requiredProperties: ["DisplayName", "Icon", "Type"],
+      requiredProperties: ["DisplayName", "Icon", "ItemType"],
       optionalProperties: ["EvolvedRecipe", "OnEat", "CustomContextMenu"],
       balanceMultipliers: {
         powerful: 1.2,
@@ -136,13 +152,13 @@ export class ScriptGenerator {
       category: "Tool",
       baseStats: {
         DisplayCategory: "Tool",
-        Type: "Normal",
+        ItemType: "base:normal",
         Weight: 0.5,
         ConditionMax: 10,
         ConditionLowerChanceOneIn: 30,
         Categories: "Tool",
       },
-      requiredProperties: ["DisplayName", "Icon", "Type"],
+      requiredProperties: ["DisplayName", "Icon", "ItemType"],
       optionalProperties: ["AttachmentType", "Tags", "MetalValue"],
       balanceMultipliers: {
         powerful: 1.1,
@@ -156,15 +172,14 @@ export class ScriptGenerator {
       category: "Clothing",
       baseStats: {
         DisplayCategory: "Clothing",
-        Type: "Clothing",
+        ItemType: "base:clothing",
         Weight: 0.3,
-        BodyLocation: "Torso",
-        CanBeEquipped: "Torso",
-        BloodLocation: "Torso",
+        BodyLocation: "base:tshirt",
+        BloodLocation: "Shirt",
         FabricType: "Cotton",
-        ClothingItem: "Base.TShirt_DefaultTEXTURE",
+        ClothingItem: "Tshirt_DefaultTEXTURE",
       },
-      requiredProperties: ["DisplayName", "Icon", "Type", "BodyLocation"],
+      requiredProperties: ["DisplayName", "Icon", "ItemType", "BodyLocation"],
       optionalProperties: ["Insulation", "WindResistance", "WaterResistance"],
       balanceMultipliers: {
         powerful: 1.2,
@@ -297,6 +312,19 @@ export class ScriptGenerator {
       for (const key of ["category", "weaponType", "similar"]) {
         delete propSpecs[key];
       }
+    }
+    if (type === "item") {
+      // Build 42 has no `Type` property (ItemType = base:* replaced it).
+      // Map a legacy `Type` spec onto the Build 42 spelling so user input
+      // can never leak `Type = ...` into a generated script; an explicit
+      // ItemType always wins.
+      if (propSpecs.Type !== undefined && propSpecs.ItemType === undefined) {
+        const mapped = LEGACY_TYPE_TO_ITEMTYPE[String(propSpecs.Type).toLowerCase()];
+        if (mapped) {
+          propSpecs.ItemType = mapped;
+        }
+      }
+      delete propSpecs.Type;
     }
 
     // Generate the script content

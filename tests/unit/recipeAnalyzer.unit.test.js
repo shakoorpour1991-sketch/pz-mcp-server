@@ -367,11 +367,11 @@ describe('RecipeAnalyzer roadmap: rich payloads, cycles, expand, path, severity'
     // tools) — the shape parse_game_files produces via insertRecipes /
     // insertRecipeIngredients.
     await db.insertItems([
-      { id: 'Base.Wheat', name: 'Wheat', displayName: 'Wheat', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.2, calories: 50, tags: ['Cereal'] },
-      { id: 'Base.Flour', name: 'Flour', displayName: 'Flour', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.5, calories: 300, tags: ['Cereal'] },
-      { id: 'Base.Dough', name: 'Dough', displayName: 'Dough', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.4, calories: 400, tags: ['Cereal'] },
-      { id: 'Base.Bread', name: 'Bread', displayName: 'Bread', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 500, tags: ['Cereal'] },
-      { id: 'Base.CookedBread', name: 'CookedBread', displayName: 'Cooked Bread', type: 'item', module: 'Base', properties: { Type: 'Food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 600, tags: ['Cereal'] },
+      { id: 'Base.Wheat', name: 'Wheat', displayName: 'Wheat', type: 'item', module: 'Base', properties: { ItemType: 'base:food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.2, calories: 50, tags: ['Cereal'] },
+      { id: 'Base.Flour', name: 'Flour', displayName: 'Flour', type: 'item', module: 'Base', properties: { ItemType: 'base:food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.5, calories: 300, tags: ['Cereal'] },
+      { id: 'Base.Dough', name: 'Dough', displayName: 'Dough', type: 'item', module: 'Base', properties: { ItemType: 'base:food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.4, calories: 400, tags: ['Cereal'] },
+      { id: 'Base.Bread', name: 'Bread', displayName: 'Bread', type: 'item', module: 'Base', properties: { ItemType: 'base:food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 500, tags: ['Cereal'] },
+      { id: 'Base.CookedBread', name: 'CookedBread', displayName: 'Cooked Bread', type: 'item', module: 'Base', properties: { ItemType: 'base:food' }, rawContent: '', filePath: 'x.txt', category: 'Food', weight: 0.3, calories: 600, tags: ['Cereal'] },
       // Recipes (item rows with type='recipe')
       { id: 'MillFlour', name: 'MillFlour', displayName: 'Mill Flour', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
       { id: 'MakeDough', name: 'MakeDough', displayName: 'Make Dough', type: 'recipe', module: 'Base', properties: {}, rawContent: '', filePath: 'x.txt' },
@@ -429,7 +429,7 @@ describe('RecipeAnalyzer roadmap: rich payloads, cycles, expand, path, severity'
     assert.equal(bread.props.calories, 500);
     assert.equal(bread.props.category, 'Food');
     assert.deepEqual(bread.props.tags, ['Cereal']);
-    assert.equal(bread.props.Type, 'Food');
+    assert.equal(bread.props.ItemType, 'base:food');
   });
 
   test('recipe nodes carry meta (category, time, skill) and tools', async () => {

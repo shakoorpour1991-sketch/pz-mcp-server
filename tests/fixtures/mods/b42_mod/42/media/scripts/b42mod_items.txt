@@ -1,7 +1,7 @@
 module B42Fixture {
 	item B42FixtureAxe
 	{
-		Type = Weapon,
+		ItemType = base:weapon,
 		DisplayName = B42 Fixture Axe,
 		Icon = Axe,
 	}

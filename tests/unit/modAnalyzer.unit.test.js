@@ -220,7 +220,7 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
     fs.writeFileSync(path.join(tempDir, 'mod.info'), 'name=BalanceMod\nid=BalanceMod\n');
     fs.writeFileSync(
       path.join(tempDir, 'media', 'scripts', 'balance.txt'),
-      'item SuperBlade\n{\n\tType = Weapon,\n\tDisplayName = Super Blade,\n\tMaxDamage = 100,\n}\n'
+      'item SuperBlade\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Super Blade,\n\tMaxDamage = 100,\n}\n'
     );
 
     dbManager = new DatabaseManager(path.join(tempDir, 'bal.db'));
@@ -231,13 +231,13 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
       {
         id: 'VanillaKnife', name: 'VanillaKnife', displayName: 'Vanilla Knife',
         type: 'item', module: 'Base', category: 'Weapon',
-        properties: { Type: 'Weapon', MaxDamage: 5 },
+        properties: { ItemType: 'base:weapon', MaxDamage: 5 },
         rawContent: 'item VanillaKnife {}', filePath: 'vanilla.txt',
       },
       {
         id: 'VanillaAxe', name: 'VanillaAxe', displayName: 'Vanilla Axe',
         type: 'item', module: 'Base', category: 'Weapon',
-        properties: { Type: 'Weapon', MaxDamage: 10 },
+        properties: { ItemType: 'base:weapon', MaxDamage: 10 },
         rawContent: 'item VanillaAxe {}', filePath: 'vanilla.txt',
       },
     ]);
@@ -267,7 +267,7 @@ describe('ModAnalyzer balance analysis (seeded vanilla baseline)', () => {
   test('in-balance mod items produce no outliers', async () => {
     fs.writeFileSync(
       path.join(tempDir, 'media', 'scripts', 'balanced.txt'),
-      'item MildDagger\n{\n\tType = Weapon,\n\tDisplayName = Mild Dagger,\n\tMaxDamage = 6,\n}\n'
+      'item MildDagger\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Mild Dagger,\n\tMaxDamage = 6,\n}\n'
     );
     const r = await analyzer.analyzeMod(tempDir, {
       checkBalance: true,
@@ -295,7 +295,7 @@ describe('ModAnalyzer compatibility analysis (seeded)', () => {
     ].join('\n'));
     fs.writeFileSync(
       path.join(tempDir, 'media', 'scripts', 'items.txt'),
-      'item CompatAxe\n{\n\tType = Weapon,\n\tDisplayName = Compat Axe,\n}\n'
+      'item CompatAxe\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Compat Axe,\n}\n'
     );
 
     dbManager = new DatabaseManager(path.join(tempDir, 'compat.db'));
@@ -537,7 +537,7 @@ describe('ModAnalyzer compatibility fields (seeded)', () => {
     ].join('\n'));
     fs.writeFileSync(
       path.join(tempDir, 'media', 'scripts', 'clash.txt'),
-      'item ClashItem\n{\n\tType = Weapon,\n\tDisplayName = Clash Item,\n}\n'
+      'item ClashItem\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Clash Item,\n}\n'
     );
 
     dbManager = new DatabaseManager(path.join(tempDir, 'clash.db'));
@@ -547,7 +547,7 @@ describe('ModAnalyzer compatibility fields (seeded)', () => {
       {
         id: 'ClashItem', name: 'ClashItem', displayName: 'Vanilla Clash',
         type: 'item', module: 'Base',
-        properties: { Type: 'Weapon', MaxDamage: 5 },
+        properties: { ItemType: 'base:weapon', MaxDamage: 5 },
         rawContent: 'item ClashItem {}', filePath: 'vanilla.txt',
       },
     ]);
@@ -611,7 +611,7 @@ describe('ModAnalyzer balance z-score (seeded)', () => {
     await dbManager.insertItems(vanillaMax.map((m, i) => ({
       id: 'VanillaW' + i, name: 'VanillaW' + i, displayName: 'VanillaW' + i,
       type: 'item', module: 'Base',
-      properties: { Type: 'Weapon', MaxDamage: m },
+      properties: { ItemType: 'base:weapon', MaxDamage: m },
       rawContent: 'item VanillaW' + i + ' {}', filePath: 'vanilla.txt',
     })));
     return analyzer.analyzeMod(tempDir, { checkBalance: true, checkCompatibility: false });
@@ -622,7 +622,7 @@ describe('ModAnalyzer balance z-score (seeded)', () => {
     // average (inside the ratio band) but sits exactly 2σ above it.
     const r = await runWithVanilla(
       [5, 10],
-      'item ZetaBlade\n{\n\tType = Weapon,\n\tDisplayName = Zeta Blade,\n\tMaxDamage = 12.5,\n}\n'
+      'item ZetaBlade\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Zeta Blade,\n\tMaxDamage = 12.5,\n}\n'
     );
     const outlier = r.balance.outliers.find((o) => o.item === 'ZetaBlade');
     assert.notEqual(outlier, undefined);
@@ -632,14 +632,14 @@ describe('ModAnalyzer balance z-score (seeded)', () => {
   test('zero-variance vanilla falls back to the ratio rule', async () => {
     // All vanilla MaxDamage 5 → sd 0. 8 is 1.6x (not > 2x) → not an outlier.
     const mildScript =
-      'item MildBlade\n{\n\tType = Weapon,\n\tDisplayName = Mild Blade,\n\tMaxDamage = 8,\n}\n';
+      'item MildBlade\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Mild Blade,\n\tMaxDamage = 8,\n}\n';
     const r = await runWithVanilla([5, 5, 5], mildScript);
     const outlier = r.balance.outliers.find((o) => o.item === 'MildBlade');
     assert.equal(outlier, undefined);
     // 15 is 3x → still flagged by the ratio rule (self-contained script arg,
     // no reliance on prior test file state).
     const bigScript =
-      'item BigBlade\n{\n\tType = Weapon,\n\tDisplayName = Big Blade,\n\tMaxDamage = 15,\n}\n';
+      'item BigBlade\n{\n\t	ItemType = base:weapon,\n\tDisplayName = Big Blade,\n\tMaxDamage = 15,\n}\n';
     const r2 = await runWithVanilla([5, 5, 5], bigScript);
     const big = r2.balance.outliers.find((o) => o.item === 'BigBlade');
     assert.notEqual(big, undefined);
@@ -703,7 +703,7 @@ describe('ModAnalyzer workshop pack layout (seeded)', () => {
     );
     fs.writeFileSync(
       path.join(modRoot, '42.20', 'media', 'scripts', 'items.txt'),
-      'module Base {\n    item PackKnife {\n        Type = Weapon\n        DisplayName = Pack Knife\n    }\n}'
+      'module Base {\n    item PackKnife {\n        ItemType = base:weapon\n        DisplayName = Pack Knife\n    }\n}'
     );
 
     dbManager = new DatabaseManager(path.join(tempDir, 'pack.db'));

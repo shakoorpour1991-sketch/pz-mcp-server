@@ -62,7 +62,11 @@ export class ValidationEngine {
   // BLOCK_TYPES union (freebuff review refactor #5) so a new block type can
   // never silently pass through the validator without a required-property set.
   private readonly requiredProperties: Record<BlockType, string[]> = {
-    item: ["Type", "DisplayName"],
+    // Build 42 items require ItemType (base:*) — the legacy B41 `Type`
+    // property was removed (zero items in the 42.20 vanilla DB have it) and
+    // DisplayName is optional (names come from the ItemName translation
+    // file). Enforced in validateBlockCommon (item required-check below).
+    item: [],
     recipe: ["Result"],
     fixing: ["Require", "Fixer"],
     sound: ["category"],
@@ -86,26 +90,17 @@ export class ValidationEngine {
     Time: { type: "number", min: 1, max: 10000 },
 
     // Boolean properties
-    CanBeEquipped: { type: "boolean" },
     KnockBackOnNoDeath: { type: "boolean" },
     IsCookable: { type: "boolean" },
 
-    // String properties with valid values
-    Type: {
-      type: "enum",
-      values: [
-        "Normal",
-        "Weapon",
-        "Food",
-        "Literature",
-        "Container",
-        "Clothing",
-        "AlarmClock",
-        "Key",
-        "Drainable",
-        "Moveable",
-      ],
-    },
+    // Build 42 item class (replaced the legacy B41 `Type` property — no item
+    // in the 42.20 vanilla DB has a `Type` property anymore). Left open so
+    // any `base:*` value parses; the B42 generator's semantic validator is
+    // the authority on which classes actually exist.
+    ItemType: { type: "string" },
+    // Build 42 weapon damage type (Swinging / Stab / Spear / Firearm) —
+    // replaced the B41-era `DamageCategory` discriminator.
+    SubCategory: { type: "string" },
     DisplayCategory: {
       type: "enum",
       values: [
@@ -118,11 +113,53 @@ export class ValidationEngine {
         "Container",
         "Electronics",
         "Survival",
+        // Real Build 42 categories (verified against the 42.20 vanilla DB).
+        "Junk",
+        "Material",
+        "Memento",
+        "Household",
+        "Cooking",
+        "Gardening",
+        "Sports",
+        "Camping",
+        "Fishing",
+        "VehicleMaintenance",
+        "WaterContainer",
+        "FirstAid",
+        "Ammo",
+        "Accessory",
+        "AnimalPart",
+        "Entertainment",
+        "Instrument",
+        "Trapping",
+        "LightSource",
+        "FireSource",
+        "Explosives",
+        "Bag",
+        "Bandage",
+        "Generic",
+        "Wound",
+        "ZedDmg",
+        "BrokenWeapon",
+        "ProtectiveGear",
+        "Security",
+        "Paint",
+        "Furniture",
+        "Communications",
+        "HouseholdWeapon",
+        "JunkWeapon",
+        "ToolWeapon",
+        "CookingWeapon",
+        "FishingWeapon",
+        "GardeningWeapon",
+        "FirstAidWeapon",
+        "MaterialWeapon",
+        "SportsWeapon",
+        "VehicleMaintenanceWeapon",
+        "WeaponCrafted",
+        "WeaponImprovised",
+        "AnimalPartWeapon",
       ],
-    },
-    DamageCategory: {
-      type: "enum",
-      values: ["Slash", "Stab", "Blunt", "Burn", "Bite"],
     },
     Categories: { type: "string" }, // Can be multiple values separated by ;
 
@@ -391,7 +428,21 @@ export class ValidationEngine {
       this.requiredProperties[
         block.type as keyof typeof this.requiredProperties
       ];
-    if (required) {
+    // Build 42 items: ItemType = base:* is required; the legacy B41 `Type`
+    // property no longer exists and does not satisfy the requirement.
+    // DisplayName is optional because names come from ItemName translations.
+    if (block.type === "item") {
+      if (!block.properties.ItemType) {
+        result.errors.push({
+          line: block.startLine,
+          message:
+            "Missing required property: ItemType (Build 42, e.g. ItemType = base:normal)",
+          severity: "error",
+          code: "MISSING_PROPERTY",
+          suggestion: `Add "ItemType = base:normal," to the item block`,
+        });
+      }
+    } else if (required) {
       for (const prop of required) {
         if (!block.properties[prop]) {
           // B42 craftRecipe blocks declare their result in an "outputs"
@@ -546,8 +597,8 @@ export class ValidationEngine {
   }
 
   private validateItemBlock(block: any, result: ValidationResult): void {
-    // Weapon-specific validations
-    if (block.properties.Type === "Weapon") {
+    // Weapon-specific validations (Build 42 spelling)
+    if (block.properties.ItemType === "base:weapon") {
       if (!block.properties.MaxDamage && !block.properties.MinDamage) {
         result.warnings.push({
           line: block.startLine,
@@ -569,8 +620,8 @@ export class ValidationEngine {
       }
     }
 
-    // Food-specific validations
-    if (block.properties.Type === "Food") {
+    // Food-specific validations (Build 42 spelling)
+    if (block.properties.ItemType === "base:food") {
       if (!block.properties.HungerChange && !block.properties.Calories) {
         result.warnings.push({
           line: block.startLine,

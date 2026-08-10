@@ -713,3 +713,14 @@ nav#tabbar{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;
 .gen-li-sub{ font-size:11.5px; color:var(--ink-dim); }
 .gen-li-sub code{ font-family:var(--font-mono); font-size:11px; }
 @media (max-width:640px){ .gen-basics,.gen-stats{ grid-template-columns:1fr; } }
+
+/* --- Generator: maturity badges + icon hints (B42 review pass) --- */
+.gen-tpl-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.gen-tpl-top b{font-size:14px}
+.gen-mat{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:20px;white-space:nowrap;flex:none}
+.gen-mat.ready{background:rgba(110,190,120,.16);color:#8fd69a;border:1px solid rgba(110,190,120,.35)}
+.gen-mat.beta{background:rgba(230,180,80,.14);color:#e8c877;border:1px solid rgba(230,180,80,.35)}
+.gen-tpl-type{font-family:var(--font-mono);font-size:10.5px;color:var(--txt-dim);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:1px 6px;align-self:flex-start}
+.gen-mat-note{font-size:10.5px;color:var(--txt-dim);line-height:1.4}
+.gen-hint{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--txt-dim);font-size:10px;cursor:help;margin-left:4px}
+.gen-fld input[list]{background-image:none}

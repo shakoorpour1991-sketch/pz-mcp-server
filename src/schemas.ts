@@ -401,17 +401,20 @@ export const ModgenGenerateSchema = z.object({
     .min(1)
     .max(256)
     .optional()
-    .describe("In-game item name shown to players (defaults to itemName)"),
+    .describe(
+      "In-game item name shown to players (defaults to itemName) — written into the Build 42 ItemName translation file",
+    ),
   icon: z
     .string()
     .max(128)
     .optional()
     .describe(
-      "Vanilla sprite reference for the item's icon (defaults per template)",
+      "Item icon: a vanilla texture name to reuse (defaults per template), or any custom name — a generated placeholder texture is then shipped in 42/media/textures/",
     ),
   module: z
     .string()
     .max(64)
+    .regex(/^[A-Za-z0-9_]+$/, "Module names are alphanumeric (letters, digits, underscores)")
     .default("Base")
     .describe("Script module (default Base — item id is then just itemName)"),
   stats: z
@@ -467,9 +470,18 @@ export const ModgenRegenerateSchema = z.object({
     .min(1)
     .max(256)
     .optional()
-    .describe("New in-game item name"),
-  icon: z.string().max(128).optional().describe("New icon reference"),
-  module: z.string().max(64).optional().describe("New script module"),
+    .describe("New in-game item name (written into the ItemName translation file)"),
+  icon: z
+    .string()
+    .max(128)
+    .optional()
+    .describe("New icon (vanilla texture to reuse, or a custom name — a generated placeholder texture is then shipped)"),
+  module: z
+    .string()
+    .max(64)
+    .regex(/^[A-Za-z0-9_]+$/, "Module names are alphanumeric (letters, digits, underscores)")
+    .optional()
+    .describe("New script module"),
   stats: z
     .record(
       z.union([z.number(), z.string(), z.boolean(), z.null()]),

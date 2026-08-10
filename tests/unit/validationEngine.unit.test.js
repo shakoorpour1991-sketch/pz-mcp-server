@@ -28,7 +28,7 @@ describe('ValidationEngine', () => {
       type: 'item',
       module: 'Base',
       category: 'Weapon',
-      properties: { Type: 'Weapon' },
+      properties: { ItemType: 'base:weapon' },
       rawContent: 'item TestSword {}',
       filePath: 'test.txt',
     });
@@ -44,7 +44,7 @@ describe('ValidationEngine', () => {
     const content = [
       'item SampleKnife',
       '{',
-      '\tType = Weapon,',
+      '\tItemType = base:weapon,',
       '\tDisplayName = Sample Knife,',
       '}',
     ].join('\n');
@@ -54,22 +54,43 @@ describe('ValidationEngine', () => {
   });
 
   test('flags missing required properties and bad enum values', async () => {
+    // Missing ItemType (required in Build 42) plus a bad DisplayCategory
+    // enum value — both must surface as errors. The legacy B41 `Type`
+    // property no longer exists and is not a substitute.
     const content = [
       'item BrokenItem',
       '{',
-      '\tType = NotARealType,',
+      '\tDisplayCategory = NotACategory,',
       '}',
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
     assert.equal(result.isValid, false);
-    assert.ok(result.errors.length > 0);
+    assert.ok(
+      result.errors.some((e) => e.code === 'MISSING_PROPERTY' && /ItemType/.test(e.message))
+    );
+    assert.ok(result.errors.some((e) => e.code === 'INVALID_ENUM_VALUE'));
+  });
+
+  test('legacy Type alone no longer satisfies the item requirement', async () => {
+    const content = [
+      'item LegacyItem',
+      '{',
+      '\tType = Weapon,',
+      '\tDisplayName = Legacy Item,',
+      '}',
+    ].join('\n');
+    const result = await validator.validateScript(content, 'item');
+    assert.equal(result.isValid, false);
+    assert.ok(
+      result.errors.some((e) => e.code === 'MISSING_PROPERTY' && /ItemType/.test(e.message))
+    );
   });
 
   test('strict mode still accepts a valid item script', async () => {
     const content = [
       'item SampleKnife',
       '{',
-      '\tType = Weapon,',
+      '\tItemType = base:weapon,',
       '\tDisplayName = Sample Knife,',
       '}',
     ].join('\n');
@@ -113,7 +134,7 @@ describe('ValidationEngine', () => {
     const content = [
       'item SampleIcon',
       '{',
-      '\tType = Weapon,',
+      '\tItemType = base:weapon,',
       '\tDisplayName = Sample Icon,',
       '\tIcon = TestSwordIcon,',
       '}',
@@ -127,7 +148,7 @@ describe('ValidationEngine', () => {
     const content = [
       'item SampleIcon2',
       '{',
-      '\tType = Weapon,',
+      '\tItemType = base:weapon,',
       '\tDisplayName = Sample Icon 2,',
       '\tIcon = DefinitelyNotASprite,',
       '}',
@@ -192,7 +213,7 @@ describe('D11: brace counting uses shared comment-stripping', () => {
   test('missing closers still reported', async () => {
     const content = [
       'item A {',
-      '  Type = Weapon,',
+      '  ItemType = base:weapon,',
     ].join('\n');
     const result = await validator.validateScript(content, 'item');
     assert.ok(

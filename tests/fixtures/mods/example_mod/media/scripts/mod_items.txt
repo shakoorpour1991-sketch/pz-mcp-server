@@ -1,7 +1,7 @@
 module FixtureMod {
 	item FixtureDagger
 	{
-		Type = Weapon,
+		ItemType = base:weapon,
 		DisplayName = Fixture Dagger,
 		Icon = FixtureDagger,
 	}

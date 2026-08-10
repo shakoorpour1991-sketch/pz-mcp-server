@@ -282,23 +282,30 @@ Full structured inspection: metadata, supported builds, dependencies (+ missing)
 ### `modgen_templates`
 List the five Mod Generator templates (Simple Item, Melee Weapon, Food, Tool,
 Clothing) with every editable stat field — label, type, range, unit, plain-
-language hint, group — plus the live vanilla baseline each template
-auto-balances against (`vanilla` is `null` until the game data is parsed).
+language hint, group — plus each template's **Build 42 item class**
+(`ItemType = base:*`), **maturity level** (`ready`/`beta`), verified vanilla
+**icon suggestions**, and the live vanilla baseline it auto-balances against
+(`vanilla` is `null` until the game data is parsed).
 
 | Param | Type | Required | Description |
 |---|---|---|---|
 | — | — | — | No arguments |
 
 ### `modgen_generate`
-Generate a **complete, ready-to-ship mod folder** from a template: `mod.info`,
-`workshop.txt`, `poster.png`, B42 `common/` + versioned `media/` tree, the
-item script, a beginner-friendly `README.md` and an editable
+Generate a **complete, ready-to-ship Build 42 mod folder** from a template:
+`mod.info`, `workshop.txt`, a **generated poster.png**, B42 `common/` +
+versioned `media/` tree, a **Build 42 item script** (`ItemType = base:*` —
+never the legacy `Type = ...`), an **ItemName translation file** (the B42
+way to name items), a beginner-friendly `README.md` and an editable
 `modgen.blueprint.json`. Unpinned stats are **auto-balanced from real vanilla
-game data** (median of comparable items; falls back to sensible defaults when
-the DB isn't parsed). `stats` pins values (never clamped — the validator is
-the referee), `randomize` rolls inside the vanilla interquartile range, and
-`dryRun` previews the blueprint + script without creating anything. The result
-carries a `validation` block (script + folder, `ready` flag).
+game data** (median of comparable items, filtered to the game install for
+honest provenance; falls back to sensible defaults when the DB isn't parsed).
+`stats` pins values, `randomize` rolls inside the vanilla interquartile range,
+`icon` reuses a vanilla texture or ships a **generated placeholder texture**
+in `42/media/textures/`, and `dryRun` previews the **exact file plan**
+without creating anything. Every generation is **validated against Build 42
+semantics before anything is written**; the result carries a `validation`
+block (script + folder + Build 42 checks, `ready` flag).
 
 | Param | Type | Required | Description |
 |---|---|---|---|
@@ -309,8 +316,8 @@ carries a `validation` block (script + folder, `ready` flag).
 | `itemName` | string | Yes | Item block id (letters/digits/underscores) |
 | `author` | string | No | Mod author |
 | `description` | string | No | Mod description |
-| `displayName` | string | No | In-game item name (default: `itemName`) |
-| `icon` | string | No | Vanilla sprite reference (default per template) |
+| `displayName` | string | No | In-game item name (default: `itemName`) — written into the ItemName translation file |
+| `icon` | string | No | Vanilla texture to reuse, or a custom name — a generated placeholder texture is shipped (default per template) |
 | `module` | string | No | Script module (default: `Base`) |
 | `stats` | object | No | Stat overrides keyed by property name — pinned as-is |
 | `autoStats` | boolean | No | Auto-balance unpinned stats (default: `true`) |
@@ -327,8 +334,9 @@ List every mod previously generated (workspace projects carrying a
 
 ### `modgen_blueprint`
 Reopen a generated mod's editable blueprint — template, metadata, full stat
-set, and the stats source (vanilla sample vs defaults). Feed the result into
-`modgen_regenerate` after editing.
+set, and the stats source (vanilla sample vs defaults, with game version and
+vanilla file count when available). Feed the result into `modgen_regenerate`
+after editing.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
@@ -338,8 +346,12 @@ set, and the stats source (vanilla sample vs defaults). Feed the result into
 Rewrite a generated mod from its blueprint after editing. `stats` is a patch
 keyed by property name (`null` resets a stat back to auto), `randomize` is a
 list of stat keys to re-roll inside the vanilla range, and the mod/item
-metadata fields update `mod.info`. The script, README, blueprint and
-validation are all regenerated atomically — the folder never drifts.
+metadata fields update `mod.info`. The **stats source is re-derived from the
+current vanilla database** (so the README's balancing claim stays truthful),
+and the rewrite is **staged**: the new script is Build 42-validated first —
+if validation fails, nothing on disk is touched; otherwise script,
+translation, README, blueprint and assets are all rewritten (each write
+atomic) — the folder never drifts.
 
 | Param | Type | Required | Description |
 |---|---|---|---|

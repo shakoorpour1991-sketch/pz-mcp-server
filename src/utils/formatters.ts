@@ -178,7 +178,7 @@ export function formatRecipeChain(chain: any): string {
     // Rich-inspector payloads: item stats + recipe metadata/tools.
     if (node.props) {
       const bits = [];
-      if (node.props.Type) bits.push(`Type ${node.props.Type}`);
+      if (node.props.ItemType) bits.push(`ItemType ${node.props.ItemType}`);
       if (node.props.category) bits.push(`Category ${node.props.category}`);
       if (typeof node.props.weight === "number")
         bits.push(`Weight ${node.props.weight}`);
@@ -758,15 +758,21 @@ export function formatInstallResult(r: any): string {
 export function formatModgenTemplates(templates: any[]): string {
   let out = `# Mod Generator templates (${templates.length})\n\n`;
   for (const t of templates) {
-    out += `## ${t.label}\n`;
+    const maturity =
+      t.maturity === "beta" ? "🟡 beta" : "✅ ready";
+    out += `## ${t.label} — ${maturity}\n`;
     out += `${t.short}\n`;
+    if (t.maturityNote) out += `> ℹ️ ${t.maturityNote}\n`;
     const vanilla = t.vanilla;
     if (vanilla) {
-      out += `\n> 📊 Auto-stats derive from **${vanilla.sampleCount}** ${vanilla.label} in the vanilla database.\n`;
+      out += `\n> 📊 Auto-stats derive from **${vanilla.sampleCount}** ${vanilla.label} in the vanilla database`;
+      if (vanilla.sourceFiles) out += ` (${vanilla.sourceFiles} vanilla files)`;
+      if (vanilla.gameVersion) out += ` (game ${vanilla.gameVersion})`;
+      out += `.\n`;
     } else {
       out += `\n> 📊 Auto-stats use balanced defaults (vanilla data not parsed yet).\n`;
     }
-    out += `\n| Field | Type | Range | Auto |\n|---|---|---|---|\n`;
+    out += `\n| Field | Type | Range | Auto | Vanilla samples |\n|---|---|---|---|---|\n`;
     for (const f of t.fields) {
       const range =
         f.kind === "number"
@@ -774,7 +780,11 @@ export function formatModgenTemplates(templates: any[]): string {
           : f.enumValues
             ? f.enumValues.join(" / ")
             : "—";
-      out += `| ${f.label} (\`${f.key}\`) | ${f.kind} | ${range} | ${f.auto ? "✅" : ""} |\n`;
+      const samples =
+        f.auto && vanilla?.ranges?.[f.key]
+          ? String(vanilla.ranges[f.key].count)
+          : "—";
+      out += `| ${f.label} (\`${f.key}\`) | ${f.kind} | ${range} | ${f.auto ? "✅" : ""} | ${samples} |\n`;
     }
     out += "\n";
   }
@@ -785,8 +795,11 @@ function modgenValidationBlock(v: any): string {
   if (!v) return "";
   const lines: string[] = [];
   lines.push(
-    `**Validation**: ${v.ready ? "✅ ready to ship" : "❌ needs attention"} (script ${v.scriptValid ? "✅" : "❌"} · folder ${v.projectValid ? "✅" : "❌"})`,
+    `**Validation**: ${v.ready ? "✅ ready to ship" : "❌ needs attention"} (script ${v.scriptValid ? "✅" : "❌"} · folder ${v.projectValid ? "✅" : "❌"} · Build 42 ${v.b42Errors?.length ? "❌" : "✅"})`,
   );
+  for (const e of v.b42Errors ?? []) lines.push(`- 🔴 ${e}`);
+  for (const w of v.b42Warnings ?? []) lines.push(`- ⚠️ B42: ${w}`);
+  for (const i of v.b42Info ?? []) lines.push(`- ℹ️ ${i}`);
   for (const w of v.scriptWarnings ?? []) lines.push(`- ⚠️ ${w}`);
   for (const e of v.projectErrors ?? []) lines.push(`- ❌ ${e}`);
   for (const w of v.projectWarnings ?? []) lines.push(`- ⚠️ ${w}`);
@@ -812,9 +825,10 @@ export function formatModgenGenerate(r: any): string {
     out.push(`**Location**: workspace project \`${r.project}\``);
   }
   out.push(`**Item**: ${m.displayName} (\`${m.itemName}\` · module \`${m.module}\` · icon \`${m.icon}\`)`);
+  const src = r.blueprint?.statsSource;
   out.push(
-    r.blueprint?.statsSource?.kind === "vanilla"
-      ? `**Stats**: auto-balanced against ${r.blueprint.statsSource.sampleCount} ${r.blueprint.statsSource.label} from the vanilla database`
+    src?.kind === "vanilla"
+      ? `**Stats**: auto-balanced against ${src.sampleCount} ${src.label} from the vanilla database${src.sourceFiles ? ` (${src.sourceFiles} vanilla files)` : ""}${src.gameVersion ? ` (game ${src.gameVersion})` : ""}`
       : `**Stats**: balanced defaults (vanilla data not parsed — run parse_game_files for data-driven stats)`,
   );
   if (!r.dryRun) out.push("");
@@ -844,9 +858,10 @@ export function formatModgenBlueprint(bp: any, project: string): string {
   const out: string[] = [];
   out.push(`# Mod Generator blueprint — \`${project}\``);
   out.push(`**Template**: ${bp.template} · **Mod**: ${m.modName} (id \`${m.id}\`) · **Item**: ${m.displayName} (\`${m.itemName}\`)`);
+  const src = bp.statsSource;
   out.push(
-    bp.statsSource?.kind === "vanilla"
-      ? `**Stats source**: ${bp.statsSource.sampleCount} ${bp.statsSource.label} (vanilla DB)`
+    src?.kind === "vanilla"
+      ? `**Stats source**: ${src.sampleCount} ${src.label} (vanilla DB${src.sourceFiles ? `, ${src.sourceFiles} files` : ""}${src.gameVersion ? `, game ${src.gameVersion}` : ""})`
       : "**Stats source**: balanced defaults",
   );
   out.push(`**Created**: ${bp.createdAt} · **Updated**: ${bp.updatedAt}`);
