@@ -283,6 +283,7 @@ function renderView(){
   if (S.view === 'status'){ updateStatusDom(); renderEvents(); }
   if (S.view === 'playground'){
     renderToolStack(); renderRecent(); renderAllLogs();
+    applyPgSizes();
     if (S.lastResult) restoreResult();
   }
   if (S.view === 'database') renderDbStats();
@@ -524,7 +525,8 @@ function playgroundHTML(){
           '<div id="resultHead"></div><div id="resultBody"></div>' +
         '</section>' +
         '<div class="sec-title" style="margin-top:22px">Recent Runs <span class="badge b-dim num" id="recentCount">'+S.pg.recent.length+'</span></div>' +
-        '<section class="glass card" id="recentCard" style="margin-bottom:16px;display:none"><div id="recentList"></div></section>' +
+        '<section class="glass card" id="recentCard" style="display:none"><div id="recentList"></div></section>' +
+        '<div class="rsz" data-rsz="recent" role="separator" aria-label="Resize recent runs" title="Drag to resize"></div>' +
         '<div class="sec-title" style="margin-top:0">Wire Log · Live JSON-RPC</div>' +
         '<section class="glass card console">' +
           '<div class="console-head"><h3><span style="width:7px;height:7px;border-radius:50%;background:var(--emerald);display:inline-block;animation:pulse 2.2s infinite"></span> mcp://wire</h3>' +
@@ -535,7 +537,9 @@ function playgroundHTML(){
           '</div>' +
           '<div class="log-body" id="logBody" tabindex="0" aria-label="Live JSON-RPC wire log"></div>' +
           '<div class="console-foot"><span>Click any frame to inspect the raw payload</span><span class="kbd">⏎ inspect</span></div>' +
-        '</section></div></div>';
+        '</section>' +
+        '<div class="rsz" data-rsz="wire" role="separator" aria-label="Resize wire log" title="Drag to resize"></div>' +
+        '</div></div>';
 }
 function renderToolStack(){
   const sel = $('#pgToolSelect'); if (!sel || !S.handshaken) return;
@@ -731,6 +735,8 @@ function renderRecent(){
   const card = $('#recentCard'), cnt = $('#recentCount'), list = $('#recentList');
   if (!card || !cnt || !list) return;
   card.style.display = S.pg.recent.length ? '' : 'none';
+  const rsz = $('.rsz[data-rsz="recent"]');
+  if (rsz) rsz.style.display = S.pg.recent.length ? '' : 'none';
   cnt.textContent = S.pg.recent.length + '/10';
   list.innerHTML = S.pg.recent.map((r,i) =>
     '<button class="recent-item" data-act="recent-open" data-i="'+i+'" aria-label="Reopen '+esc(r.name)+'">' +
@@ -738,6 +744,21 @@ function renderRecent(){
       '<span class="badge '+(r.status==='ok'?'b-ok':r.status==='cancel'?'b-warn':'b-err')+'" style="flex:none">'+(r.status==='ok'?'✓ '+r.dt+'ms':r.status==='cancel'?'✖ cancelled':'✖ error')+'</span>' +
       '<span class="r-time num">'+fmtClock(r.t)+'</span>' +
     '</button>').join('');
+}
+/* Restore user-resized Playground panel sizes (wire log / recent runs) after
+   a re-render — sizes are persisted to localStorage by the .rsz drag handles. */
+function applyPgSizes(){
+  try {
+    const logH = parseFloat(localStorage.getItem('pz.pg.logH') || '');
+    const lb = $('#logBody');
+    if (lb && logH >= 80 && logH <= innerHeight * 0.6) lb.style.height = logH + 'px';
+    const recH = parseFloat(localStorage.getItem('pz.pg.recentH') || '');
+    const rc = $('#recentCard');
+    if (rc && recH >= 60 && recH <= innerHeight * 0.55){
+      rc.style.height = recH + 'px';
+      rc.style.maxHeight = recH + 'px';
+    }
+  } catch {}
 }
 function resultHeadHTML(r){
   const long = r.text && r.text.length > 6000;
@@ -2782,6 +2803,33 @@ document.addEventListener('change', e => {
       syncToolValidation(m[1]);
     }
   }
+});
+/* Playground panel resizers — drag the pill to resize the wire log body
+   (#logBody) or the recent-runs card (#recentCard). Pointer-capture drag,
+   clamped to sane bounds, persisted to localStorage so sizes survive reloads. */
+document.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.rsz'); if (!h) return;
+  const which = h.dataset.rsz;
+  const el = which === 'wire' ? $('#logBody') : $('#recentCard');
+  if (!el || el.offsetHeight === 0) return;
+  e.preventDefault();
+  h.setPointerCapture(e.pointerId);
+  const startY = e.clientY, startH = el.offsetHeight;
+  const min = which === 'wire' ? 80 : 60;
+  const max = Math.round(innerHeight * (which === 'wire' ? 0.6 : 0.55));
+  h.classList.add('dragging'); document.body.classList.add('rsz-dragging');
+  const onMove = ev => {
+    const px = clamp(startH + (ev.clientY - startY), min, max);
+    el.style.height = px + 'px';
+    if (which === 'recent') el.style.maxHeight = px + 'px';
+  };
+  const end = () => {
+    h.classList.remove('dragging'); document.body.classList.remove('rsz-dragging');
+    h.removeEventListener('pointermove', onMove); h.removeEventListener('pointerup', end);
+    try { localStorage.setItem('pz.pg.' + (which === 'wire' ? 'logH' : 'recentH'), String(parseFloat(el.style.height))); } catch {}
+  };
+  h.addEventListener('pointermove', onMove);
+  h.addEventListener('pointerup', end);
 });
 document.addEventListener('keydown', e => {
   // Modal focus trap: keep Tab/Shift+Tab cycling inside an open help/guide
