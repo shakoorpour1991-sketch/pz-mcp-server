@@ -91,7 +91,7 @@ const S = {
   lat:{ ema:null, calls:0, spark:[] },
   memSpark:[], sesSpark:[], itemsSpark:[], upSpark:[],
   events:[], lastResult:null,
-  pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{} },
+  pg:{ values:{}, query:'', cats:{}, recent:[], ctrls:{}, tool:null, _sel:false },
   chain:{ seed:'', direction:'both', depth:2, busy:false, error:null, graph:null, layout:null, sugg:null,
     conflicts:null, confTotal:0, confBusy:false, insp:null, expLayers:{}, zoom:1, pan:{x:0,y:0}, dropTimer:0, depthTimer:0,
     fitted:false, fsOpen:false, dropIdx:-1, _dbSeen:false,
@@ -503,29 +503,28 @@ function toolCardHTML(tool){
       '</div></div></article>';
 }
 function playgroundHTML(){
-  const skTool = '<div class="glass sk-card"><div class="sk" style="width:40px;height:40px;border-radius:12px"></div><div style="flex:1"><div class="sk sk-line" style="width:45%"></div><div class="sk sk-line" style="width:80%"></div></div></div>';
-  const toolsHTML = S.handshaken ? '' : skTool + skTool + skTool;
   return '<div class="ex-row"><span class="ex-label">Quick actions</span>' +
       EXAMPLE_ACTIONS.map((e,i) => '<button class="btn sm ghost" data-act="example" data-i="'+i+'" style="border:1px solid var(--stroke)">'+ICONS.play+' '+esc(e.label)+'</button>').join('') +
     '</div>' +
     '<div class="play-grid">' +
-      '<div>' +
+      '<div class="pg-left">' +
         '<div class="pg-toolbar">' +
           '<div class="pg-search"><span class="pg-ic">'+ICONS.search+'</span>' +
-            '<input class="field" id="pgFilter" placeholder="Filter tools by name or description…" value="'+esc(S.pg.query)+'" aria-label="Filter tools">' +
-            (S.pg.query ? '<button class="ibtn pg-clear" data-act="pg-clear" aria-label="Clear filter" title="Clear filter">'+ICONS.x+'</button>' : '') +
+            '<select class="field pg-tool-select" id="pgToolSelect" aria-label="Select a tool" title="Pick a tool — only it is shown so everything fits on screen">' +
+              '<option value="">Select a tool…</option>' +
+            '</select>' +
           '</div>' +
           '<button class="btn success" data-act="open-help" title="Beginner-friendly guide for every tool">'+ICONS.book+' How to use the tools</button>' +
         '</div>' +
         '<div class="sec-title" style="margin-top:0">MCP Tools · <span id="toolCount">'+(S.handshaken?S.tools.length:'…')+'</span> registered</div>' +
-        '<div class="tool-stack" id="toolStack">'+toolsHTML+'</div>' +
+        '<div class="pg-card-scroll" id="pgToolCard"></div>' +
       '</div>' +
-      '<div>' +
+      '<div class="pg-right">' +
         '<section class="glass card" id="resultCard" style="display:none">' +
           '<div id="resultHead"></div><div id="resultBody"></div>' +
         '</section>' +
         '<div class="sec-title" style="margin-top:22px">Recent Runs <span class="badge b-dim num" id="recentCount">'+S.pg.recent.length+'</span></div>' +
-        '<section class="glass card" id="recentCard" style="margin-bottom:16px;display:none;overflow:hidden"><div id="recentList"></div></section>' +
+        '<section class="glass card" id="recentCard" style="margin-bottom:16px;display:none"><div id="recentList"></div></section>' +
         '<div class="sec-title" style="margin-top:0">Wire Log · Live JSON-RPC</div>' +
         '<section class="glass card console">' +
           '<div class="console-head"><h3><span style="width:7px;height:7px;border-radius:50%;background:var(--emerald);display:inline-block;animation:pulse 2.2s infinite"></span> mcp://wire</h3>' +
@@ -539,29 +538,36 @@ function playgroundHTML(){
         '</section></div></div>';
 }
 function renderToolStack(){
-  const stack = $('#toolStack'); if (!stack || !S.handshaken) return;
-  const q = S.pg.query.trim().toLowerCase();
-  let html = ''; let shown = 0;
+  const sel = $('#pgToolSelect'); if (!sel || !S.handshaken) return;
+  let html = '<option value="">Select a tool…</option>';
   for (const cat of TOOL_CATS){
     const tools = S.tools.filter(t => catForTool(t.name) === cat.id);
     if (!tools.length) continue;
-    const vis = q ? tools.filter(t => (t.name + ' ' + (t.description || '')).toLowerCase().includes(q)) : tools;
-    if (!vis.length) continue;
-    shown += vis.length;
-    const open = q ? true : S.pg.cats[cat.id] !== false;
-    html += '<section class="cat'+(open?' open':'')+'" data-cat="'+cat.id+'">' +
-      '<button class="cat-head" data-act="cat-toggle" data-cat="'+cat.id+'" aria-expanded="'+open+'">' +
-        '<span class="cat-ic">'+(ICONS[cat.icon]||ICONS.spark)+'</span>' +
-        '<span class="cat-name">'+esc(cat.label)+'</span>' +
-        '<span class="badge b-dim num">'+vis.length+'</span>' +
-        '<span class="cat-chv">'+ICONS.chev+'</span>' +
-      '</button>' +
-      '<div class="cat-body'+(open?'':' hidden')+'">'+vis.map(toolCardHTML).join('')+'</div>' +
-    '</section>';
+    html += '<optgroup label="'+esc(cat.label)+'">' + tools.map(t =>
+      '<option value="'+esc(t.name)+'">'+esc(t.name)+' — '+esc(chop(t.description || '', 72))+'</option>').join('') + '</optgroup>';
   }
-  stack.innerHTML = html || '<div class="pg-none">'+ICONS.search+' No tools match “'+esc(S.pg.query)+'”</div>';
-  const cnt = $('#toolCount'); if (cnt) cnt.textContent = q ? shown + ' / ' + S.tools.length : S.tools.length;
-  S.tools.forEach(t => syncToolValidation(t.name));
+  sel.innerHTML = html;
+  const cnt = $('#toolCount'); if (cnt) cnt.textContent = S.tools.length;
+  // First visit: preselect the first tool so the single-card view is never empty.
+  // If the picked tool vanished (server restart), fall back to the empty state.
+  if (!S.pg._sel && !S.pg.tool) S.pg.tool = S.tools[0]?.name || null;
+  else if (S.pg.tool && !S.tools.some(t => t.name === S.pg.tool)){ S.pg.tool = null; S.pg._sel = true; }
+  sel.value = S.pg.tool || '';
+  renderSingleTool();
+}
+function renderSingleTool(){
+  const card = $('#pgToolCard'); if (!card) return;
+  const t = S.tools.find(x => x.name === S.pg.tool);
+  if (!t){
+    S.openTool = null;
+    card.innerHTML = '<div class="glass card pg-empty"><span class="tool-ic">'+ICONS.spark+'</span>' +
+      '<div style="min-width:0"><div class="tool-name">No tool selected</div>' +
+      '<div class="tool-desc">Pick a tool from the dropdown to configure and run it — or use a quick action above.</div></div></div>';
+    return;
+  }
+  S.openTool = t.name;
+  card.innerHTML = toolCardHTML(t);
+  syncToolValidation(t.name);
 }
 function expandPanel(card, open){
   const panel = $('.tool-panel', card), head = $('.tool-head', card);
@@ -587,6 +593,20 @@ function expandPanel(card, open){
   }
 }
 function toggleTool(name){
+  // Single-tool playground: picking a different tool re-renders the one visible
+  // card; picking the same tool just collapses/expands its panel as before.
+  if ($('#pgToolSelect')){
+    if (S.pg.tool !== name){ S.pg.tool = name; S.pg._sel = true; $('#pgToolSelect').value = name; renderSingleTool(); }
+    else {
+      const card = $('#tool-' + CSS.escape(name));
+      if (card){
+        const open = !card.classList.contains('open');
+        S.openTool = open ? name : null;
+        expandPanel(card, open);
+      }
+    }
+    return;
+  }
   const prev = S.openTool;
   S.openTool = prev === name ? null : name;
   if (prev && prev !== name){ const old = $('#tool-' + CSS.escape(prev)); if (old) expandPanel(old, false); }
@@ -662,6 +682,10 @@ function markTool(name, running){
 async function callTool(name, args){
   if (!S.handshaken){ toast('Not connected — waiting for handshake','warn'); return; }
   if (S.view !== 'playground') switchView('playground');
+  // Single-tool playground: quick actions can target any tool — surface its card
+  // (with the Cancel button) so the running state is always visible.
+  const sel = $('#pgToolSelect');
+  if (sel && S.pg.tool !== name){ S.pg.tool = name; S.pg._sel = true; sel.value = name; renderSingleTool(); }
   const ctrl = new AbortController();
   S.pg.ctrls[name] = ctrl;
   markTool(name, true);
@@ -2529,22 +2553,6 @@ document.addEventListener('click', e => {
     else if (a === 'run-tool'){ runTool(act.closest('.tool').dataset.tool); }
     else if (a === 'cancel-run'){ const c = S.pg.ctrls[act.closest('.tool').dataset.tool]; if (c) c.abort(); }
     else if (a === 'example'){ const ex = EXAMPLE_ACTIONS[+act.dataset.i]; callTool(ex.tool, ex.args); }
-    else if (a === 'cat-toggle'){
-      const id = act.dataset.cat;
-      const open = act.getAttribute('aria-expanded') !== 'true';
-      S.pg.cats[id] = open;
-      try{ localStorage.setItem('pzdeck.pgcats', JSON.stringify(S.pg.cats)); }catch(e){}
-      act.setAttribute('aria-expanded', String(open));
-      act.closest('.cat').classList.toggle('open', open);
-      const body = act.nextElementSibling;
-      if (body) body.classList.toggle('hidden', !open);
-    }
-    else if (a === 'pg-clear'){
-      S.pg.query = '';
-      const f = $('#pgFilter'); if (f) f.value = '';
-      act.style.display = 'none';
-      renderToolStack();
-    }
     else if (a === 'recent-open'){
       const r = S.pg.recent[+act.dataset.i];
       if (r) showResult(r.name, r.text, r.dt, null, r.status !== 'ok');
@@ -2753,14 +2761,6 @@ document.addEventListener('input', e => {
     c.depthTimer = setTimeout(() => { if (c.seed) chainRun(); }, 500);
     return;
   }
-  if (t.id === 'pgFilter'){
-    S.pg.query = t.value;
-    const clearBtn = $('.pg-search .pg-clear');
-    if (clearBtn) clearBtn.style.display = t.value ? '' : 'none';
-    clearTimeout(S.pg.filterTimer);
-    S.pg.filterTimer = setTimeout(renderToolStack, 70);
-    return;
-  }
   if (t.id && t.id.startsWith('pf-')){
     const m = /^pf-(.+)-([^-]+)$/.exec(t.id);
     if (m){
@@ -2773,6 +2773,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'accentPicker'){ applyAccent(t.value); toast('Custom accent applied'); return; }
+  if (t.id === 'pgToolSelect'){ S.pg.tool = t.value || null; S.pg._sel = true; renderSingleTool(); return; }
   if (t.id && t.id.startsWith('pf-')){
     const m = /^pf-(.+)-([^-]+)$/.exec(t.id);
     if (m){
