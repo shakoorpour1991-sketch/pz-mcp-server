@@ -1,0 +1,64 @@
+---
+title: zombie.network.fields.FactionTag
+source: Unofficial PZ JavaDocs 42.20.0
+version: 42.20.0
+kind: class
+package: zombie.network.fields
+---
+
+# zombie.network.fields.FactionTag
+
+`public class FactionTag extends Object implements INetworkPacketField`
+
+**Kind:** class · **Package:** zombie.network.fields
+
+## Inheritance
+- java.lang.Object
+- zombie.network.fields.FactionTag
+
+## Constructors
+
+### public FactionTag()
+
+## Methods
+
+### public void set(Faction faction)
+
+**Parameters:**
+- `Faction` `faction`
+
+**Returns:** `void`
+
+### public void parse(ByteBufferReader b,
+IConnection connection)
+
+**Parameters:**
+- `ByteBufferReader` `b`
+- `IConnection` `connection`
+
+**Returns:** `void`
+
+### public void write(ByteBufferWriter b)
+
+**Parameters:**
+- `ByteBufferWriter` `b`
+
+**Returns:** `void`
+
+### public boolean isConsistent(IConnection connection)
+
+**Parameters:**
+- `IConnection` `connection`
+
+**Returns:** `boolean`
+
+### public String getTag()
+
+**Returns:** `String`
+
+### public int getColor()
+
+**Returns:** `int`
+
+---
+*Source: Unofficial PZ JavaDocs 42.20.0 (42.20.0) · parsed from `C:\Users\Administrator\Desktop\New folder\gpt_research\ProjectZomboidJavaDocs\zombie\network\fields\FactionTag.html`*

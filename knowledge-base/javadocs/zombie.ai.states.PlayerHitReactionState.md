@@ -1,0 +1,54 @@
+---
+title: zombie.ai.states.PlayerHitReactionState
+source: Unofficial PZ JavaDocs 42.20.0
+version: 42.20.0
+kind: class
+package: zombie.ai.states
+---
+
+# zombie.ai.states.PlayerHitReactionState
+
+`public final class PlayerHitReactionState extends State`
+
+**Kind:** class · **Package:** zombie.ai.states
+
+## Inheritance
+- java.lang.Object
+- zombie.ai.State
+- zombie.ai.states.PlayerHitReactionState
+
+## Methods
+
+### public static PlayerHitReactionState instance()
+
+**Returns:** `PlayerHitReactionState`
+
+### public void enter(IsoGameCharacter owner)
+
+**Parameters:**
+- `IsoGameCharacter` `owner`
+
+**Returns:** `void`
+
+### public void exit(IsoGameCharacter owner)
+
+**Parameters:**
+- `IsoGameCharacter` `owner`
+
+**Returns:** `void`
+
+### public void animEvent(IsoGameCharacter owner,
+AnimLayer layer,
+AnimationTrack track,
+AnimEvent event)
+
+**Parameters:**
+- `IsoGameCharacter` `owner`
+- `AnimLayer` `layer`
+- `AnimationTrack` `track`
+- `AnimEvent` `event`
+
+**Returns:** `void`
+
+---
+*Source: Unofficial PZ JavaDocs 42.20.0 (42.20.0) · parsed from `C:\Users\Administrator\Desktop\New folder\gpt_research\ProjectZomboidJavaDocs\zombie\ai\states\PlayerHitReactionState.html`*
