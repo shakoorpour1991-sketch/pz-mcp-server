@@ -1,0 +1,17 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "overrides": [
+    {
+      "files": ["main.mjs", "utils.mjs", "data.mjs"],
+      "rules": {
+        "no-empty": "off",
+        "@typescript-eslint/no-unused-expressions": "off",
+        "no-useless-escape": "off"
+      }
+    }
+  ]
+}

@@ -25,6 +25,18 @@ const DB_PATH = join(ROOT, 'data', 'pz_database.db');
 const SETTINGS_PATH = join(ROOT, 'data', 'deck-settings.json');
 const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download', 'workshop_analyze']);
 
+/* Split dashboard assets: the deck used to be one self-contained index.html.
+ * The slim shell now links style.css and the *.mjs modules — these are the
+ * ONLY static files served. Everything else (vendor/tailwind.js, …) is
+ * deliberately NOT served: it never loaded before either, so behavior stays
+ * byte-for-byte identical. */
+const DECK_STATIC = new Map([
+  ['/style.css', 'text/css; charset=utf-8'],
+  ['/main.mjs', 'text/javascript; charset=utf-8'],
+  ['/utils.mjs', 'text/javascript; charset=utf-8'],
+  ['/data.mjs', 'text/javascript; charset=utf-8'],
+]);
+
 /* ================= MCP child process ================= */
 let child = null;
 let startedAt = Date.now();
@@ -416,6 +428,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(readFileSync(join(ADMIN_DIR, 'index.html')));
+    }
+
+    if (req.method === 'GET' && DECK_STATIC.has(url.pathname)) {
+      res.writeHead(200, { 'Content-Type': DECK_STATIC.get(url.pathname), 'Cache-Control': 'no-store' });
+      return res.end(readFileSync(join(ADMIN_DIR, url.pathname.slice(1))));
     }
 
     if (req.method === 'GET' && url.pathname === '/events') {
