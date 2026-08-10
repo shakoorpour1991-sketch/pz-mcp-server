@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **search_vanilla v2: structured search, fuzzy resolution, AI context, relations, provenance** — the `search_vanilla` tool is now a full vanilla knowledge graph query engine:
+  1. **Structured field search** — new filters: `module`, `scriptPath`, `properties` (arbitrary `{key, min, max, eq}` constraints with `json_extract` — e.g. `[{key: MaxDamage, min: 5}, {key: Weight, max: 2}]`), `usedInRecipe`, `producedByRecipe`, `sprite`, `sound`. Enables queries like "find melee weapons with MaxDamage > 5 and Weight < 2".
+  2. **Fuzzy + typo-tolerant search** — a Levenshtein-based resolver normalizes `Base.Hamer`, `Hamer`, `base:hamer` → `Hammer` with method + confidence. The `id` param uses it; the `query` path falls back to it when FTS returns nothing (`resolved` block in output).
+  3. **AI context mode** — `format: "ai"` returns compact deterministic blocks with explicit "use these exact identifiers, do not invent properties" instruction, designed to reduce hallucination in the search→generate→validate workflow.
+  4. **Relationship traversal** — `includeRelations: true` attaches recipes using/producing the item, sounds/sprites/models it references, sibling scripts, and KB documentation references.
+  5. **Exact canonical lookup** — `id` param (`search_vanilla({id: "Base.Hammer"})`) resolves via `getItemById` + candidate spellings, returns the single object with match metadata.
+  6. **Version awareness** — every result carries `provenance: {source, build, path, confidence}` so the AI never applies old-build properties to new scripts.
+  7. **ZedScripts workflow documented** — the AI context mode footer and docs now guide the search→generate→validate loop.
+  8. **Aggressive caching** — in-memory lookup index (id/name → canonical id) invalidated by the graph stamp, so fuzzy resolution never rescans the full items table.
+- **New utility `src/utils/fuzzy.ts`** — dependency-free Levenshtein distance, key normalization, similarity scoring, and `bestFuzzyMatch` resolver ladder (exact → case-insensitive → prefix → fuzzy).
+- **Unit tests:** `tests/unit/fuzzy.unit.test.js` (24 tests) covering levenshtein, normalizeKey, similarity, bestFuzzyMatch.
+- **Integration tests:** 12 new `search_vanilla` tests covering id lookup, fuzzy typo resolution, properties constraints, module/scriptPath filters, usedInRecipe/producedByRecipe, AI format, relations, provenance, and typo-tolerant fallback.
+
 ### Removed
 
 - **Legacy Build 41 script data purged** (B41 data audit, verified against the parsed 42.20 vanilla DB — zero items carry `Type`, `MaxHitCount`, or a `Torso`-style `BodyLocation`):

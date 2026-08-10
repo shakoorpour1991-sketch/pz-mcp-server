@@ -6,16 +6,41 @@ Full parameter reference for every MCP tool exposed by the server. See the [READ
 
 ### `search_vanilla`
 
-Search parsed vanilla game content with full-text search.
+Search vanilla Project Zomboid content with intelligent matching and structured filters (category, weight, calories, tags, type, module, script path, properties, recipe usage, sprite/sound). See the README for the search→generate→validate workflow.
 
-| Param      | Type   | Required | Description                                                  |
-| ---------- | ------ | -------- | ------------------------------------------------------------ |
-| `query`    | string | Yes      | Search query                                                 |
-| `type`     | enum   | No       | `item`, `recipe`, `sound`, `vehicle`, `all` (default: `all`) |
-| `category` | string | No       | Filter by item category                                      |
-| `limit`    | number | No       | Max results, 1–100 (default: 20)                             |
+| Param               | Type     | Required | Description                                                                                                                      |
+| ------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `query`             | string   | No       | FTS search query — prefix-matched for autocomplete. Optional when filters are used.                                              |
+| `id`                | string   | No       | **Exact canonical lookup** — e.g. `Base.Hammer`. Resolves typos (`Hamer` → `Hammer`) with confidence. Fast path; see feature 5.  |
+| `type`              | enum     | No       | `item`, `recipe`, `sound`, `vehicle`, `all` (default: `all`)                                                                     |
+| `category`          | string   | No       | Filter by item category                                                                                                          |
+| `module`            | string   | No       | Filter by exact module name (e.g. `Base`)                                                                                        |
+| `scriptPath`        | string   | No       | Substring match on script file path (e.g. `recipes/cooking`)                                                                     |
+| `tags`              | string   | No       | Filter by tags (comma-separated, matches if ANY tag present)                                                                     |
+| `metalValueMin`     | number   | No       | Minimum metal value                                                                                                              |
+| `metalValueMax`     | number   | No       | Maximum metal value                                                                                                              |
+| `attachmentType`    | string   | No       | Filter by attachment type                                                                                                        |
+| `minWeight`         | number   | No       | Minimum weight                                                                                                                   |
+| `maxWeight`         | number   | No       | Maximum weight                                                                                                                   |
+| `minCalories`       | number   | No       | Minimum calories                                                                                                                 |
+| `maxCalories`       | number   | No       | Maximum calories                                                                                                                 |
+| `properties`        | array    | No       | **Structured property constraints** — ANDed together. `[{key: MaxDamage, min: 5}, {key: Weight, max: 2}]` → items with `MaxDamage > 5 AND Weight < 2`. Each constraint: `key` + optional `eq`/`min`/`max` |
+| `usedInRecipe`      | boolean  | No       | Only items that appear as recipe ingredients (handles tag inputs, bracket alternatives)                                           |
+| `producedByRecipe`  | boolean  | No       | Only items produced by recipes as results/outputs                                                                                |
+| `sprite`            | string   | No       | Filter by sprite reference (WeaponSprite, Icon, etc.)                                                                            |
+| `sound`             | string   | No       | Filter by sound reference (BreakSound, HitSound, etc.)                                                                           |
+| `includeRelations`  | boolean  | No       | If true, the primary result carries a **knowledge graph**: recipes using/producing it, sounds/sprites it references, sibling scripts, and KB documentation |
+| `format`            | enum     | No       | `"text"` (default) or `"ai"` — AI mode returns compact deterministic context blocks with explicit instructions to use exact identifiers; designed to reduce hallucination |
+| `limit`             | number   | No       | Max results, 1–100 (default: 20)                                                                                                 |
 
-**Output:** Matching items with name, type, display name, and up to 5 properties.
+**Output:**
+- `count`, `build`, `results[]` — each result carries `id`, `name`, `displayName`, `type`, `module`, `category`, `weight`, `calories`, `tags`, `properties`, and `provenance` (`source`, `build`, `path`, `confidence`).
+- When `id` is used: match metadata (`method`, `confidence`).
+- When the query resolves a typo: `resolved` block with `canonicalId` and `confidence`.
+- When `includeRelations` is true: `relations` block on the primary result.
+- **Distribution search:** not supported — loot tables (`distributions.lua`) are not parsed into the SQLite database.
+
+> **Tip for AI agents:** use `id` for known identifiers (fast, exact, confident). Use `format: "ai"` to get compact blocks that tell the language model "use these exact values, don't invent properties."
 
 ---
 

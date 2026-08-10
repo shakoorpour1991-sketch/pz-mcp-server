@@ -576,6 +576,221 @@ describe("pz-mcp-server integration", () => {
     assert.ok(text.includes("TestHelmet"));
   });
 
+  test("search_vanilla exact id lookup resolves canonical item (feature 5)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: { id: "TestSword", limit: 10 },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("Resolved"));
+    assert.ok(text.includes("TestSword"));
+    assert.ok(text.includes("exact"));
+    assert.ok(text.includes("100%"));
+    const sc = result.structuredContent;
+    assert.equal(sc.count, 1);
+    assert.equal(sc.results[0].id, "TestSword");
+    assert.equal(sc.results[0].provenance.source, "vanilla");
+    assert.equal(sc.results[0].provenance.confidence, "verified");
+  });
+
+  test("search_vanilla fuzzy id lookup resolves typos (feature 2)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: { id: "Testsord", limit: 10 }, // typo of TestSword
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("Resolved"));
+    assert.ok(text.includes("TestSword"));
+    assert.ok(text.includes("fuzzy"));
+    const sc = result.structuredContent;
+    assert.equal(sc.count, 1);
+    assert.equal(sc.results[0].id, "TestSword");
+  });
+
+  test("search_vanilla properties filter finds items by property constraints (feature 1)", async () => {
+    // TestSword has MaxDamage=10, Weight=2. Find it with MaxDamage > 5.
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        properties: [{ key: "MaxDamage", min: 5 }],
+        limit: 10,
+      },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("TestSword"));
+    assert.ok(!text.includes("TestHelmet"));
+
+    // MaxDamage < 5 should return nothing (fixture has MaxDamage=10)
+    const low = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        properties: [{ key: "MaxDamage", max: 5 }],
+        limit: 10,
+      },
+    });
+    assert.ok(!low.content[0].text.includes("TestSword"));
+  });
+
+  test("search_vanilla properties filter with eq constraint (feature 1)", async () => {
+    // TestSword has ItemType = base:weapon
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        properties: [{ key: "ItemType", eq: "base:weapon" }],
+        limit: 10,
+      },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("TestSword"));
+  });
+
+  test("search_vanilla module filter works (feature 1)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        module: "Base",
+        limit: 10,
+      },
+    });
+    const text = result.content[0].text;
+    // Fixture items are all in module Base
+    assert.ok(text.includes("TestSword"));
+    assert.ok(text.includes("TestHelmet"));
+
+    const noMatch = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        module: "NonExistentModule",
+        limit: 10,
+      },
+    });
+    assert.ok(noMatch.content[0].text.includes("Found 0"));
+  });
+
+  test("search_vanilla scriptPath filter works (feature 1)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        scriptPath: "items.txt",
+        limit: 10,
+      },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("TestSword"));
+    assert.ok(text.includes("TestHelmet"));
+  });
+
+  test("search_vanilla usedInRecipe filter works (feature 1)", async () => {
+    // Items referenced by recipes as ingredients. The fixture recipe
+    // TestSwordRecipe has Water as ingredient — Water does not have its
+    // own item row, so the filter returns no results. Still exercises
+    // the code path without crashing.
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        usedInRecipe: true,
+        limit: 10,
+      },
+    });
+    // The API should return normally (possibly empty)
+    assert.ok(result.content[0].text.includes("Found"));
+    const sc = result.structuredContent;
+    assert.equal(typeof sc.count, "number");
+  });
+
+  test("search_vanilla producedByRecipe filter works (feature 1)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        query: "",
+        producedByRecipe: true,
+        limit: 10,
+      },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes("TestSword"));
+  });
+
+  test("search_vanilla format=ai returns compact context blocks (feature 3)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        id: "TestSword",
+        format: "ai",
+      },
+    });
+    const text = result.content[0].text;
+    // AI context header with anti-hallucination instruction
+    assert.ok(text.includes("Use these exact identifiers"));
+    assert.ok(text.includes("Do not invent"));
+    // Compact key: value format
+    assert.ok(text.includes("id: TestSword"));
+    assert.ok(text.includes("type: item"));
+    assert.ok(text.includes("module: Base"));
+    assert.ok(text.includes("properties:"));
+    assert.ok(text.includes("MaxDamage: 10"));
+    // Build info
+    assert.ok(text.includes("Build 42.20"));
+    // Footer instruction
+    assert.ok(text.includes("generate your script using ONLY"));
+  });
+
+  test("search_vanilla includeRelations returns knowledge graph (feature 4)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: {
+        id: "TestSword",
+        includeRelations: true,
+      },
+    });
+    const text = result.content[0].text;
+    // Relations header
+    assert.ok(text.includes("Relations: TestSword"));
+    // TestSword is produced by TestSwordRecipe
+    assert.ok(text.includes("TestSwordRecipe"));
+    // TestSword is not used as an ingredient per se, but has relations
+    assert.ok(text.includes("Recipes using TestSword"));
+    assert.ok(text.includes("Recipes producing TestSword"));
+  });
+
+  test("search_vanilla result carries provenance (feature 6)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: { query: "TestSword", limit: 10 },
+    });
+    const sc = result.structuredContent;
+    assert.ok(sc.build, "build should be present");
+    assert.equal(sc.build, "42.20");
+    const item = sc.results.find((r) => r.id === "TestSword");
+    assert.notEqual(item, undefined);
+    assert.ok(item.provenance, "each result should have provenance");
+    assert.equal(item.provenance.source, "vanilla");
+    assert.equal(item.provenance.build, "42.20");
+    assert.ok(item.provenance.path, "path should be present");
+    assert.ok(item.provenance.confidence, "confidence should be present");
+  });
+
+  test("search_vanilla typo-tolerant fallback resolves query to canonical item (feature 2)", async () => {
+    const result = await client.call("tools/call", {
+      name: "search_vanilla",
+      arguments: { query: "Testsord", limit: 10 }, // typo of TestSword
+    });
+    const text = result.content[0].text;
+    // The handler should resolve the typo and report the canonical match
+    assert.ok(text.includes("No text matches"));
+    assert.ok(text.includes("TestSword"));
+    const sc = result.structuredContent;
+    assert.ok(sc.resolved, "resolved should be present");
+    assert.equal(sc.resolved.canonicalId, "TestSword");
+  });
+
   test("validate_script accepts a valid item script", async () => {
     const result = await client.call("tools/call", {
       name: "validate_script",

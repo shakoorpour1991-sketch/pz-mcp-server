@@ -110,7 +110,7 @@ The server finds your Project Zomboid installation **on any machine** and can in
 
 | Channel         | Tools                                                                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- |
-| `DISCOVERY`     | `search_vanilla` · `search_knowledge_base` · `list_knowledge_topics`                              |
+| `DISCOVERY`     | `search_vanilla` (v2: structured filters, fuzzy resolution, AI context, relations, provenance) · `search_knowledge_base` · `list_knowledge_topics` |
 | `SCRIPT`        | `generate_script` · `validate_script` · `check_references` · `export_mod_script`                  |
 | `LOCAL DATA`    | `parse_game_files` · `index_knowledge_base` · `index_javadocs`                                    |
 | `ANALYSIS`      | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts`                                |

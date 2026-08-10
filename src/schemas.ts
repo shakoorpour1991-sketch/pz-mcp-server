@@ -3,9 +3,34 @@ import { BLOCK_TYPES, SEARCH_TYPES } from "./utils/blockTypes.js";
 
 // Schema definitions for tool inputs
 export const SearchVanillaSchema = z.object({
-  query: z.string().max(1000).describe("Search query for vanilla game content"),
+  query: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe(
+      "FTS search query for vanilla game content — prefix-matched for autocomplete. Optional when id or other filters are provided.",
+    ),
+  id: z
+    .string()
+    .max(1000)
+    .optional()
+    .describe(
+      "Exact canonical id lookup (e.g. Base.Hammer). Resolves typos (Hamer → Base.Hammer) with confidence. Much faster than text search for known identifiers.",
+    ),
   type: z.enum(SEARCH_TYPES).optional().describe("Filter by content type"),
   category: z.string().max(256).optional().describe("Filter by item category"),
+  module: z
+    .string()
+    .max(256)
+    .optional()
+    .describe("Filter by exact module name (e.g. Base)"),
+  scriptPath: z
+    .string()
+    .max(512)
+    .optional()
+    .describe(
+      "Filter by script file path (substring match, e.g. recipes/cooking)",
+    ),
   tags: z
     .string()
     .max(256)
@@ -18,18 +43,76 @@ export const SearchVanillaSchema = z.object({
     .max(256)
     .optional()
     .describe("Filter by attachment type"),
-  minWeight: z.number().min(0).optional().describe("Minimum Weight (kg)"),
-  maxWeight: z.number().min(0).optional().describe("Maximum Weight (kg)"),
-  minCalories: z
-    .number()
-    .min(0)
+  minWeight: z.number().min(0).optional().describe("Minimum weight"),
+  maxWeight: z.number().min(0).optional().describe("Maximum weight"),
+  minCalories: z.number().min(0).optional().describe("Minimum calories"),
+  maxCalories: z.number().min(0).optional().describe("Maximum calories"),
+  properties: z
+    .array(
+      z.object({
+        key: z
+          .string()
+          .max(128)
+          .describe("Property name (e.g. MaxDamage, Weight, ItemType)"),
+        eq: z
+          .union([z.string(), z.number(), z.boolean()])
+          .optional()
+          .describe("Exact property value (e.g. base:weapon for ItemType)"),
+        min: z
+          .number()
+          .optional()
+          .describe("Numeric lower bound (inclusive)"),
+        max: z
+          .number()
+          .optional()
+          .describe("Numeric upper bound (inclusive)"),
+      }),
+    )
+    .max(20)
     .optional()
-    .describe("Minimum Calories (food items)"),
-  maxCalories: z
-    .number()
-    .min(0)
+    .describe(
+      "Structured property constraints — ANDed together. E.g. [{key: MaxDamage, min: 5}, {key: Weight, max: 2}] finds melee weapons with MaxDamage > 5 and Weight < 2",
+    ),
+  usedInRecipe: z
+    .boolean()
     .optional()
-    .describe("Maximum Calories (food items)"),
+    .describe(
+      "If true, only items that appear as recipe ingredients (also considers tag inputs and bracket alternatives)",
+    ),
+  producedByRecipe: z
+    .boolean()
+    .optional()
+    .describe(
+      "If true, only items that are produced by recipes as results/outputs",
+    ),
+  sprite: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Filter by sprite reference (items that reference this sprite name, e.g. WeaponSprite, Icon)",
+    ),
+  sound: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Filter by sound reference (items that reference this sound name, e.g. BreakSound, HitSound)",
+    ),
+  includeRelations: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "If true, the first result carries a full relationship graph: recipes using it, recipes producing it, sounds/sprites/models it references, sibling scripts, and knowledge base documentation links",
+    ),
+  format: z
+    .enum(["text", "ai"])
+    .default("text")
+    .optional()
+    .describe(
+      "'text' (default): human-readable list. 'ai': compact deterministic context blocks with explicit instructions to use exact identifiers, designed for feeding into another AI to reduce hallucination",
+    ),
   limit: z
     .number()
     .min(1)
@@ -301,20 +384,32 @@ export const ExportModScriptSchema = z.object({
 });
 
 export const IndexJavadocsSchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .max(4096)
+    .optional()
+    .describe(
+      "Path to JavaDocs to index. Two modes:\n" +
+      "1. A directory of .md files (the distilled markdown format, one file per API type) — defaults to the repo-shipped knowledge-base/javadocs/\n" +
+      "2. A raw generated JavaDoc HTML tree (package folders + *.html class pages) — the pipeline re-ingests from HTML, generates markdown, then indexes\n" +
+      "\nWhen omitted, the repo-shipped distilled JavaDocs (knowledge-base/javadocs/, ~4,700 types from the Unofficial PZ JavaDocs 42.20.0) are indexed directly, so index_javadocs works on any machine with zero arguments.\n" +
+      "Override with PZ_MCP_JAVADOCS_PATH env var (for the shipped markdown dir) or pass an explicit path here.",
+    ),
   source: z
     .string()
     .min(1)
     .max(4096)
     .optional()
     .describe(
-      "Optional path to a raw generated JavaDoc directory (the tree containing package folders + *.html class pages) to re-ingest from HTML. When omitted, the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs — one file per API type, extracted from the Unofficial PZ JavaDocs) is indexed directly, so index_javadocs works on any machine out of the box",
+      "Alias for path — accepts a raw generated JavaDoc HTML tree for re-ingestion. When neither path nor source is provided, the repo-shipped distilled JavaDocs are indexed directly.",
     ),
   output: z
     .string()
     .max(4096)
     .optional()
     .describe(
-      "Directory for the generated per-type markdown docs (default: PZ_MCP_JAVADOCS_KB_DIR env or <data>/javadocs-kb); only used when source is provided; then indexed into the knowledge base",
+      "Directory for the generated per-type markdown docs (default: PZ_MCP_JAVADOCS_KB_DIR env or <data>/javadocs-kb); only used when re-ingesting from HTML (source or path points to a raw HTML tree). The output is then indexed into the knowledge base.",
     ),
   overwrite: z
     .boolean()

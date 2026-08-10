@@ -17,9 +17,119 @@ export function formatSearchResults(results: any[]): string {
         if (props) output += `\n  Properties: ${props}`;
       }
 
+      // Provenance line (version awareness): source/build/path/confidence.
+      if (result.provenance) {
+        const p = result.provenance;
+        output += `\n  [${p.source} ${p.build}] ${p.path || "no path"} · confidence: ${p.confidence}`;
+      }
+
       return output;
     })
     .join("\n\n");
+}
+
+/**
+ * AI-context rendering (feature 3): compact, deterministic blocks designed
+ * for another AI to consume directly. The header makes the contract
+ * explicit — use these exact identifiers, do not invent properties — which
+ * is the anti-hallucination backbone of the search→generate→validate
+ * workflow (feature 7).
+ */
+export function formatAiContext(results: any[], build: string): string {
+  const header =
+    "The following are exact records from the vanilla Project Zomboid database " +
+    `(Build ${build}). Use these exact identifiers and property values in your ` +
+    "generated scripts. Do not invent or rename any property, tag, or id — if a " +
+    "property you need is not listed, it does not exist on this object. " +
+    "Copy values verbatim.";
+  const blocks = results.map((r, i) => {
+    const lines: string[] = [];
+    lines.push(`## RESULT ${i + 1}`);
+    lines.push(`id: ${r.id}`);
+    lines.push(`name: ${r.name}`);
+    if (r.displayName) lines.push(`displayName: ${r.displayName}`);
+    lines.push(`type: ${r.type || "unknown"}`);
+    lines.push(`module: ${r.module || ""}`);
+    if (r.category) lines.push(`category: ${r.category}`);
+    if (r.tags && r.tags.length) lines.push(`tags: ${r.tags.join(";")}`);
+    if (r.weight !== undefined && r.weight !== null)
+      lines.push(`weight: ${r.weight}`);
+    if (r.calories !== undefined && r.calories !== null)
+      lines.push(`calories: ${r.calories}`);
+    if (r.properties) {
+      const props = Object.entries(r.properties)
+        .filter(([, value]) => value !== null && value !== undefined)
+        .map(([key, value]) => `  ${key}: ${formatAiValue(value)}`)
+        .join("\n");
+      if (props) {
+        lines.push(`properties:`);
+        lines.push(props);
+      }
+    }
+    lines.push(`path: ${r.provenance?.path || r.filePath || ""}`);
+    lines.push(`confidence: ${r.provenance?.confidence || "keyword"}`);
+    return lines.join("\n");
+  });
+  return `${header}\n\n${blocks.join("\n\n")}\n\nNow generate your script using ONLY these exact values.`;
+}
+
+/** Render a property value in AI context (arrays as semicolon lists). */
+function formatAiValue(value: any): string {
+  if (Array.isArray(value)) return value.map(String).join(";");
+  if (typeof value === "object" && value !== null)
+    return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * Relationship traversal renderer (feature 4): the knowledge-graph view of
+ * one item — recipes using/producing it, sounds/sprites/models, siblings.
+ */
+export function formatItemRelations(
+  itemId: string,
+  rel: any,
+  kbDocs: any[],
+): string {
+  const out: string[] = [];
+  out.push(`## Relations: ${itemId}`);
+
+  out.push(`### 🔨 Recipes using ${itemId}`);
+  out.push(
+    rel.recipesUsing.length > 0
+      ? rel.recipesUsing.map((r: any) => `- ${r.name} (${r.id})`).join("\n")
+      : "- none",
+  );
+
+  out.push(`### ⚒️ Recipes producing ${itemId}`);
+  out.push(
+    rel.recipesProducing.length > 0
+      ? rel.recipesProducing
+          .map((r: any) => `- ${r.name} (${r.id})`)
+          .join("\n")
+      : "- none",
+  );
+
+  if (rel.sounds.length > 0) {
+    out.push(`### 🔊 Sounds`);
+    out.push(rel.sounds.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+  }
+  if (rel.sprites.length > 0) {
+    out.push(`### 🖼️ Sprites`);
+    out.push(rel.sprites.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+  }
+  if (rel.models.length > 0) {
+    out.push(`### 🚗 Models`);
+    out.push(rel.models.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+  }
+  if (rel.relatedScripts.length > 0) {
+    out.push(`### 📄 Related scripts (same file)`);
+    out.push(rel.relatedScripts.map((id: string) => `- ${id}`).join("\n"));
+  }
+  if (kbDocs.length > 0) {
+    out.push(`### 📚 Documentation`);
+    out.push(kbDocs.map((d: any) => `- ${d.topic}: ${d.title}`).join("\n"));
+  }
+  return out.join("\n");
 }
 
 export function formatRecipeSearchResults(recipes: any[]): string {

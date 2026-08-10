@@ -143,6 +143,10 @@ const S = {
   view: "status",
   conn: "connecting",
   handshaken: false,
+  // True once the user asks to close the whole program: the bridge + MCP
+  // server are stopping, so the deck shows the shutdown overlay and never
+  // tries to reconnect.
+  shuttingDown: false,
   serverInfo: null,
   protocol: null,
   tools: [],
@@ -417,6 +421,12 @@ function connectEvents() {
       S.handshaken = false;
       addEvent("server restarting…");
     }
+  });
+  es.addEventListener("shutdown", () => {
+    // The bridge told us it is stopping (red Shut down button) — park the
+    // deck on the shutdown overlay instead of the offline/retry state.
+    S.shuttingDown = true;
+    showShutdownOverlay();
   });
 }
 function onFrame(f) {
@@ -4886,6 +4896,10 @@ function settingsHTML() {
     ">" +
     ICONS.power +
     " Restart</button></div>" +
+    '<div class="set-row"><div><div class="lbl">Shut down deck</div><div class="sub">Stops the bridge, the MCP server and every running task — closes the console window (same as Ctrl+C). Start again with dashboard.bat</div></div>' +
+    '<button class="btn danger" data-act="shutdown">' +
+    ICONS.power +
+    " Shut down</button></div>" +
     '<div class="set-row"><div><div class="lbl">Server log level</div><div class="sub">Live from the bridge env</div></div><span class="badge b-dim mono" id="envLogLevel">…</span></div>' +
     '<div class="set-row"><div><div class="lbl">Knowledge base path</div><div class="sub">Live from the bridge env</div></div><span class="badge b-dim mono" id="envKbPath">…</span></div>' +
     '<div class="set-row"><div><div class="lbl">SteamCMD</div><div class="sub">Workshop downloads use this binary</div></div><span class="badge b-dim mono" id="envSteamCmd">…</span></div>' +
@@ -4918,6 +4932,75 @@ async function restartServer() {
     setTimeout(() => handshake().catch(() => setConn("offline")), 2500);
   } catch {
     toast("Bridge unreachable", "warn");
+  }
+}
+
+/* ---------- full program shutdown (red Shut down button) ---------- */
+/** Promise-based confirm modal. Resolves true only when the user explicitly
+ * confirms; Esc, the ✕ button or Cancel all resolve false. */
+function confirmAsk(html, note) {
+  return new Promise((resolve) => {
+    const modal = $("#confirmModal");
+    if (!modal) return resolve(true);
+    const body = $("#confirmBody");
+    if (body)
+      body.innerHTML =
+        (html || "") +
+        (note ? '<p class="confirm-note">' + note + "</p>" : "");
+    const yes = $("#confirmYes"),
+      no = modal.querySelector('[data-act="confirm-no"]');
+    const close = (v) => {
+      modal.classList.remove("open");
+      document.body.style.overflow = "";
+      yes?.removeEventListener("click", onYes);
+      no?.removeEventListener("click", onNo);
+      document.removeEventListener("keydown", onKey);
+      if (S._prevFocus && S._prevFocus.focus) S._prevFocus.focus();
+      resolve(v);
+    };
+    const onYes = () => close(true);
+    const onNo = () => close(false);
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close(false);
+      }
+    };
+    S._prevFocus = document.activeElement;
+    yes?.addEventListener("click", onYes);
+    no?.addEventListener("click", onNo);
+    document.addEventListener("keydown", onKey);
+    modal.classList.add("open");
+    document.body.style.overflow = "hidden";
+    no?.focus();
+  });
+}
+function showShutdownOverlay() {
+  const ov = $("#shutdownOverlay");
+  if (ov) ov.hidden = false;
+  setConn("offline");
+  addEvent("program shut down — you can close this tab");
+}
+async function shutdownDeck() {
+  if (S.shuttingDown) return;
+  const ok = await confirmAsk(
+    "<b>This stops the whole Control Deck.</b>" +
+      "<p>The bridge, the MCP server and every running task " +
+      "(workshop downloads, mod installs, file parsing, …) will be stopped, " +
+      "and the “Glass Control Deck” console window closes with it.</p>",
+    "Nothing keeps running in the background. To start it again later, " +
+      "double-click <b>dashboard.bat</b>.",
+  );
+  if (!ok) return;
+  S.shuttingDown = true;
+  toast("Shutting down…", "power");
+  // Show the overlay immediately (optimistic): if the fetch races the bridge
+  // going down it still lands on the static shutdown screen, not a retry loop.
+  showShutdownOverlay();
+  try {
+    await fetch("/api/shutdown", { method: "POST" });
+  } catch {
+    /* bridge already down — the overlay is already showing */
   }
 }
 async function loadEnv() {
@@ -5434,6 +5517,7 @@ document.addEventListener("click", (e) => {
       renderAllLogs();
       toast("Local wire log cleared");
     } else if (a === "restart") restartServer();
+    else if (a === "shutdown") shutdownDeck();
     else if (a === "reconnect") handshake().catch(() => setConn("offline"));
     else if (a === "copy-script") {
       if (S.lastResult?.script)
@@ -5950,9 +6034,13 @@ function boot() {
   renderView();
   moveIndicator();
   $("#btnTermTop").addEventListener("click", () => openTerminal());
+  const shutdownBtn = $("#btnShutdown");
+  if (shutdownBtn) shutdownBtn.addEventListener("click", () => shutdownDeck());
   handshake().catch(() => setConn("offline"));
   setInterval(() => {
-    if (!S.handshaken && S.conn === "offline") handshake().catch(() => {});
+    // Never reconnect after a user-initiated shutdown — the program is closed.
+    if (!S.shuttingDown && !S.handshaken && S.conn === "offline")
+      handshake().catch(() => {});
   }, 5000);
   addEventListener("resize", () => {
     moveIndicator();

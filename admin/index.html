@@ -87,6 +87,25 @@
           />
         </svg>
       </a>
+      <button
+        class="ibtn shutbtn"
+        id="btnShutdown"
+        title="Close program — stops the bridge, the MCP server and every running task (same as Ctrl+C in the console window)"
+        aria-label="Shut down the whole program"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18.36 6.64a9 9 0 1 1-12.72 0" />
+          <path d="M12 2v10" />
+        </svg>
+        <span class="lbl">Shut down</span>
+      </button>
     </header>
 
     <main id="app"><div id="view" aria-live="polite"></div></main>
@@ -478,6 +497,99 @@
       </div>
     </div>
     <div id="toasts" aria-live="polite"></div>
+
+    <!-- Destructive action confirmation: shown before the red Shut down button
+         actually stops the bridge + MCP server (data-act confirm-yes/no). -->
+    <div
+      id="confirmModal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Close the whole program?"
+    >
+      <div class="help-shell confirm-shell">
+        <div class="help-head">
+          <h2>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M18.36 6.64a9 9 0 1 1-12.72 0" />
+              <path d="M12 2v10" />
+            </svg>
+            Close the whole program?
+          </h2>
+          <span style="flex: 1"></span>
+          <button
+            class="ibtn"
+            data-act="confirm-no"
+            style="width: 36px; height: 36px; border-radius: 10px"
+            aria-label="Cancel"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="confirm-body" id="confirmBody"></div>
+        <div class="confirm-actions">
+          <button class="btn" data-act="confirm-no">Cancel</button>
+          <button class="btn danger" id="confirmYes" data-act="confirm-yes">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              style="width: 16px; height: 16px"
+            >
+              <path d="M18.36 6.64a9 9 0 1 1-12.72 0" />
+              <path d="M12 2v10" />
+            </svg>
+            Shut down
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shown once the program has been shut down: the bridge is gone, so this
+         static overlay replaces the broken/offline page instead of a retry loop. -->
+    <div id="shutdownOverlay" hidden>
+      <div class="sdo-card">
+        <div class="sdo-ic" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M18.36 6.64a9 9 0 1 1-12.72 0" />
+            <path d="M12 2v10" />
+          </svg>
+        </div>
+        <h2>Program shut down</h2>
+        <p>
+          The bridge, the MCP server and all running tasks have been stopped.
+          Nothing keeps running in the background. You can close this tab.
+        </p>
+        <p class="sdo-sub">
+          To start it again, double-click <code>dashboard.bat</code>.
+        </p>
+      </div>
+    </div>
 
     <!-- Recipe Chain fullscreen layer: the graph renders ONLY here, in real
      browser fullscreen (requestFullscreen) — never inline in the tab. -->

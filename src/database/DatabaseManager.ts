@@ -5,6 +5,7 @@ import logger from "../utils/logger.js";
 import { databasePath } from "../utils/config.js";
 import { sanitizeFtsTerms } from "../utils/fts.js";
 import { BlockType } from "../utils/blockTypes.js";
+import { bestFuzzyMatch, type FuzzyMatch } from "../utils/fuzzy.js";
 
 /**
  * Current database schema version, stored in `PRAGMA user_version`.
@@ -103,6 +104,28 @@ export interface SearchOptions {
   minCalories?: number;
   maxCalories?: number;
   limit?: number;
+  /** Exact module name filter (e.g. "Base"). */
+  module?: string;
+  /** Substring match on the script file path (e.g. "weapons"). */
+  scriptPath?: string;
+  /** Structured property constraints (e.g. MaxDamage > 5). */
+  properties?: Array<{
+    key: string;
+    /** Numeric lower bound (inclusive). */
+    min?: number;
+    /** Numeric upper bound (inclusive). */
+    max?: number;
+    /** Exact value (string or number). */
+    eq?: string | number | boolean;
+  }>;
+  /** Items referenced by recipes as ingredients (usedInRecipe: true). */
+  usedInRecipe?: boolean;
+  /** Items produced by recipes as outputs (producedByRecipe: true). */
+  producedByRecipe?: boolean;
+  /** Items that reference a specific sprite name. */
+  sprite?: string;
+  /** Items that reference a specific sound name. */
+  sound?: string;
 }
 
 interface ItemRow {
@@ -973,6 +996,74 @@ export class DatabaseManager {
       params.push(options.maxCalories);
     }
 
+    // ======= NEW STRUCTURED FILTERS =======
+    // Module filter
+    if (options.module) {
+      sql += " AND items.module = ?";
+      params.push(options.module);
+    }
+
+    // Script path filter (substring match)
+    if (options.scriptPath) {
+      const escaped = options.scriptPath.replace(/[\\%_]/g, "\\$&");
+      sql += " AND items.file_path LIKE ? ESCAPE '\\'";
+      params.push(`%${escaped}%`);
+    }
+
+    // Property constraints (json_extract) — each constraint becomes one AND
+    // clause. All constraints must be satisfied (AND semantics).
+    if (options.properties && options.properties.length > 0) {
+      for (const prop of options.properties) {
+        const path = `$.${prop.key}`;
+        if (prop.eq !== undefined) {
+          sql += " AND CAST(json_extract(items.properties, ?) AS TEXT) = ?";
+          params.push(path, String(prop.eq));
+        }
+        if (prop.min !== undefined) {
+          sql += " AND CAST(json_extract(items.properties, ?) AS REAL) >= ?";
+          params.push(path, prop.min);
+        }
+        if (prop.max !== undefined) {
+          sql += " AND CAST(json_extract(items.properties, ?) AS REAL) <= ?";
+          params.push(path, prop.max);
+        }
+      }
+    }
+
+    // Sprite reference filter: items that reference a specific sprite name
+    if (options.sprite) {
+      sql += " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sprite' AND r.reference_id = ?)";
+      params.push(options.sprite);
+    }
+
+    // Sound reference filter
+    if (options.sound) {
+      sql += " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sound' AND r.reference_id = ?)";
+      params.push(options.sound);
+    }
+
+    // Used in recipe / produced by recipe: tolerant candidate matching.
+    // The references table may store items as bare ("Flour2") or qualified
+    // ("Base.Flour2") — match both forms. The recipe_ingredients mirror
+    // covers bracket alternatives and tag inputs the references table misses.
+    if (options.usedInRecipe) {
+      sql += ` AND (
+        EXISTS (SELECT 1 FROM "references" r WHERE r.reference_type = 'item' AND r.context IN ('ingredient','baseItem','required_item')
+          AND (r.reference_id = items.id OR r.reference_id = 'Base.' || items.id))
+        OR EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.role = 'ingredient'
+          AND (ri.ref = items.id OR ri.ref = 'Base.' || items.id))
+      )`;
+    }
+
+    if (options.producedByRecipe) {
+      sql += ` AND (
+        EXISTS (SELECT 1 FROM "references" r WHERE r.reference_type = 'item' AND r.context IN ('result','output')
+          AND (r.reference_id = items.id OR r.reference_id = 'Base.' || items.id))
+        OR EXISTS (SELECT 1 FROM recipe_ingredients ri WHERE ri.role = 'output'
+          AND (ri.ref = items.id OR ri.ref = 'Base.' || items.id))
+      )`;
+    }
+
     // Add ordering and limit
     // FTS5 bm25 rank is NEGATIVE for matches (more negative = more relevant),
     // so ASC puts best matches first; DESC would invert it (audit finding).
@@ -1752,6 +1843,174 @@ export class DatabaseManager {
       ) as unknown as Array<{ name: string }>;
 
     return rows.map((row) => row.name);
+  }
+
+  // -------------------------------------------------------------------------
+  // Fuzzy / canonical lookup (search_vanilla id + typo resolution)
+  // -------------------------------------------------------------------------
+
+  /**
+   * In-memory id/name index for fuzzy resolution, rebuilt lazily whenever the
+   * items table changes (cheap stamp: COUNT + MAX(rowid)). The graph-stamp
+   * pattern already exists for the recipe chain; this is the same idea for
+   * search resolution so typo lookups never scan the whole table (feature 8: cache).
+   */
+  private lookupCache: {
+    stamp: string;
+    ids: string[];
+    names: string[];
+  } | null = null;
+
+  private async getLookupIndex(): Promise<{ ids: string[]; names: string[] }> {
+    const stamp = await this.getGraphStamp();
+    if (
+      this.lookupCache &&
+      this.lookupCache.stamp === stamp &&
+      this.lookupCache.ids.length > 0
+    ) {
+      return this.lookupCache;
+    }
+    const rows = this.db
+      .prepare("SELECT id, name FROM items")
+      .all() as unknown as Array<{ id: string; name: string }>;
+    const ids = rows.map((r) => r.id);
+    const names = rows.map((r) => r.name);
+    this.lookupCache = { stamp, ids, names };
+    return this.lookupCache;
+  }
+
+  /**
+   * Resolve a user-supplied id/name to a canonical stored item, tolerating
+   * module prefixes (Base.X / X / base:x) and typos (Hamer → Hammer).
+   *
+   * Returns the resolved item plus the match metadata (method + confidence),
+   * or { item: null, match: null } when nothing resolves. This is the fast
+   * exact path first (feature 5), then the fuzzy ladder (feature 2).
+   */
+  async lookupItem(
+    raw: string,
+  ): Promise<{
+    item: GameItem | null;
+    match: FuzzyMatch | null;
+  }> {
+    const input = raw.trim();
+    if (!input) return { item: null, match: null };
+
+    // 1. Exact: try every candidate spelling of the id (bare/qualified/tag).
+    for (const cand of referenceCandidates(input)) {
+      const item = await this.getItemById(cand);
+      if (item) {
+        return { item, match: { id: item.id, method: "exact", confidence: 1 } };
+      }
+    }
+
+    // 2. Fuzzy: match against the id/name index.
+    const { ids, names } = await this.getLookupIndex();
+    const byId = bestFuzzyMatch(input, ids);
+    const byName = bestFuzzyMatch(input, names);
+    const pick = byName && (!byId || byName.confidence > byId.confidence)
+      ? byName
+      : byId;
+    if (pick) {
+      const item = await this.getItemById(pick.id);
+      if (item) return { item, match: pick };
+    }
+    return { item: null, match: null };
+  }
+
+  /**
+   * Relationship traversal for one item (feature 4): everything the vanilla
+   * knowledge graph knows about it — recipes using it, recipes producing it,
+   * sounds/sprites/models it references, and sibling scripts in the same file.
+   * Used by search_vanilla includeRelations.
+   */
+  async getItemRelations(id: string): Promise<{
+    recipesUsing: Array<{ id: string; name: string }>;
+    recipesProducing: Array<{ id: string; name: string }>;
+    sounds: Array<{ ref: string; context: string }>;
+    sprites: Array<{ ref: string; context: string }>;
+    models: Array<{ ref: string; context: string }>;
+    relatedScripts: string[];
+  }> {
+    // References declared BY this item (what it points to): sounds/sprites/models.
+    const outgoing = await this.db
+      .prepare(
+        'SELECT reference_id, reference_type, context FROM "references" WHERE item_id = ?',
+      )
+      .all(id) as unknown as Array<{
+      reference_id: string;
+      reference_type: string;
+      context: string;
+    }>;
+    const sounds = outgoing
+      .filter((r) => r.reference_type === "sound")
+      .map((r) => ({ ref: r.reference_id, context: r.context }));
+    const sprites = outgoing
+      .filter((r) => r.reference_type === "sprite")
+      .map((r) => ({ ref: r.reference_id, context: r.context }));
+    const models = outgoing
+      .filter((r) => r.reference_type === "model")
+      .map((r) => ({ ref: r.reference_id, context: r.context }));
+
+    // Recipes using / producing this item: tolerant candidates across both
+    // the references table and the recipe_ingredients mirror.
+    const cands = referenceCandidates(id);
+    const ph = cands.map(() => "?").join(",");
+    const mirrorRows = this.db
+      .prepare(
+        `SELECT recipe_id, role, ref FROM recipe_ingredients ri WHERE ri.ref IN (${ph})`,
+      )
+      .all(...cands) as unknown as Array<{
+      recipe_id: string;
+      role: string;
+      ref: string;
+    }>;
+    const usingIds = new Set<string>();
+    const producingIds = new Set<string>();
+    for (const r of mirrorRows) {
+      if (r.role === "ingredient") usingIds.add(r.recipe_id);
+      if (r.role === "output") producingIds.add(r.recipe_id);
+    }
+
+    // Also check the references table (legacy ingredient/result edges) via
+    // the tolerant getReferencesToAny (handles bare/qualified/tag spellings).
+    const refRows = await this.getReferencesToAny(id);
+    for (const r of refRows) {
+      if (["ingredient", "baseItem", "required_item"].includes(r.context))
+        usingIds.add(r.itemId);
+      if (["result", "output"].includes(r.context)) producingIds.add(r.itemId);
+    }
+
+    const nameFor = async (recIds: Set<string>): Promise<Array<{ id: string; name: string }>> => {
+      if (recIds.size === 0) return [];
+      const ph = [...recIds].map(() => "?").join(",");
+      const rows = this.db
+        .prepare(`SELECT id, name FROM items WHERE id IN (${ph})`)
+        .all(...recIds) as unknown as Array<{ id: string; name: string }>;
+      return rows
+        .sort((a, b) => a.name.localeCompare(b.name));
+    };
+
+    // Sibling scripts in the same file (related scripts).
+    const me = await this.db
+      .prepare("SELECT file_path FROM items WHERE id = ?")
+      .get(id) as unknown as { file_path: string | null } | undefined;
+    const relatedScripts: string[] = [];
+    if (me?.file_path) {
+      const siblings = this.db
+        .prepare("SELECT id FROM items WHERE file_path = ? AND id != ? ORDER BY name LIMIT 50")
+        .all(me.file_path, id) as unknown as Array<{ id: string }>;
+      relatedScripts.push(...siblings.map((r) => r.id));
+    }
+
+    return {
+      recipesUsing: await nameFor(usingIds),
+      recipesProducing: await nameFor(producingIds),
+      sounds,
+      sprites,
+      models,
+      relatedScripts,
+    };
   }
 
   async clearDatabase(): Promise<void> {

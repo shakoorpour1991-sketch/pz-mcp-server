@@ -319,7 +319,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
             role: "user",
             content: {
               type: "text",
-              text: `Search Project Zomboid vanilla content for "${query || "<query>"}" with type filter "${type}".\n\nUse the search_vanilla tool.`,
+              text: `Search Project Zomboid vanilla content for "${query || "<query>"}" with type filter "${type}".\n\nUse search_vanilla with the query, or use id="ExactName" for a fast canonical lookup with typo resolution.\n\nStructured filters: type, category, module, scriptPath, tags, weight, calories, metalValue, attachmentType, properties (e.g. [{key:MaxDamage, min:5}]), usedInRecipe, producedByRecipe, sprite, sound.\n\nUse format="ai" to get compact context blocks designed to reduce hallucination. Use includeRelations=true for the full knowledge-graph view (recipes, sounds, sprites, siblings).`,
             },
           },
         ],

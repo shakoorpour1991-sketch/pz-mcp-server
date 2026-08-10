@@ -681,6 +681,40 @@ const server = http.createServer(async (req, res) => {
       return json(res, { ok: true });
     }
 
+    // Full program shutdown (dashboard.bat "proper close"): stop the MCP
+    // child's ENTIRE process tree — taskkill /T /F also kills grandchildren
+    // like steamcmd.exe mid-download — then exit the bridge itself. Exiting
+    // unwinds the `cmd /c npm run dashboard` chain, so the "Glass Control
+    // Deck" console window closes with it. No rogue processes left behind.
+    if (req.method === "POST" && url.pathname === "/api/shutdown") {
+      if (shuttingDown) return json(res, { ok: true });
+      shuttingDown = true;
+      pushLog(
+        "⏻ shutdown requested from Control Deck — stopping bridge + MCP child tree",
+      );
+      broadcast("shutdown", { state: "shutdown" });
+      const pid = child?.pid;
+      if (pid) {
+        if (process.platform === "win32") {
+          execFile("taskkill", ["/PID", String(pid), "/T", "/F"], () => {
+            /* best-effort; the exit handler below cleans up either way */
+          });
+        } else {
+          try {
+            child?.kill("SIGTERM");
+          } catch {
+            /* */
+          }
+        }
+      }
+      json(res, { ok: true });
+      // Let the HTTP response + SSE shutdown event flush to the browser, then
+      // exit the bridge. shuttingDown is already set, so the child's exit
+      // handler will NOT respawn it.
+      setTimeout(() => process.exit(0), 800);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/workshop-dir") {
       return json(res, { configured: readDeckSettings().workshopDir || null });
     }

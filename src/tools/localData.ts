@@ -116,23 +116,29 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
       "Index Java API docs into the knowledge base so search_knowledge_base returns class/interface/method results alongside markdown notes. With no source, the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs — one file per API type from the Unofficial PZ JavaDocs) is indexed directly, so it works on any machine. With source, a raw generated JavaDoc HTML tree is re-ingested: class pages are discovered by generator marker, parsed into structured API knowledge (package, type, FQN, constructors, methods, fields, params, return types, signatures, inheritance, descriptions), rendered as markdown, then indexed. Re-runnable — unchanged pages are skipped",
     inputSchema: IndexJavadocsSchema,
     handler: async (args, ctx) => {
-      // output only makes sense with an explicit source (re-ingest); with no
-      // source the repo-shipped distilled markdown is indexed in place.
-      if (args.output && !args.source) {
+      // Accept both 'path' and 'source' as the input path. 'path' is the
+      // recommended name (consistent with index_knowledge_base); 'source'
+      // is the legacy name for raw HTML re-ingestion.
+      const inputPath = args.path || args.source;
+
+      // output only makes sense with an explicit input (re-ingest); with no
+      // input the repo-shipped distilled markdown is indexed in place.
+      if (args.output && !inputPath) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          "output requires source — with no source the repo-shipped distilled markdown is indexed directly",
+          "output requires an explicit path — with no path the repo-shipped distilled markdown is indexed directly",
         );
       }
       const rawOutput = args.output || javadocsKbDir();
 
-      // Resolve the input: an explicit raw HTML javadocs tree (re-ingest) or
-      // the repo-shipped distilled markdown (default — works on any machine).
+      // Resolve the input: an explicit path (raw HTML javadocs tree or
+      // distilled markdown dir) or the repo-shipped distilled markdown
+      // (default — works on any machine with zero arguments).
       let sourcePath: string;
       let outputPath: string | undefined;
       try {
-        if (args.source) {
-          sourcePath = ctx.pathManager.validateInputPath(args.source, "dir");
+        if (inputPath) {
+          sourcePath = ctx.pathManager.validateInputPath(inputPath, "dir");
           outputPath = JavaDocIndexer.validateOutputDir(rawOutput);
           // Never write generated docs into the source tree itself.
           const rel = relative(sourcePath, outputPath);
@@ -142,16 +148,26 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
             );
           }
         } else {
-          // No source: index the repo-shipped distilled markdown directly.
+          // No input: index the repo-shipped distilled markdown directly.
           sourcePath = ctx.pathManager.validateInputPath(
             shippedJavadocsPath(),
             "dir",
           );
         }
       } catch (error) {
+        // Friendly error when the default shipped path is missing.
+        const defaultPath = shippedJavadocsPath();
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!inputPath && msg.includes("does not exist")) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Shipped JavaDocs not found at ${defaultPath}. The knowledge-base/javadocs/ directory ships with the repository. ` +
+            `If it's missing, run 'git checkout knowledge-base/javadocs/' from the repo root, or set PZ_MCP_JAVADOCS_PATH to point to your distilled JavaDocs markdown directory.`,
+          );
+        }
         throw new McpError(
           ErrorCode.InvalidParams,
-          `Invalid javadocs path: ${error instanceof Error ? error.message : String(error)}`,
+          `Invalid javadocs path: ${msg}`,
         );
       }
 
@@ -170,7 +186,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
             removed: number;
             errors: Array<{ file: string; message: string }>;
           };
-      if (args.source) {
+      if (inputPath) {
         // outputPath is always assigned on this branch (validated above).
         ingest = await new JavaDocIndexer().ingest(sourcePath, outputPath!);
       } else {
@@ -189,13 +205,13 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
           errors: [],
         };
       }
-      const indexDir = args.source ? outputPath! : sourcePath;
+      const indexDir = inputPath ? outputPath! : sourcePath;
       const index = await ctx.knowledgeBaseManager.indexDirectory(indexDir, {
         overwrite: args.overwrite,
       });
 
       const result = {
-        mode: (args.source ? "source" : "shipped") as "source" | "shipped",
+        mode: (inputPath ? "source" : "shipped") as "source" | "shipped",
         ingest,
         index,
       };
