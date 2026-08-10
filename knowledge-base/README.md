@@ -89,6 +89,18 @@ Project Zomboid Build 42 modding research, organized from analysis of a local Pr
 | `wiki/GUID.md` | GUID system: unique IDs for items, recipes, mod content |
 | `wiki/Spawnpoints.lua.md` | `spawnpoints.lua`: spawn point file format |
 
+## PZ API Docs Reference (128 files, from PZ-API-Docs)
+
+Per-block reference documentation (the "ScriptsDocs" layer the wiki guides link to), converted from the official PZ-API-Docs Sphinx sources (pz-wiki-modding.github.io/PZ-API-Docs) to markdown with local cross-links. Complements the `wiki/` guides: guides give the overview, these give the full parameter reference (e.g. every `mod.info` parameter, every `item` block parameter per `ItemType`).
+
+| Area | Files | Covers |
+|------|-------|--------|
+| `api-docs/scripts/` | 109 | All script blocks: item (per-ItemType params), recipe, craftrecipe, evolvedrecipe, fixing, vehicle, sound, anim, component* (FluidContainer, Durability, CraftRecipe, ...), tile/spritemodel/entity, root files (mod.info, map.info, sandboxoptions, ...) |
+| `api-docs/mapping/` | 6 | Tile properties, procedural distributions (+properties), rooms, room distributions, item picker containers |
+| `api-docs/xml/` | 5 | XML schemas: clothingItem, animNode, clothing, clothingDecals, fileGUIDTable |
+| `api-docs/translations/` | 2 | Translation files (ItemName, DisplayName, ...), language codes |
+| `api-docs/java/` | 6 | Java-side references: Colors, ItemTags, Metabolics, BodyLocations, MagazineSubjects, action sound times |
+
 ## Proof-of-Concept Mod
 
 | Directory | What It Shows |
