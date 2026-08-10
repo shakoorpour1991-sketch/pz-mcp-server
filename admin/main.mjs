@@ -86,6 +86,9 @@ const S = {
   ws: { results: [], detail: null, busy: false, error: null, actionError: null, downloading: false, download: null, analyzing: false, report: null, phase: null, startedAt: 0, pipeTimer: 0,
     dl: { active:false, paused:false, reqPaused:false, pct:0, bytes:0, expected:0, elapsed:0, phase:null, startedAt:0, timer:0 } },
   wsDir: null,
+  inst: { detected: null, busy: false, items: [], overwrite: false, last: null, _autodone: false },
+  gen: { busy:false, err:null, templates:null, template:null, mod:{ name:'', modId:'', modName:'', author:'', description:'', itemName:'', displayName:'', icon:'' },
+    stats:{}, pinned:{}, autoStats:true, project:null, last:null, list:null, listBusy:false, _loaded:false },
   logs:[], fid:0, methodById:new Map(), resLatency:new Map(), reqAt:new Map(),
   serverLog:[], seq:0, _followAt:0, _prevFocus:null,
   lat:{ ema:null, calls:0, spark:[] },
@@ -278,6 +281,8 @@ function renderView(){
   else if (S.view === 'database') html += databaseHTML();
   else if (S.view === 'workshop') html += workshopHTML();
   else if (S.view === 'chain') html += chainHTML();
+  else if (S.view === 'installer') html += installerHTML();
+  else if (S.view === 'generator') html += genHTML();
   else html += settingsHTML();
   wrap.innerHTML = html;
   if (S.view === 'status'){ updateStatusDom(); renderEvents(); }
@@ -289,6 +294,8 @@ function renderView(){
   if (S.view === 'database') renderDbStats();
   if (S.view === 'workshop') renderWorkshopResults();
   if (S.view === 'chain') renderChain();
+  if (S.view === 'installer') initInstallerView();
+  if (S.view === 'generator') initGenView();
   if (S.view === 'settings'){ loadWorkshopDir(); loadEnv(); }
   requestAnimationFrame(moveIndicator);
 }
@@ -2636,6 +2643,22 @@ document.addEventListener('click', e => {
       const open = body.classList.toggle('expand');
       if (btn) btn.textContent = open ? 'Show less' : 'Show full description';
     }
+    else if (a === 'inst-detect') instDetect();
+    else if (a === 'inst-open-mods') instOpenMods();
+    else if (a === 'inst-set-mods'){ const el = $('#instModsEdit'); if (el) el.style.display = el.style.display === 'none' ? '' : 'none'; }
+    else if (a === 'inst-save-mods'){
+      const v = $('#instModsInput') && $('#instModsInput').value.trim();
+      if (!v){ toast('Enter an absolute folder path','warn'); return; }
+      instSetModsDir(v);
+    }
+    else if (a === 'inst-clear-mods') instSetModsDir(null, true);
+    else if (a === 'inst-browse-zip'){ const i = $('#instZipInput'); if (i) i.click(); }
+    else if (a === 'inst-browse-folder'){ const i = $('#instFolderInput'); if (i) i.click(); }
+    else if (a === 'inst-toggle-overwrite'){
+      S.inst.overwrite = !S.inst.overwrite;
+      const sw = act.closest('.switch'); if (sw) sw.setAttribute('aria-checked', String(S.inst.overwrite));
+    }
+    else if (a === 'inst-clear-items'){ S.inst.items = []; S.inst.last = null; instRender(); }
     else if (a === 'open-term') openTerminal();
     else if (a === 'clear-logs'){ S.logs = []; S.methodById.clear(); S.reqAt.clear(); renderAllLogs(); toast('Local wire log cleared'); }
     else if (a === 'restart') restartServer();
@@ -2899,7 +2922,7 @@ document.addEventListener('keydown', e => {
     if (k === '-'){ e.preventDefault(); chainZoomAnim(S.chain.zoom * 0.8); return; }
     if (k === '0'){ e.preventDefault(); chainFitAnim(); return; }
   }
-  if (k >= '1' && k <= '6') switchView(VIEWS[parseInt(k,10) - 1]);
+  if (k >= '1' && k <= '8') switchView(VIEWS[parseInt(k,10) - 1]);
   else if (k === 't'){ e.preventDefault(); term.open ? closeTerminal() : openTerminal(); }
 });
 $('#tabbar').addEventListener('keydown', e => {
@@ -2985,3 +3008,796 @@ function boot(){
   });
 }
 boot();
+/* ==================== MOD INSTALLER ====================
+ * Smart path detection (detect_pz_paths) + drag&drop / browse installs.
+ * The browser cannot hand absolute paths to the MCP server, so a dropped zip
+ * is streamed to the bridge (data/uploads) and a dropped folder is walked +
+ * uploaded file-by-file with relative paths; install_mod then does the real
+ * work (scan, conflict check, copy) on the local path. Uploads are cleaned up
+ * after each run.
+ */
+function instDetectRows(){
+  const d = S.inst.detected;
+  if (!d) return '<div class="tcap">Not detected yet — press <b>Detect paths</b> (or it runs automatically the first time you open this tab).</div>';
+  const gi = d.gameInstall && d.gameInstall.path;
+  const ws = d.workshopDir && d.workshopDir.path;
+  const rows = [
+    ['Game install', gi || '(not found)', gi ? 'b-ok' : 'b-warn', gi ? 'via ' + d.gameInstall.source : 'set PROJECTZOMBOID_PATH / PZ_PATH'],
+    ['User data dir', d.userDataDir.path, d.userDataDir.exists ? 'b-ok' : 'b-dim', d.userDataDir.exists ? 'exists' : 'not created yet'],
+    ['Mods dir', d.modsDir.path, d.modsDir.writable === false ? 'b-err' : (d.modsDir.exists ? 'b-ok' : 'b-info'), d.modsDir.writable === false ? 'NOT writable' : (d.modsDir.exists ? 'writable' : 'created on first install')],
+    ['Workshop dir', ws || '(not found)', d.workshopDir && d.workshopDir.exists ? 'b-ok' : 'b-dim', d.workshopDir && d.workshopDir.exists ? 'exists' : ''],
+    ['Platform', d.platform, 'b-info', ''],
+  ];
+  return '<div>' + rows.map(r =>
+    '<div class="krow" style="gap:12px;min-height:40px"><span class="k" style="flex:none">'+r[0]+'</span>' +
+    '<span class="v" style="max-width:none;text-align:left;flex:1;overflow-wrap:anywhere">'+esc(r[1])+'</span>' +
+    '<span class="badge '+r[2]+'" style="flex:none">'+esc(r[3]||'')+'</span></div>'
+  ).join('') + '</div>';
+}
+function installerHTML(){
+  const prefill = S.inst.detected && S.inst.detected.modsDir ? S.inst.detected.modsDir.path : '';
+  return '<div class="inst-grid">' +
+    '<section class="glass card panel-card" style="min-width:0">' +
+      '<h3>'+ICONS.scan+' PZ path detection <span class="badge b-dim" style="margin-left:auto;font-family:var(--font-mono)" id="instBusyBadge">'+esc(S.inst.busy?'detecting…':'auto')+'</span></h3>' +
+      '<div id="instDetectBody">'+instDetectRows()+'</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' +
+        '<button class="btn primary" data-act="inst-detect"'+(S.inst.busy?' disabled':'')+'>'+ICONS.scan+' Detect paths</button>' +
+        '<button class="btn" data-act="inst-open-mods">'+ICONS.folder+' Open mods folder</button>' +
+        '<span style="flex:1"></span>' +
+        '<button class="btn sm ghost" data-act="inst-set-mods" style="border:1px solid var(--stroke)">Set mods folder…</button>' +
+      '</div>' +
+      '<div class="inst-edit" id="instModsEdit" style="display:none;margin-top:14px">' +
+        '<div class="f-label">Mods directory override (PZ_MODS_DIR)</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<input class="field" id="instModsInput" style="flex:1;min-width:260px" placeholder="C:/Users/you/Zomboid/mods" value="'+esc(prefill)+'" />' +
+          '<button class="btn" data-act="inst-save-mods">Save &amp; restart</button>' +
+          '<button class="btn ghost" data-act="inst-clear-mods">Reset</button>' +
+        '</div>' +
+        '<div class="f-hint">Saved per machine; the server restarts with PZ_MODS_DIR set. Clear to auto-detect <home>/Zomboid/mods.</div>' +
+      '</div>' +
+    '</section>' +
+    '<section class="glass card panel-card" style="min-width:0">' +
+      '<h3>'+ICONS.download+' Install mods <span class="badge b-dim" style="margin-left:auto">.zip or folder</span></h3>' +
+      '<div id="instDrop" class="dropzone">' +
+        '<div class="dz-ic">'+ICONS.download+'</div>' +
+        '<div class="dz-title">Drag &amp; drop mods here</div>' +
+        '<div class="dz-sub">.zip archives or whole mod folders — single or multiple. Uploaded to the local bridge only, never sent anywhere.</div>' +
+        '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px">' +
+          '<button class="btn" data-act="inst-browse-zip">'+ICONS.doc+' Browse .zip…</button>' +
+          '<button class="btn" data-act="inst-browse-folder">'+ICONS.folder+' Browse folder…</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">' +
+        '<button class="switch" role="switch" aria-checked="'+S.inst.overwrite+'" data-act="inst-toggle-overwrite" aria-label="Overwrite conflicting mods" title="When a mod with the same id/folder is already installed: skip (off) or replace (on)"><span class="trk"></span><span class="knb"></span></button>' +
+        '<span style="font-size:13px">Overwrite conflicting mods</span>' +
+        '<span class="f-hint" style="margin:0">off: conflicts are skipped &amp; reported</span>' +
+        '<span style="flex:1"></span>' +
+        (S.inst.items.length ? '<button class="btn sm ghost" data-act="inst-clear-items">'+ICONS.x+' Clear list</button>' : '') +
+      '</div>' +
+      '<div id="instItems" style="display:flex;flex-direction:column;gap:10px;margin-top:12px">' +
+        (S.inst.items.length ? S.inst.items.map(instItemRow).join('') : '<div class="tcap">Nothing yet — drop mods above, or use Browse.</div>') +
+      '</div>' +
+    '</section>' +
+    '<section class="glass card panel-card" id="instResultCard" style="display:none;min-width:0">' +
+      '<h3>'+ICONS.check+' Last install result</h3>' +
+      '<div id="instResultBody"></div>' +
+    '</section>' +
+    '<input type="file" id="instZipInput" accept=".zip,application/zip" style="display:none" />' +
+    '<input type="file" id="instFolderInput" webkitdirectory directory style="display:none" />' +
+  '</div>';
+}
+function initInstallerView(){
+  if (!S.inst._autodone && !S.inst.busy && !S.inst.detected) instDetect();
+  const drop = $('#instDrop');
+  if (drop){
+    drop.addEventListener('dragenter', e => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', e => { e.preventDefault(); drop.classList.remove('drag'); });
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); instHandleDrop(e); });
+  }
+  const zi = $('#instZipInput');
+  if (zi) zi.addEventListener('change', () => { if (zi.files && zi.files[0]) instAddFile(zi.files[0]); zi.value = ''; });
+  const fi = $('#instFolderInput');
+  if (fi) fi.addEventListener('change', () => { if (fi.files && fi.files.length) instAddFolderFiles(Array.from(fi.files)); fi.value = ''; });
+  instRender();
+}
+function instRender(){
+  const det = $('#instDetectBody'); if (det) det.innerHTML = instDetectRows();
+  const busy = $('#instBusyBadge'); if (busy) busy.textContent = S.inst.busy ? 'detecting…' : 'auto';
+  const items = $('#instItems');
+  if (items) items.innerHTML = S.inst.items.length ? S.inst.items.map(instItemRow).join('') : '<div class="tcap">Nothing yet — drop mods above, or use Browse.</div>';
+  const rc = $('#instResultCard'), rb = $('#instResultBody');
+  if (rc && rb){
+    if (S.inst.last){ rc.style.display = ''; rb.innerHTML = instResultHTML(S.inst.last); }
+    else rc.style.display = 'none';
+  }
+}
+async function instDetect(){
+  S.inst.busy = true; S.inst._autodone = true; instRender();
+  try {
+    const reply = await rpc('tools/call', { name:'detect_pz_paths', arguments:{} });
+    S.inst.detected = (reply.result && reply.result.structuredContent) || null;
+    const md = $('#instModsInput'); if (md && S.inst.detected) md.value = S.inst.detected.modsDir.path || '';
+  } catch (err){
+    toast('Detection failed: ' + String((err && err.message) || err), 'warn');
+  }
+  S.inst.busy = false; instRender();
+}
+async function instOpenMods(){
+  let d = {};
+  try { const r = await fetch('/api/open-mods-dir', { method:'POST' }); d = await r.json().catch(() => ({})); } catch { toast('Bridge unreachable','warn'); return; }
+  if (!d.ok){ toast(d.error || 'Could not open the mods folder','warn'); return; }
+  toast('Opened ' + d.path, 'check');
+}
+async function instSetModsDir(path, clear){
+  let d = {};
+  try {
+    const r = await fetch('/api/mods-dir', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(clear ? { clear:true } : { path }) });
+    d = await r.json().catch(() => ({}));
+  } catch { toast('Bridge unreachable','warn'); return; }
+  if (!d.ok){ toast(d.error || 'Could not save the folder','warn'); return; }
+  S.handshaken = false; setConn('connecting');
+  toast(clear ? 'Mods folder reset to auto-detect — respawning…' : 'Mods folder saved — respawning server…','check');
+  setTimeout(() => handshake().catch(() => setConn('offline')), 2500);
+}
+function instHandleDrop(e){
+  const items = e.dataTransfer && e.dataTransfer.items ? Array.from(e.dataTransfer.items) : [];
+  let handled = 0;
+  for (const it of items){
+    const entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+    if (!entry){
+      const f = it.kind === 'file' ? it.getAsFile() : null;
+      if (f){ instAddFile(f); handled++; }
+      continue;
+    }
+    handled++;
+    if (entry.isFile){
+      if (/\.zip$/i.test(entry.name)) instAddFileEntry(entry);
+      else toast('Only .zip files or folders can be installed — got "' + entry.name + '"', 'warn');
+    } else instAddFolderEntry(entry);
+  }
+  if (!handled && e.dataTransfer && e.dataTransfer.files){
+    for (const f of e.dataTransfer.files) if (/^\.zip$/i.test(f.name)) instAddFile(f);
+  }
+}
+async function instAddFileEntry(entry){
+  try { instAddFile(await new Promise((res, rej) => entry.file(res, rej))); }
+  catch (err){ toast('Could not read dropped file: ' + String(err && err.message || err), 'warn'); }
+}
+function instAddFile(file){
+  const item = { id:'it' + Date.now() + Math.random().toString(36).slice(2,7), name:file.name, kind:'zip', state:'uploading', size:file.size, rootPath:null };
+  S.inst.items.push(item);
+  instRender();
+  instUploadZip(file, item);
+}
+async function instUploadZip(file, item){
+  try {
+    const r = await fetch('/api/mod-source/zip?name=' + encodeURIComponent(file.name), { method:'POST', body:file });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || 'upload failed');
+    item.rootPath = d.path;
+    item.state = 'installing'; instRender();
+    await instRun(item.rootPath, item);
+  } catch (err){
+    item.state = 'error'; item.detail = String((err && err.message) || err); instRender();
+    toast('Upload failed: ' + item.detail, 'warn');
+    instFailCleanup(item);
+  }
+}
+function instAddFolderFiles(files){
+  const rels = files.map(f => f.webkitRelativePath || f.name);
+  const root = (rels[0] || 'folder').split('/')[0];
+  const item = { id:'it' + Date.now() + Math.random().toString(36).slice(2,7), name:root, kind:'folder', state:'uploading', filesTotal:files.length, filesDone:0, batch:root + '-' + Date.now(), rootPath:null };
+  S.inst.items.push(item);
+  instRender();
+  instUploadFolderFiles(item, files, rels);
+}
+async function instAddFolderEntry(entry){
+  const out = [];
+  try { await instWalkEntry(entry, out, ''); }
+  catch (err){ toast('Could not read folder: ' + String(err && err.message || err), 'warn'); return; }
+  if (!out.length){ toast('Folder is empty: ' + entry.name, 'warn'); return; }
+  const item = { id:'it' + Date.now() + Math.random().toString(36).slice(2,7), name:entry.name, kind:'folder', state:'uploading', filesTotal:out.length, filesDone:0, batch:entry.name + '-' + Date.now(), rootPath:null };
+  S.inst.items.push(item);
+  instRender();
+  await instUploadFolderFiles(item, out.map(o => o.file), out.map(o => o.rel));
+}
+async function instWalkEntry(entry, out, prefix){
+  if (entry.isFile){
+    const f = await new Promise((res, rej) => entry.file(res, rej));
+    out.push({ rel: prefix ? prefix + '/' + f.name : f.name, file:f });
+    return;
+  }
+  const reader = entry.createReader();
+  const nextPrefix = prefix ? prefix + '/' + entry.name : entry.name;
+  for (;;){
+    const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+    if (!batch || !batch.length) break;
+    for (const e of batch) await instWalkEntry(e, out, nextPrefix);
+  }
+}
+async function instUploadFolderFiles(item, files, rels){
+  try {
+    for (let i = 0; i < files.length; i++){
+      const r = await fetch('/api/mod-source/folder?batch=' + encodeURIComponent(item.batch) + '&rel=' + encodeURIComponent(rels[i]), { method:'POST', body:files[i] });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok) throw new Error(d.error || 'upload failed');
+      item.rootPath = item.rootPath || d.path;
+      item.filesDone = i + 1;
+      instRender();
+    }
+    item.state = 'installing'; instRender();
+    await instRun(item.rootPath, item);
+  } catch (err){
+    item.state = 'error'; item.detail = String((err && err.message) || err); instRender();
+    toast('Folder upload failed: ' + item.detail, 'warn');
+    instFailCleanup(item);
+  }
+}
+async function instRun(source, item){
+  try {
+    const reply = await rpc('tools/call', { name:'install_mod', arguments:{ source, overwrite:S.inst.overwrite } });
+    const sc = reply.result && reply.result.structuredContent;
+    item.state = 'done';
+    item.result = sc || {};
+    item.detail = (reply.result && reply.result.content && reply.result.content[0] && reply.result.content[0].text) || '';
+    S.inst.last = item.result;
+    instRender();
+  } catch (err){
+    item.state = 'error';
+    item.detail = String((err && err.message) || err);
+    instRender();
+  }
+  instCleanup(source);
+}
+async function instCleanup(path){
+  try { await fetch('/api/mod-source/cleanup', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ path }) }); } catch { /* */ }
+}
+function instItemRow(item){
+  let right;
+  if (item.state === 'uploading') right = '<span class="spinner"></span><span class="inst-phase">uploading…' + (item.filesTotal ? ' ' + item.filesDone + '/' + item.filesTotal + ' files' : '') + '</span>';
+  else if (item.state === 'installing') right = '<span class="spinner"></span><span class="inst-phase">installing…</span>';
+  else if (item.state === 'done'){
+    const mods = item.result && item.result.mods ? item.result.mods : [];
+    const ok = mods.filter(m => m.status === 'installed').length;
+    const skip = mods.filter(m => m.status === 'skipped').length;
+    const err = mods.filter(m => m.status === 'error').length;
+    right = (ok ? '<span class="badge b-ok">' + ok + ' installed</span>' : '') + (skip ? '<span class="badge b-warn">' + skip + ' skipped</span>' : '') + (err ? '<span class="badge b-err">' + err + ' failed</span>' : '');
+    if (!right) right = '<span class="badge b-dim">done</span>';
+  } else right = '<span class="badge b-err">error</span>';
+  return '<div class="inst-item">' +
+    '<span class="inst-ic">' + (item.kind === 'zip' ? ICONS.doc : ICONS.folder) + '</span>' +
+    '<div style="min-width:0;flex:1"><div class="inst-name">' + esc(item.name) + '</div>' +
+    (item.detail ? '<div class="inst-detail">' + esc(chop(item.detail, 240)) + '</div>' : '') +
+    '</div>' + right + '</div>';
+}
+function instResultHTML(r){
+  const mods = r.mods || [];
+  const lines = mods.map(m => {
+    const id = m.modId ? ' <span class="mono" style="color:var(--faint)">' + esc(m.modId) + '</span>' : '';
+    const ver = m.version ? ' <span class="badge b-dim">v' + esc(m.version) + '</span>' : '';
+    let badge = '<span class="badge b-ok">installed</span>';
+    if (m.status === 'planned') badge = '<span class="badge b-info">planned</span>';
+    else if (m.status === 'skipped') badge = '<span class="badge b-warn">skipped</span>';
+    else if (m.status === 'error') badge = '<span class="badge b-err">error</span>';
+    const why = m.reason ? '<div class="tcap">' + esc(m.reason) + '</div>' : '';
+    return '<div style="margin-top:8px"><div class="krow" style="align-items:flex-start;min-height:auto;padding:6px 2px"><span style="flex:1;min-width:0">' + esc(m.name) + id + ver + '</span>' + badge + '</div>' + why + '</div>';
+  }).join('');
+  return '<div class="tcap" style="margin-bottom:6px">Target: <code class="mono">' + esc(r.targetDir) + '</code> · ' + esc(r.summary || '') + '</div>' + (lines || '<div class="tcap">No mods in result.</div>') +
+    (r.warnings && r.warnings.length ? '<div style="margin-top:10px" class="tcap" style="color:#FCD34D">' + r.warnings.map(w => '⚠ ' + esc(w)).join('<br/>') + '</div>' : '');
+}
+function instFailCleanup(item){
+  // A failed upload can leave a partial file/batch in data/uploads — free it.
+  if (item && item.rootPath) instCleanup(item.rootPath);
+}
+/* ==================== MOD GENERATOR ====================
+ * Beginner-friendly mod creation (modgen_* MCP tools).
+ * Flow: pick a template → describe the mod → tune stats (auto-balanced from
+ * vanilla data, or pin/roll any stat) → generate a complete ready-to-ship
+ * folder with an editable blueprint → reopen / edit / regenerate anytime.
+ */
+function genState(){
+  const g = S.gen;
+  g.tpl = (g.templates && g.template) ? g.templates.find(t => t.id === g.template) : null;
+  return g;
+}
+
+function genHTML(){
+  const g = genState();
+  const editing = !!g.project;
+  return '<div class="gen-wrap">' +
+    '<div class="guide-banner">' +
+      '<span class="gb-ic">'+ICONS.spark+'</span>' +
+      '<div class="gb-txt"><b>Create a Project Zomboid mod — no coding needed.</b><p>Pick a template, name your mod, and the server balances the stats against real vanilla game data. You get a complete, ready-to-ship mod folder you can reopen and tweak any time.</p></div>' +
+      '<button class="btn ghost" data-act="gen-help" title="How the generator works">'+ICONS.book+' How it works</button>' +
+    '</div>' +
+    '<section class="glass card panel-card"><h3>'+ICONS.spark+' 1 · Choose a template</h3><div id="genTpls" class="gen-tpls"></div></section>' +
+    '<section class="glass card panel-card" id="genFormCard"'+(g.tpl?'':' hidden')+'>' +
+      '<h3>'+ICONS.doc+' 2 · Describe your '+(g.tpl?esc(g.tpl.label):'mod')+' <span class="badge b-dim" id="genModeBadge" style="margin-left:auto">'+(editing?'editing <b>'+esc(g.project)+'</b>':'new mod')+'</span></h3>' +
+      '<div class="gen-basics">' + genBasicsHTML(g) + '</div>' +
+      '<h3 style="margin-top:18px">'+ICONS.graph+' 3 · Tune the stats '+genAutoBadge(g)+'</h3>' +
+      '<div class="gen-src-note" id="genSrcNote"></div>' +
+      '<div id="genStats"></div>' +
+      '<div class="gen-actions">' +
+        (editing
+          ? '<button class="btn primary" data-act="gen-save"'+(g.busy?' disabled':'')+'>'+ICONS.check+' Save changes & regenerate</button>'
+          : '<button class="btn primary" data-act="gen-generate"'+(g.busy?' disabled':'')+'>'+ICONS.spark+' '+ (g.busy?'Working…':'Generate mod') +'</button>') +
+        '<button class="btn ghost" data-act="gen-preview"'+(g.busy||editing?' disabled':'')+'>'+ICONS.chev+' Preview (dry run)</button>' +
+        '<button class="btn ghost" data-act="gen-new"'+(g.busy?' disabled':'')+'>'+ICONS.x+' Start over</button>' +
+      '</div>' +
+      '<div id="genErr" class="gen-err"></div>' +
+    '</section>' +
+    '<section class="glass card panel-card" id="genResultCard" hidden><div id="genResult"></div></section>' +
+    '<section class="glass card panel-card"><h3>'+ICONS.folder+' Your generated mods <span class="badge b-dim" style="margin-left:auto" id="genListCount"></span></h3>' +
+      '<div class="tcap">Generated mods live in the workspace and keep an editable blueprint — reopen one to change stats and regenerate.</div>' +
+      '<div id="genList" class="gen-list"></div>' +
+    '</section>' +
+  '</div>';
+}
+
+function genAutoBadge(g){
+  return '<span class="badge b-ok" style="margin-left:8px" title="Unpinned stats are auto-balanced against vanilla game data. Click a stat\'s auto badge to return it to auto.">⚡ auto-balance '+(g.autoStats?'on':'off')+'</span>';
+}
+
+function genBasicsHTML(g){
+  const m = g.mod;
+  const f = (id, label, val, ph, extra) =>
+    '<label class="gen-fld"><span>'+label+(extra||'')+'</span><input id="genb-'+id+'" data-gen-basic="'+id+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" spellcheck="false"></label>';
+  return f('modName','Mod name *', m.modName, 'e.g. My First Weapon') +
+    f('name','Project folder *', m.name, 'e.g. MyFirstWeapon') +
+    f('modId','Mod ID *', m.modId, 'e.g. my_first_weapon') +
+    f('author','Author', m.author, 'Your name') +
+    f('itemName','Item ID *', m.itemName, 'e.g. MyWeaponItem') +
+    f('displayName','In-game item name', m.displayName, m.itemName || 'e.g. My Weapon') +
+    f('icon','Icon sprite', m.icon, 'e.g. Sword') +
+    '<label class="gen-fld gen-fld-wide"><span>Description</span><input id="genb-description" data-gen-basic="description" value="'+esc(m.description||'')+'" placeholder="A short description of your mod (optional)" spellcheck="false"></label>';
+}
+
+function genStatsHTML(g){
+  if (!g.tpl) return '';
+  const flds = g.tpl.fields;
+  const stats = g.stats;
+  const vanilla = g.vanilla;
+  const srcNote = g.srcNote || '';
+  const noteEl = $('#genSrcNote');
+  if (noteEl) noteEl.innerHTML = srcNote;
+  const groups = [];
+  let cur = null;
+  for (const f of flds){
+    if (f.group !== cur){ cur = f.group; groups.push({ name: cur, fields: [] }); }
+    groups[groups.length-1].fields.push(f);
+  }
+  return groups.map(grp =>
+    '<div class="gen-group"><h4>'+esc(grp.name)+'</h4><div class="gen-stats">' +
+    grp.fields.map(f => genStatRow(g, f, stats[f.key], vanilla && vanilla.ranges ? vanilla.ranges[f.key] : null)).join('') +
+    '</div></div>').join('');
+}
+
+function genStatRow(g, f, val, range){
+  const key = f.key;
+  const pinned = !!g.pinned[key];
+  const v = val === undefined || val === '' ? '' : String(val);
+  const rangeTxt = range
+    ? '<span class="gen-range" title="Derived from '+range.count+' vanilla items">vanilla '+fmtN(range.p25)+'–'+fmtN(range.p75)+' · median '+fmtN(range.median)+' · n='+range.count+'</span>'
+    : (f.auto ? '<span class="gen-range dim">balanced default</span>' : '');
+  let input = '';
+  if (f.kind === 'number'){
+    input = '<input type="number" data-stat="'+key+'" value="'+v+'" min="'+(f.min??'')+'" max="'+(f.max??'')+'" step="'+(f.step ?? (f.integer?1:0.1))+'"'+(f.integer?' inputmode="numeric"':'')+'>' +
+      '<button class="gen-dice" data-act="gen-dice" data-key="'+key+'" title="Roll a new value '+(range?('inside the vanilla range '+fmtN(range.p25)+'–'+fmtN(range.p75)):'within a sensible range')+'">🎲</button>';
+  } else if (f.kind === 'bool'){
+    input = '<select data-stat="'+key+'"><option value="true"'+(v==='true'?' selected':'')+'>true</option><option value="false"'+(v==='false'||!v?' selected':'')+'>false</option></select>';
+  } else if (f.kind === 'enum'){
+    input = '<select data-stat="'+key+'">'+(f.enumValues||[]).map(ev => '<option value="'+esc(ev)+'"'+(v===ev?' selected':'')+'>'+esc(ev)+'</option>').join('')+'</select>';
+  } else {
+    input = '<input type="text" data-stat="'+key+'" value="'+esc(v)+'" spellcheck="false">';
+  }
+  return '<div class="gen-stat'+(f.auto?' auto':'')+'">' +
+    '<div class="gen-stat-h"><span class="gen-stat-label">'+esc(f.label)+'</span>' +
+      (f.auto
+        ? '<button class="gen-pin" data-act="gen-auto" data-key="'+key+'" title="'+(pinned?'Return this stat to auto-balancing':'This stat is auto-balanced')+'"'+(pinned?'':' data-auto')+'>'+(pinned?'<span class="gen-custom">custom</span>':'auto')+'</button>'
+        : '') +
+      rangeTxt + '</div>' +
+    '<div class="gen-stat-c">'+input+'</div>' +
+    '<div class="gen-stat-hint">'+esc(f.hint)+'</div>' +
+  '</div>';
+}
+
+function genResultHTML(g){
+  const last = g.last;
+  if (!last) return '';
+  const v = last.validation;
+  const ready = v && v.ready;
+  const files = last.files || [];
+  return '<h3>'+(ready?ICONS.check:ICONS.warn)+' '+(ready?'Your mod is ready to ship':'Almost — check the issues below')+'</h3>' +
+    '<div class="gen-badges">' +
+      (ready
+        ? '<span class="badge b-ok">✅ Ready — script ✅ · folder ✅</span>'
+        : '<span class="badge b-warn">'+ICONS.warn+' Needs attention</span>') +
+      (v && v.scriptValid ? '<span class="badge b-ok">script valid</span>' : '<span class="badge b-warn">script issues</span>') +
+      (v && v.projectValid ? '<span class="badge b-ok">folder valid</span>' : '<span class="badge b-warn">folder issues</span>') +
+      '<span class="badge b-dim" style="margin-left:auto;font-family:var(--font-mono)">'+esc(last.absPath||'')+'</span>' +
+    '</div>' +
+    ((v && (v.note || v.scriptWarnings.length || v.projectErrors.length || v.projectWarnings.length))
+      ? '<ul class="gen-issues">' +
+          (v.note ? '<li class="info">'+esc(v.note)+'</li>' : '') +
+          v.scriptWarnings.map(w => '<li class="warn">⚠️ '+esc(w)+'</li>').join('') +
+          v.projectErrors.map(e => '<li class="err">❌ '+esc(e)+'</li>').join('') +
+          v.projectWarnings.map(w => '<li class="warn">⚠️ '+esc(w)+'</li>').join('') +
+        '</ul>' : '') +
+    '<div class="gen-filelist"><b>Files ('+files.length+')</b><code class="gen-tree">'+files.map(f => esc(f)).join('\n')+'</code></div>' +
+    '<div class="gen-actions">' +
+      '<button class="btn primary" data-act="gen-save"'+(g.busy?' disabled':'')+'>'+ICONS.check+' Regenerate</button>' +
+      '<button class="btn success" data-act="gen-install"'+(g.busy||last.dryRun?' disabled':'')+'>'+ICONS.download+' Install into your game</button>' +
+      '<button class="btn ghost" data-act="gen-new">'+ICONS.x+' Start over</button>' +
+    '</div>';
+}
+
+function genListHTML(g){
+  if (g.listBusy) return '<div class="tcap">Loading…</div>';
+  const items = g.list || [];
+  if (!items.length) return '<div class="tcap">Nothing yet — generate your first mod above and it appears here.</div>';
+  return items.map(it =>
+    '<div class="gen-list-item">' +
+      '<div class="gen-li-ic">'+ICONS.folder+'</div>' +
+      '<div class="gen-li-main"><b>'+esc(it.modName)+'</b><span class="gen-li-sub">'+esc(it.templateLabel)+' · item <code>'+esc(it.itemName)+'</code> · updated '+esc((it.updatedAt||'').slice(0,10))+'</span></div>' +
+      '<button class="btn sm" data-act="gen-open" data-project="'+esc(it.project)+'" title="Open its blueprint and edit">'+ICONS.doc+' Open & edit</button>' +
+    '</div>').join('');
+}
+
+function fmtN(n){
+  if (n === undefined || n === null) return '—';
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function genRender(){
+  const g = genState();
+  const tpls = $('#genTpls');
+  if (tpls){
+    if (!g.templates) tpls.innerHTML = '<div class="tcap">Loading templates…</div>';
+    else if (!g.templates.length) tpls.innerHTML = '<div class="tcap">No templates — is the server live?</div>';
+    else tpls.innerHTML = g.templates.map(t =>
+      '<button class="gen-tpl'+(t.id===g.template?' sel':'')+'" data-act="gen-pick" data-template="'+t.id+'" role="radio" aria-checked="'+(t.id===g.template)+'">' +
+        '<b>'+esc(t.label)+'</b><span>'+esc(t.short)+'</span>' +
+        (t.vanilla ? '<em>⚡ balanced against '+t.vanilla.sampleCount+' '+esc(t.vanilla.label)+'</em>'
+                  : '<em>⚡ balanced defaults (parse the game data in the Database tab for real vanilla stats)</em>') +
+      '</button>').join('');
+  }
+  const card = $('#genFormCard');
+  if (card) card.hidden = !g.tpl;
+  const basics = $('.gen-basics');
+  if (basics && g.tpl) basics.innerHTML = genBasicsHTML(g);
+  const stats = $('#genStats');
+  if (stats && g.tpl){
+    g.srcNote = g.vanilla
+      ? '⚡ Unpinned stats are auto-balanced against <b>'+g.vanilla.sampleCount+'</b> '+esc(g.vanilla.label)+' from the vanilla database. Edit any stat to pin it, or click 🎲 to roll it inside the vanilla range.'
+      : '⚡ Auto-balance uses sensible defaults because the vanilla game data isn\'t indexed yet. Open the <b>Database</b> tab → <b>Parse game files</b>, then regenerate for data-driven stats.';
+    stats.innerHTML = genStatsHTML(g);
+  }
+  const badge = $('#genModeBadge');
+  if (badge) badge.innerHTML = g.project ? 'editing <b>'+esc(g.project)+'</b>' : 'new mod';
+  const result = $('#genResultCard');
+  if (result){
+    if (g.last && !g.busy){ result.hidden = false; $('#genResult').innerHTML = genResultHTML(g); }
+    else result.hidden = true;
+  }
+  const list = $('#genList');
+  if (list) list.innerHTML = genListHTML(g);
+  const lc = $('#genListCount');
+  if (lc) lc.textContent = g.list ? g.list.length + (g.list.length === 1 ? ' mod' : ' mods') : '';
+}
+
+function initGenView(){
+  genRender();
+  if (S.gen._loaded) return;
+  S.gen._loaded = true;
+  (async () => {
+    try {
+      const [t, l] = await Promise.all([
+        rpc('tools/call', { name:'modgen_templates', arguments:{} }),
+        rpc('tools/call', { name:'modgen_list', arguments:{} }),
+      ]);
+      S.gen.templates = (t.result && t.result.structuredContent && t.result.structuredContent.templates) || [];
+      S.gen.list = (l.result && l.result.structuredContent && l.result.structuredContent.projects) || [];
+      genRender();
+    } catch (err){
+      S.gen.err = err.message; genRender();
+    }
+  })();
+}
+
+function genPick(id){
+  const g = genState();
+  const t = g.templates.find(x => x.id === id);
+  if (!t) return;
+  S.gen.template = id;
+  S.gen.mod = { name:'', modId:'', modName:'', author:'', description:'', itemName:'', displayName:'', icon: t.defaultIcon || '' };
+  S.gen.stats = { ...(t.defaults || {}) };
+  S.gen.pinned = {};
+  S.gen.project = null; S.gen.last = null; S.gen.vanilla = t.vanilla || null;
+  S.gen._idTouched = false;
+  genRender();
+  requestAnimationFrame(() => {
+    const c = $('#genFormCard'); c?.scrollIntoView({ behavior:'smooth', block:'start' });
+    const f = $('#genb-modName'); f?.focus();
+  });
+}
+
+function genSuggestModId(){
+  if (S.gen._idTouched) return;
+  const base = (S.gen.mod.modName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (base) S.gen.mod.modId = base;
+  if (base && !S.gen.mod.itemName){
+    S.gen.mod.itemName = base.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase()).replace(/^./, c => c.toUpperCase()) + 'Item';
+  }
+  if (S.gen.mod.displayName === '' && S.gen.mod.modName) S.gen.mod.displayName = S.gen.mod.modName;
+}
+
+function genCollectArgs(){
+  const stats = {};
+  for (const key of Object.keys(S.gen.stats)){
+    // pinned stats go as concrete values; unpinned auto stats stay out so the
+    // server derives them from vanilla data
+    if (S.gen.pinned[key]) stats[key] = S.gen.stats[key];
+  }
+  const args = {
+    template: S.gen.template,
+    name: S.gen.mod.name.trim(),
+    modId: S.gen.mod.modId.trim(),
+    modName: S.gen.mod.modName.trim(),
+    itemName: S.gen.mod.itemName.trim() || undefined,
+    displayName: S.gen.mod.displayName.trim() || undefined,
+    icon: S.gen.mod.icon.trim() || undefined,
+    author: S.gen.mod.author.trim() || undefined,
+    description: S.gen.mod.description.trim() || undefined,
+    autoStats: S.gen.autoStats,
+  };
+  if (Object.keys(stats).length) args.stats = stats;
+  return args;
+}
+
+async function genGenerate(preview){
+  const err = $('#genErr'); if (err) err.innerHTML = '';
+  if (!S.gen.mod.modName.trim()){ S.gen.err = 'Give your mod a name first (step 2).'; genRender(); return; }
+  if (!S.gen.mod.name.trim()) S.gen.mod.name = S.gen.mod.modName.trim().replace(/[^A-Za-z0-9_.-]+/g, '_');
+  if (!S.gen.mod.modId.trim()) genSuggestModId();
+  genSuggestModId();
+  S.gen.busy = true; S.gen.err = null; genRender();
+  try {
+    const args = genCollectArgs();
+    if (preview) args.dryRun = true;
+    const reply = await rpc('tools/call', { name:'modgen_generate', arguments: args });
+    const res = reply.result.structuredContent;
+    if (!preview){
+      S.gen.project = res.project;
+      S.gen.mod = {
+        name: res.blueprint.mod.name,
+        modId: res.blueprint.mod.id,
+        modName: res.blueprint.mod.modName,
+        author: res.blueprint.mod.author || '',
+        description: res.blueprint.mod.description || '',
+        itemName: res.blueprint.mod.itemName,
+        displayName: res.blueprint.mod.displayName,
+        icon: res.blueprint.mod.icon,
+      };
+      S.gen.stats = { ...res.blueprint.stats };
+      // server-derived values are now the source of truth — all pinned
+      S.gen.pinned = {}; for (const k of Object.keys(res.blueprint.stats)) S.gen.pinned[k] = true;
+      S.gen.last = res;
+      toast('Mod generated — ready to ship');
+    } else {
+      // preview: show the blueprint stats in the editor without a project
+      S.gen.stats = { ...res.blueprint.stats };
+      S.gen.pinned = {}; for (const k of Object.keys(res.blueprint.stats)) S.gen.pinned[k] = true;
+      S.gen.last = res;
+      toast('Dry-run preview — no files created');
+    }
+  } catch (e){
+    S.gen.err = e.message || String(e);
+  }
+  S.gen.busy = false;
+  genRender();
+  if (S.gen.last){ const r = $('#genResultCard'); r?.scrollIntoView({ behavior:'smooth', block:'start' }); }
+}
+
+async function genSave(){
+  const err = $('#genErr'); if (err) err.innerHTML = '';
+  if (!S.gen.project){ genGenerate(false); return; }
+  S.gen.busy = true; S.gen.err = null; genRender();
+  try {
+    const stats = {};
+    for (const key of Object.keys(S.gen.stats)){
+      if (S.gen.pinned[key]) stats[key] = S.gen.stats[key];
+      else stats[key] = null; // reset to auto
+    }
+    const args = { project: S.gen.project, stats };
+    const m = S.gen.mod;
+    if (m.modName.trim()) args.modName = m.modName.trim();
+    if (m.author.trim()) args.author = m.author.trim();
+    if (m.description.trim()) args.description = m.description.trim();
+    if (m.itemName.trim()) args.itemName = m.itemName.trim();
+    if (m.displayName.trim()) args.displayName = m.displayName.trim();
+    if (m.icon.trim()) args.icon = m.icon.trim();
+    const reply = await rpc('tools/call', { name:'modgen_regenerate', arguments: args });
+    const res = reply.result.structuredContent;
+    S.gen.stats = { ...res.blueprint.stats };
+    S.gen.pinned = {}; for (const k of Object.keys(res.blueprint.stats)) S.gen.pinned[k] = true;
+    S.gen.last = res;
+    toast('Mod regenerated');
+  } catch (e){
+    S.gen.err = e.message || String(e);
+  }
+  S.gen.busy = false;
+  genRender();
+  const r = $('#genResultCard'); r?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function genOpen(project){
+  S.gen.busy = true; S.gen.err = null; genRender();
+  try {
+    const reply = await rpc('tools/call', { name:'modgen_blueprint', arguments:{ project } });
+    const bp = reply.result.structuredContent;
+    if (!S.gen.templates) { const tr = await rpc('tools/call', { name:'modgen_templates', arguments:{} }); S.gen.templates = tr.result.structuredContent.templates; }
+    S.gen.template = bp.template;
+    S.gen.vanilla = (S.gen.templates.find(x => x.id === bp.template) || {}).vanilla || null;
+    S.gen.project = project;
+    S.gen.mod = {
+      name: bp.mod.name,
+      modId: bp.mod.id,
+      modName: bp.mod.modName,
+      author: bp.mod.author || '',
+      description: bp.mod.description || '',
+      itemName: bp.mod.itemName,
+      displayName: bp.mod.displayName,
+      icon: bp.mod.icon,
+    };
+    S.gen.stats = { ...bp.stats };
+    S.gen.pinned = {}; for (const k of Object.keys(bp.stats)) S.gen.pinned[k] = true;
+    S.gen.last = null;
+    toast('Opened '+project+' — edit and save to regenerate');
+    requestAnimationFrame(() => { const c = $('#genFormCard'); c?.scrollIntoView({ behavior:'smooth', block:'start' }); });
+  } catch (e){
+    S.gen.err = e.message || String(e);
+  }
+  S.gen.busy = false;
+  genRender();
+}
+
+function genNew(){
+  S.gen.template = null; S.gen.project = null; S.gen.last = null;
+  S.gen.mod = { name:'', modId:'', modName:'', author:'', description:'', itemName:'', displayName:'', icon:'' };
+  S.gen.stats = {}; S.gen.pinned = {}; S.gen.err = null; S.gen._idTouched = false;
+  genRender();
+  const c = $('#genFormCard'); c?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function genDice(key){
+  const g = genState();
+  const f = g.tpl.fields.find(x => x.key === key);
+  if (!f) return;
+  if (S.gen.project){
+    // existing mod: server rolls inside the vanilla range and rewrites
+    S.gen.busy = true; genRender();
+    try {
+      const reply = await rpc('tools/call', { name:'modgen_regenerate', arguments:{ project: S.gen.project, randomize:[key] } });
+      const res = reply.result.structuredContent;
+      S.gen.stats = { ...res.blueprint.stats };
+      S.gen.pinned = {}; for (const k of Object.keys(res.blueprint.stats)) S.gen.pinned[k] = true;
+      S.gen.last = res;
+    } catch (e){ S.gen.err = e.message || String(e); }
+    S.gen.busy = false;
+    genRender();
+    return;
+  }
+  // new mod: roll locally within the vanilla range (or field bounds)
+  const range = S.gen.vanilla && S.gen.vanilla.ranges ? S.gen.vanilla.ranges[key] : null;
+  let v;
+  if (range){
+    const lo = Math.min(range.p25, range.p75), hi = Math.max(range.p25, range.p75);
+    v = lo + Math.random() * Math.max(0, hi - lo);
+  } else if (f.kind === 'number' && f.min !== undefined && f.max !== undefined){
+    v = f.min + Math.random() * (f.max - f.min);
+  } else return;
+  v = f.integer ? Math.round(v) : Number(v.toFixed(f.step === 0.05 ? 2 : 1));
+  if (f.min !== undefined && f.max !== undefined) v = Math.min(f.max, Math.max(f.min, v));
+  S.gen.stats[key] = v;
+  S.gen.pinned[key] = true;
+  const input = $('#genstat-' + CSS.escape(key));
+  if (input) input.value = v;
+  const row = input ? input.closest('.gen-stat') : null;
+  const pin = row && row.querySelector('[data-act="gen-auto"]');
+  if (pin) pin.classList.remove('data-auto');
+  genRender();
+  toast('Rolled '+key+' = '+v);
+}
+
+function genAuto(key){
+  if (S.gen.project){
+    // existing mod: tell the server to re-derive this stat from vanilla data
+    S.gen.busy = true; genRender();
+    (async () => {
+      try {
+        const reply = await rpc('tools/call', { name:'modgen_regenerate', arguments:{ project: S.gen.project, stats: { [key]: null } } });
+        const res = reply.result.structuredContent;
+        S.gen.stats = { ...res.blueprint.stats };
+        S.gen.pinned = {}; for (const k of Object.keys(res.blueprint.stats)) S.gen.pinned[k] = true;
+        S.gen.last = res;
+        toast(key+' returned to auto-balance');
+      } catch (e){ S.gen.err = e.message || String(e); }
+      S.gen.busy = false;
+      genRender();
+    })();
+    return;
+  }
+  S.gen.pinned[key] = false;
+  genRender();
+}
+
+async function genInstall(){
+  if (!S.gen.last || S.gen.last.dryRun) return;
+  S.gen.busy = true; genRender();
+  try {
+    const reply = await rpc('tools/call', { name:'install_mod', arguments:{ source: S.gen.last.absPath } });
+    const sc = reply.result.structuredContent;
+    const installed = (sc.mods || []).filter(m => m.status === 'installed').length;
+    const skipped = (sc.mods || []).filter(m => m.status === 'skipped').length;
+    if (installed) toast('Installed into your game ('+installed+' mod)');
+    else if (skipped) toast('Already installed or conflicts — use overwrite','warn');
+    else toast('Nothing installed — see result','warn');
+    S.gen.last = { ...S.gen.last, installResult: sc };
+  } catch (e){
+    S.gen.err = 'Install failed: ' + (e.message || String(e));
+  }
+  S.gen.busy = false;
+  genRender();
+}
+
+function genHelp(){
+  openGuide ? openGuide() : toast('Choose a template → describe your mod → tune stats → Generate. The server builds a complete mod folder with an editable blueprint.','book');
+}
+
+function genAction(a, act){
+  if (a === 'gen-help') genHelp();
+  else if (a === 'gen-pick') genPick(act.dataset.template);
+  else if (a === 'gen-generate') genGenerate(false);
+  else if (a === 'gen-preview') genGenerate(true);
+  else if (a === 'gen-save') genSave();
+  else if (a === 'gen-open') genOpen(act.dataset.project);
+  else if (a === 'gen-new') genNew();
+  else if (a === 'gen-dice') genDice(act.dataset.key);
+  else if (a === 'gen-auto') genAuto(act.dataset.key);
+  else if (a === 'gen-install') genInstall();
+}
+
+document.addEventListener('click', e => {
+  const act = walkUp(e.target, '[data-act]');
+  if (!act) return;
+  const a = act.dataset.act;
+  if (a && a.startsWith('gen-')) genAction(a, act);
+});
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.genBasic){
+    S.gen.mod[t.dataset.genBasic] = t.value;
+    if (t.dataset.genBasic === 'modName') genSuggestModId();
+    return;
+  }
+  if (t.dataset && t.dataset.stat){
+    const key = t.dataset.stat;
+    let v = t.value;
+    if (t.type === 'number') v = v === '' ? null : Number(v);
+    if (v !== null && v !== ''){ S.gen.stats[key] = v; S.gen.pinned[key] = true; }
+    return;
+  }
+});
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.stat){
+    const key = t.dataset.stat;
+    const v = t.value;
+    S.gen.stats[key] = (t.type === 'number') ? Number(v) : v;
+    S.gen.pinned[key] = true;
+    genRender();
+  }
+});

@@ -37,6 +37,8 @@ import { PathManager } from "./utils/PathManager.js";
 import { SteamWorkshopClient } from "./workshop/SteamWorkshopClient.js";
 import { SteamCmdDownloader } from "./workshop/SteamCmdDownloader.js";
 import { WorkspaceManager } from "./workspace/WorkspaceManager.js";
+import { ModInstaller } from "./modinstall/ModInstaller.js";
+import { ModGenManager } from "./modgen/ModGenManager.js";
 import { validateEnvConfig, workspaceRoot } from "./utils/config.js";
 import { toMcpError } from "./utils/mcpErrors.js";
 import { ALL_TOOLS, ToolRegistry } from "./tools/index.js";
@@ -112,6 +114,18 @@ async function initializeServer() {
     const workspaceManager = new WorkspaceManager([workspaceRoot()]);
     await workspaceManager.ensureRoots();
 
+    // Smart mod installer (detect_pz_paths / install_mod).
+    const modInstaller = new ModInstaller(pathManager);
+
+    // Beginner-friendly mod generator (modgen_*) — reuses the generator,
+    // validator, vanilla DB and the rooted workspace above.
+    const modGenManager = new ModGenManager(
+      dbManager,
+      generator,
+      validator,
+      workspaceManager,
+    );
+
     ctx = {
       dbManager,
       parser,
@@ -125,6 +139,8 @@ async function initializeServer() {
       steamCmdDownloader,
       activeWorkshopDownloads,
       workspaceManager,
+      modInstaller,
+      modGenManager,
     };
 
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");

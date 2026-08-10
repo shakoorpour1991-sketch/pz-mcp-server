@@ -157,6 +157,80 @@ describe('PathManager.detectSteamWindows registry detection', () => {
   });
 });
 
+// Mod installer M1: mods-dir detection + consolidated path detection
+describe('PathManager mods/workshop detection (mod installer M1)', () => {
+  let pm;
+  let envBackup;
+
+  before(() => {
+    pm = new PathManager();
+    // Isolate from machine-specific env (a dev box may set these).
+    envBackup = {
+      PZ_MODS_DIR: process.env.PZ_MODS_DIR,
+      PZ_WORKSHOP_DIR: process.env.PZ_WORKSHOP_DIR,
+      PROJECTZOMBOID_PATH: process.env.PROJECTZOMBOID_PATH,
+      PZ_PATH: process.env.PZ_PATH,
+    };
+    delete process.env.PZ_MODS_DIR;
+    delete process.env.PZ_WORKSHOP_DIR;
+    delete process.env.PROJECTZOMBOID_PATH;
+    delete process.env.PZ_PATH;
+  });
+
+  after(() => {
+    for (const [k, v] of Object.entries(envBackup)) {
+      if (v !== undefined) process.env[k] = v;
+      else delete process.env[k];
+    }
+  });
+
+  test('detectModsDir honors the PZ_MODS_DIR env override', () => {
+    process.env.PZ_MODS_DIR = 'D:/Custom/Mods';
+    assert.equal(pm.detectModsDir(), 'D:/Custom/Mods');
+  });
+
+  test('detectModsDir defaults to <home>/Zomboid/mods on every platform', () => {
+    delete process.env.PZ_MODS_DIR;
+    assert.equal(pm.detectModsDir(), path.join(os.homedir(), 'Zomboid', 'mods'));
+  });
+
+  test('detectUserDataDir defaults to <home>/Zomboid', () => {
+    assert.equal(pm.detectUserDataDir(), path.join(os.homedir(), 'Zomboid'));
+  });
+
+  test('detectAllPaths returns the consolidated shape with env overrides surfaced', async () => {
+    process.env.PZ_MODS_DIR = 'D:/Custom/Mods';
+    const r = await pm.detectAllPaths();
+    assert.equal(typeof r.platform, 'string');
+    assert.equal(r.home, os.homedir());
+    assert.ok(r.gameInstall.path === null || typeof r.gameInstall.path === 'string');
+    assert.equal(r.modsDir.path, 'D:/Custom/Mods');
+    assert.equal(typeof r.modsDir.exists, 'boolean');
+    assert.equal(typeof r.modsDir.writable, 'boolean');
+    // envOverrides must surface the override (and nothing machine-specific).
+    assert.deepEqual(r.envOverrides, { modsDir: 'D:/Custom/Mods' });
+    assert.equal(typeof r.userDataDir.path, 'string');
+    // workshopDir may be null on machines without Steam — shape must hold either way
+    assert.ok(r.workshopDir.path === null || typeof r.workshopDir.path === 'string');
+  });
+
+  test('detectWorkshopDir derives from a Steam-library game install', async () => {
+    // Build a fake Steam library with a PZ install so detectProjectZomboidPath
+    // can find it, then detectWorkshopDir must derive
+    // <lib>/steamapps/workshop/content/108600 (env vars are cleared above).
+    const lib = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-ws-lib-'));
+    const pzDir = path.join(lib, 'steamapps', 'common', 'ProjectZomboid');
+    fs.mkdirSync(path.join(pzDir, 'media', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(pzDir, 'ProjectZomboid64.exe'), '');
+    fs.mkdirSync(path.join(lib, 'steamapps', 'workshop', 'content', '108600'), { recursive: true });
+    const pm2 = new PathManager();
+    pm2.queryRegistryValue = async () => lib; // registry points at this library root
+    const ws = await pm2.detectWorkshopDir();
+    assert.equal(ws, path.join(lib, 'steamapps', 'workshop', 'content', '108600'));
+    fs.rmSync(lib, { recursive: true, force: true });
+  });
+});
+
 // Audit D6: isAncestorWritable walk-up helper
 describe('PathManager.isAncestorWritable (audit D6)', () => {
   let pm;

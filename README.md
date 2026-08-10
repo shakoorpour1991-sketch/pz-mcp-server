@@ -94,6 +94,14 @@ The Mod Workspace turns the server into a dev environment for **creating** mods,
 
 Full reference: [`docs/mod-workspace.md`](docs/mod-workspace.md).
 
+### `[ INSTALL ]` Detect your game and install mods
+
+The server finds your Project Zomboid installation **on any machine** and can install mods for you:
+
+- **Smart detection** — game install, user-data dir, mods dir and Steam Workshop dir, resolved via env override → Steam registry → `libraryfolders.vdf` → common install paths (Windows / Linux / macOS / WSL).
+- **Mod installer** — takes a `.zip` archive **or** a mod folder and installs every mod inside it into `<home>/Zomboid/mods`: single mods, Build-42 versioned folders (`MyMod/42/…`), multi-mod workshop packs and flat zips all work. Unsafe archives (zip-slip, symlinks, macOS junk) are refused/filtered, conflicts are detected by folder name *and* `mod.info` id and skipped by default, `dryRun` previews the plan with zero disk changes, and nothing is ever overwritten unless `overwrite: true`.
+- **Control Deck Installer tab** — drag & drop `.zip` files or whole mod folders (or browse), watch uploads → install → result badges, and override the mods directory per machine (`PZ_MODS_DIR`).
+
 <p align="center"><img src="assets/divider.svg" width="100%" height="34" alt=""></p>
 
 ## Tool map
@@ -105,7 +113,9 @@ Full reference: [`docs/mod-workspace.md`](docs/mod-workspace.md).
 | `LOCAL DATA` | `parse_game_files` · `index_knowledge_base` |
 | `ANALYSIS` | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts` |
 | `WORKSHOP` | `workshop_search` · `workshop_get_details` · `workshop_download` · `workshop_analyze` |
-| `WORKSPACE` | `workspace_list` · `workspace_create` · `workspace_inspect` · `workspace_status` · `workspace_validate` · `workspace_list_files` · `workspace_read_file` · `workspace_write_file` · `workspace_patch_file` · `workspace_delete_file` · `workspace_rename_file` |
+| `WORKSPACE` | `workspace_list` · `workspace_create` · `workspace_inspect` |
+| `MOD GENERATOR` | `modgen_templates` · `modgen_generate` · `modgen_list` · `modgen_blueprint` · `modgen_regenerate` |
+| `INSTALL` | `detect_pz_paths` · `install_mod` |
 
 Tools are documented as returning human-readable text alongside machine-readable MCP `structuredContent`.
 
@@ -177,7 +187,11 @@ parse_game_files        # index the vanilla game into the SQLite DB
 
 **Workshop (external)**: `workshop_search` → `workshop_get_details` → `workshop_download` (dry-run first) → `workshop_analyze` for a full Mod Report.
 
-**Mod workspace (local dev)**: `workspace_create` a project → `workspace_write_file` / `workspace_patch_file` to iterate → `workspace_validate` after every change → `workspace_inspect` for the full report. Full walkthrough in [`docs/mod-workspace.md`](docs/mod-workspace.md).
+**Mod workspace (local dev)**: `workspace_create` a B42-scaffolded project → `workspace_inspect` for the full validation report (structure, metadata, dependencies, recommendations) → iterate by editing files in the project folder → `workspace_inspect` again. Full walkthrough in [`docs/mod-workspace.md`](docs/mod-workspace.md).
+
+**Mod Generator (beginner-friendly)**: `modgen_templates` to see the five templates (Simple Item, Melee Weapon, Food, Tool, Clothing) → `modgen_generate` creates a complete ready-to-ship folder (script, mod.info, workshop.txt, README, editable blueprint) with stats **auto-balanced from real vanilla game data** → reopen any time with `modgen_blueprint` → `modgen_regenerate` after editing stats (or `randomize: ["MaxDamage"]` to re-roll one). The Control Deck's **Generator** tab wraps the whole flow — pick a template, tune stats with per-stat dice / auto badges, generate, and install into your game.
+
+**Install & detect**: `detect_pz_paths` once to confirm the game install + mods dir → `install_mod` with a `.zip` or folder source (`dryRun: true` first to preview, `overwrite: true` to replace a conflicting mod). The Control Deck's **Installer** tab wraps this whole flow with drag & drop / browse.
 
 ## Internal map
 
@@ -186,6 +200,7 @@ flowchart LR
     C[MCP client] <-->|stdio| S[PZ MCP Server]
 
     S --> P[PathManager]
+    S --> I[ModInstaller]
     S --> D[(SQLite + FTS5)]
     S --> K[KnowledgeBaseManager]
     S --> G[ProjectZomboidParser]
@@ -208,6 +223,7 @@ The server is therefore not only a search index: the same MCP surface also reach
 | `PZ_MCP_LOG_LEVEL` | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent` |
 | `PZ_GAME_VERSION` | `42.20` | Game build for compatibility checks |
 | `PROJECTZOMBOID_PATH` / `PZ_PATH` | auto-detect | Override Project Zomboid installation detection |
+| `PZ_MODS_DIR` | `<home>/Zomboid/mods` | Where `install_mod` drops mods (also settable from the Control Deck → Installer tab) |
 | `PZ_DECK_PORT` | `8787` | Admin dashboard port |
 | `PZ_WORKSHOP_DIR` | Steam install | Workshop download target (else `<Steam>/steamapps/workshop/content/108600`) |
 | `PZ_MCP_MAX_DOWNLOAD_BYTES` | `4294967296` (4 GiB) | Workshop download size cap — larger items are refused before downloading |
@@ -264,8 +280,8 @@ MCP clients can drive tools autonomously, so the server separates capabilities i
 
 | Tier | Tools | Side effects |
 |---|---|---|
-| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script`, `workspace_list`, `workspace_inspect`, `workspace_status`, `workspace_validate`, `workspace_list_files`, `workspace_read_file` | None — pure inspection |
-| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script`, `workspace_create`, `workspace_write_file`, `workspace_patch_file`, `workspace_delete_file`, `workspace_rename_file` | Writes to the DB under `PZ_MCP_DATA_DIR`, the explicitly provided mod path (path-validated), or the workspace root only — traversal/symlink-escape rejected, atomic writes, dry-run + explicit `force` for destructive ops |
+| **READ-ONLY** | `search_*`, `list_*`, `check_references`, `analyze_mod`, `analyze_recipe_chain`, `detect_recipe_conflicts`, `workshop_search`, `workshop_get_details`, `generate_script`, `validate_script`, `workspace_list`, `workspace_inspect`, `modgen_templates`, `modgen_list`, `modgen_blueprint` | None — pure inspection |
+| **LOCAL MUTATION** | `parse_game_files`, `index_knowledge_base`, `export_mod_script`, `workspace_create`, `modgen_generate`, `modgen_regenerate` | Writes to the DB under `PZ_MCP_DATA_DIR`, the explicitly provided mod path (path-validated), or the workspace root only — traversal/symlink-escape rejected, atomic writes, dry-run for destructive ops |
 | **EXTERNAL SIDE EFFECTS** | `workshop_download`, `workshop_analyze` | SteamCMD subprocess + downloads into `PZ_WORKSHOP_DIR`; `dryRun` preview available |
 
 Hardening already in place:

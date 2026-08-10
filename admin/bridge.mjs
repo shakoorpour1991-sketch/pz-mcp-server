@@ -14,7 +14,8 @@
  */
 import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,7 +24,13 @@ const ADMIN_DIR = join(ROOT, 'admin');
 const PORT = Number(process.env.PZ_DECK_PORT || 8787);
 const DB_PATH = join(ROOT, 'data', 'pz_database.db');
 const SETTINGS_PATH = join(ROOT, 'data', 'deck-settings.json');
-const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download', 'workshop_analyze']);
+const LONG_TOOLS = new Set(['parse_game_files', 'index_knowledge_base', 'analyze_mod', 'workshop_download', 'workshop_analyze', 'install_mod']);
+
+/* Mod Installer: browser drag&drop / browse uploads land here before the deck
+ * points install_mod at them. Uploaded sources are always confined to this
+ * directory (zip files + folder batches under data/uploads). */
+const UPLOADS_DIR = join(ROOT, 'data', 'uploads');
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024; // 8 GiB
 
 /* Split dashboard assets: the deck used to be one self-contained index.html.
  * The slim shell now links style.css and the *.mjs modules — these are the
@@ -87,6 +94,7 @@ function spawnChild() {
       ...process.env,
       PZ_MCP_LOG_LEVEL: process.env.PZ_MCP_LOG_LEVEL || 'info',
       ...(deckSettings.workshopDir ? { PZ_WORKSHOP_DIR: deckSettings.workshopDir } : {}),
+      ...(deckSettings.modsDir ? { PZ_MODS_DIR: deckSettings.modsDir } : {}),
     },
   };
   if (needsShell) {
@@ -229,6 +237,43 @@ async function telemetry() {
   broadcast('telemetry', lastTelemetry);
 }
 setInterval(telemetry, 2000);
+
+/* ================= mod-source uploads =================
+ * The browser cannot hand the MCP server absolute paths, so drag&drop / browse
+ * sources are streamed here first (zip → one POST with the raw bytes; folder →
+ * one POST per file with a relative path) and stored under data/uploads. The
+ * deck then calls install_mod with the local path. All uploads are streamed
+ * to disk (readBody's 5 MB cap would reject real mod archives).
+ */
+function safeUploadName(name, fallback) {
+  let n = String(name || '').replace(/\\/g, '/').split('/').pop().trim();
+  n = n.replace(/[^A-Za-z0-9._\- ]/g, '_').replace(/\.{2,}/g, '.').slice(0, 120);
+  return n || fallback;
+}
+function safeUploadRel(rel) {
+  // Drop empties, '.', '..', NUL, and Windows drive segments so the joined
+  // path can never escape the uploads dir (or trip on invalid characters).
+  return String(rel || '').replace(/\\/g, '/').split('/')
+    .filter(p => p && p !== '.' && p !== '..' && !p.includes('\0') && !/^[A-Za-z]:$/.test(p))
+    .join('/');
+}
+function streamToFile(req, filePath, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const out = createWriteStream(filePath);
+    let total = 0;
+    let failed = false;
+    const fail = (err) => { if (failed) return; failed = true; out.destroy(); reject(err); };
+    req.on('data', (c) => {
+      total += c.length;
+      if (total > maxBytes) return fail(new Error('upload exceeds the 8 GiB limit'));
+      if (!out.write(c)) req.pause();
+    });
+    out.on('drain', () => req.resume());
+    req.on('end', () => { if (!failed) out.end(() => resolve(total)); });
+    req.on('error', fail);
+    out.on('error', fail);
+  });
+}
 
 /* ================= SSE broadcast ================= */
 function broadcast(event, data) {
@@ -459,6 +504,7 @@ const server = http.createServer(async (req, res) => {
         // the knowledge-base/ folder shipped with the repository.
         kbPath: process.env.PZ_MCP_KB_PATH || join(ROOT, 'knowledge-base'),
         workshopDir: readDeckSettings().workshopDir || process.env.PZ_WORKSHOP_DIR || null,
+        modsDir: readDeckSettings().modsDir || process.env.PZ_MODS_DIR || null,
         steamCmdPath: process.env.STEAMCMD_PATH || '(auto-detected)',
       });
     }
@@ -528,6 +574,105 @@ const server = http.createServer(async (req, res) => {
       // non-zero status is not treated as failure here.
       execFile('explorer', [dir], () => pushLog(`↗ opened workshop folder ${dir}`));
       return json(res, { ok: true, path: dir });
+    }
+
+    // --- Mod Installer: mods-dir setting (persisted like the workshop dir) ---
+    if (req.method === 'GET' && url.pathname === '/api/mods-dir') {
+      return json(res, { configured: readDeckSettings().modsDir || null });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/mods-dir') {
+      let body;
+      try { body = JSON.parse(await readBody(req)); }
+      catch { return json(res, { ok: false, error: 'Invalid JSON body' }, 400); }
+      const clear = body.clear === true;
+      if (clear) {
+        const s = readDeckSettings();
+        delete s.modsDir;
+        writeDeckSettings(s);
+        pushLog('↻ mods directory reset to auto-detect');
+        try { child?.kill('SIGTERM'); } catch { /* */ }
+        return json(res, { ok: true, configured: null });
+      }
+      const p = typeof body.path === 'string' ? body.path.trim() : '';
+      if (!p) return json(res, { ok: false, error: 'Enter a folder path' }, 400);
+      if (!/^[A-Za-z]:[\\/]/.test(p) && !/^\\\\/.test(p)) {
+        return json(res, { ok: false, error: 'Use an absolute path, e.g. D:\\PZ-Mods\\Mods' }, 400);
+      }
+      try { mkdirSync(p, { recursive: true }); } catch { return json(res, { ok: false, error: `Folder not writable: ${p}` }, 400); }
+      const s = readDeckSettings();
+      s.modsDir = p;
+      writeDeckSettings(s);
+      pushLog(`↻ mods directory set to ${p}`);
+      try { child?.kill('SIGTERM'); } catch { /* */ }
+      return json(res, { ok: true, configured: p });
+    }
+
+    // Open the detected mods folder in Explorer. Asks the MCP server for its
+    // smart detection first (detect_pz_paths), falls back to the conventional
+    // <home>/Zomboid/mods path.
+    if (req.method === 'POST' && url.pathname === '/api/open-mods-dir') {
+      if (process.platform !== 'win32') {
+        return json(res, { ok: false, error: 'Open folder is only supported on Windows' }, 400);
+      }
+      let dir = readDeckSettings().modsDir || process.env.PZ_MODS_DIR || null;
+      if (!dir) {
+        try {
+          const reply = await sendToServer({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'detect_pz_paths', arguments: {} } }, 20000);
+          const d = reply?.result?.structuredContent?.modsDir?.path;
+          if (typeof d === 'string' && d) dir = d;
+        } catch { /* server not ready — fall through */ }
+      }
+      if (!dir) dir = join(homedir(), 'Zomboid', 'mods');
+      try { mkdirSync(dir, { recursive: true }); } catch { return json(res, { ok: false, error: `Folder not writable: ${dir}` }, 400); }
+      execFile('explorer', [dir], () => pushLog(`↗ opened mods folder ${dir}`));
+      return json(res, { ok: true, path: dir });
+    }
+
+    // --- Mod Installer: upload sources (zip / folder batches) ---
+    if (req.method === 'POST' && url.pathname === '/api/mod-source/zip') {
+      const name = safeUploadName(url.searchParams.get('name'), 'mod.zip');
+      const dest = join(UPLOADS_DIR, 'zip', String(Date.now()) + '-' + name);
+      try {
+        mkdirSync(dirname(dest), { recursive: true });
+        const size = await streamToFile(req, dest, MAX_UPLOAD_BYTES);
+        pushLog(`⬆ uploaded zip ${name} (${size} bytes)`);
+        return json(res, { ok: true, path: dest, size, name });
+      } catch (e) {
+        try { rmSync(dest, { force: true }); } catch { /* */ }
+        return json(res, { ok: false, error: 'Upload failed: ' + String(e.message || e) }, 400);
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/api/mod-source/folder') {
+      const batch = safeUploadName(url.searchParams.get('batch'), 'folder-' + Date.now());
+      const rel = safeUploadRel(url.searchParams.get('rel'));
+      const dir = join(UPLOADS_DIR, 'folder', batch);
+      const dest = rel ? join(dir, ...rel.split('/')) : dir;
+      try {
+        mkdirSync(dirname(dest), { recursive: true });
+        const size = await streamToFile(req, dest, MAX_UPLOAD_BYTES);
+        return json(res, { ok: true, path: dir, rel, size });
+      } catch (e) {
+        try { rmSync(dest, { force: true }); } catch { /* */ }
+        return json(res, { ok: false, error: 'Upload failed: ' + String(e.message || e) }, 400);
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/api/mod-source/cleanup') {
+      let body;
+      try { body = JSON.parse(await readBody(req)); }
+      catch { return json(res, { ok: false, error: 'Invalid JSON body' }, 400); }
+      const p = String(body.path || '');
+      const norm = p.replace(/\\/g, '/');
+      const base = UPLOADS_DIR.replace(/\\/g, '/');
+      if (!norm.startsWith(base + '/')) {
+        return json(res, { ok: false, error: 'Refusing cleanup outside the uploads folder' }, 400);
+      }
+      try {
+        rmSync(p, { recursive: true, force: true });
+        pushLog(`🗑 cleared uploaded mod source ${p}`);
+        return json(res, { ok: true });
+      } catch (e) {
+        return json(res, { ok: false, error: String(e.message || e) }, 500);
+      }
     }
 
     // Pause an in-flight workshop_download: steamcmd.exe is force-killed (the

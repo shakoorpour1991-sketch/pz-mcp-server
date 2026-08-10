@@ -209,6 +209,37 @@ Fetch & analyze: downloads the mod (skips if already present), parses its script
 
 ---
 
+### `detect_pz_paths`
+Smart cross-platform detection of every Project Zomboid path the server cares about. No arguments.
+
+**Resolution order (per path):**
+- **Game install:** `PROJECTZOMBOID_PATH` / `PZ_PATH` env → Steam registry (`HKCU\Software\Valve\Steam` SteamPath, HKLM fallback) + `libraryfolders.vdf` → common install locations (Windows / Linux / macOS / WSL)
+- **User-data dir:** `<home>/Zomboid` (exists flag)
+- **Mods dir:** `PZ_MODS_DIR` env → `<home>/Zomboid/mods` (exists + writable flags)
+- **Workshop dir:** `PZ_WORKSHOP_DIR` env → derived from a Steam-library game install → every known Steam library → `<home>/Zomboid/workshop` cache
+
+**Output:** `platform`, `home`, `gameInstall` (path + detection source), `userDataDir`, `modsDir`, `workshopDir`, `envOverrides` — each with exists/writable flags.
+
+---
+
+### `install_mod`
+Install a Project Zomboid mod into the mods directory from a `.zip` archive **or** a mod folder.
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | Yes | Absolute path to a `.zip` archive or a mod folder |
+| `targetDir` | string | No | Destination mods directory (default: `PZ_MODS_DIR` or `<home>/Zomboid/mods`; created on install) |
+| `overwrite` | boolean | No | Replace a conflicting mod (same folder name or `mod.info` id) — default `false`, conflicts are skipped and reported |
+| `dryRun` | boolean | No | Preview the plan with zero disk changes (default: `false`) |
+
+**What it handles:** single mod folders (`MyMod/mod.info`), Build-42 versioned layouts (`MyMod/42/mod.info` → installed as `MyMod/`), flat zips (`mod.info` at the archive root → installed under the zip file name), and multi-mod workshop packs (`mods/A/…`, `mods/B/…` → each installed).
+
+**Safety:** zip-slip and absolute-path entries are refused, symlink entries are skipped, macOS junk (`__MACOSX`, `._*`, `.DS_Store`) is filtered (reported as warnings), an 8 GiB size cap protects against archive bombs, mods are only copied after `mod.info` verification, and the source is never copied onto itself.
+
+**Output:** `sourceKind`, `targetDir`, per-mod `{ name, modId, modName, version, status (installed|planned|skipped|error), reason, targetPath, filesCopied }`, plus `warnings` and a `summary`.
+
+---
+
 ### `workspace_list`
 List mod projects in the workspace (`PZ_MCP_WORKSPACE_DIR`, default `<data>/workspaces`) with their `mod.info` presence.
 
@@ -248,99 +279,82 @@ Full structured inspection: metadata, supported builds, dependencies (+ missing)
 
 ---
 
-### `workspace_status`
-Fast project status: metadata, file/script/lua counts, content types, and an `ok` verdict (no script parsing).
+### `modgen_templates`
+List the five Mod Generator templates (Simple Item, Melee Weapon, Food, Tool,
+Clothing) with every editable stat field — label, type, range, unit, plain-
+language hint, group — plus the live vanilla baseline each template
+auto-balances against (`vanilla` is `null` until the game data is parsed).
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `project` | string | Yes | Project name |
+| — | — | — | No arguments |
 
----
-
-### `workspace_validate`
-Validate structure + metadata: `mod.info` presence/well-formedness (missing `id`/`name`, duplicate keys), B42 layout (`common/`, version folder, content), dependency resolution.
-
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `project` | string | Yes | Project name |
-
----
-
-### `workspace_list_files`
-Recursively list files and directories inside a project (workspace-relative, root-confined).
+### `modgen_generate`
+Generate a **complete, ready-to-ship mod folder** from a template: `mod.info`,
+`workshop.txt`, `poster.png`, B42 `common/` + versioned `media/` tree, the
+item script, a beginner-friendly `README.md` and an editable
+`modgen.blueprint.json`. Unpinned stats are **auto-balanced from real vanilla
+game data** (median of comparable items; falls back to sensible defaults when
+the DB isn't parsed). `stats` pins values (never clamped — the validator is
+the referee), `randomize` rolls inside the vanilla interquartile range, and
+`dryRun` previews the blueprint + script without creating anything. The result
+carries a `validation` block (script + folder, `ready` flag).
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `project` | string | Yes | Project name |
-| `path` | string | No | Relative path within the project (default: root) |
-| `recursive` | boolean | No | Recurse into subdirectories (default: `true`) |
-| `maxDepth` | number | No | Max directory depth (default: 12) |
-| `maxEntries` | number | No | Cap on entries (default: 2000) |
+| `template` | enum | Yes | `simple_item` \| `melee_weapon` \| `food` \| `tool` \| `clothing` |
+| `name` | string | Yes | Project folder name (single segment) |
+| `modId` | string | Yes | Unique mod id (`mod.info` `id=`) |
+| `modName` | string | Yes | Human-readable mod name |
+| `itemName` | string | Yes | Item block id (letters/digits/underscores) |
+| `author` | string | No | Mod author |
+| `description` | string | No | Mod description |
+| `displayName` | string | No | In-game item name (default: `itemName`) |
+| `icon` | string | No | Vanilla sprite reference (default per template) |
+| `module` | string | No | Script module (default: `Base`) |
+| `stats` | object | No | Stat overrides keyed by property name — pinned as-is |
+| `autoStats` | boolean | No | Auto-balance unpinned stats (default: `true`) |
+| `randomize` | boolean | No | Roll auto stats inside the vanilla range (default: `false`) |
+| `dryRun` | boolean | No | Preview only — no project created (default: `false`) |
 
----
-
-### `workspace_read_file`
-Read a text file from a project.
-
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `project` | string | Yes | Project name |
-| `path` | string | Yes | Workspace-relative file path |
-
----
-
-### `workspace_write_file`
-Write/create a file atomically (temp + rename). Refuses to overwrite unless `overwrite:true`.
+### `modgen_list`
+List every mod previously generated (workspace projects carrying a
+`modgen.blueprint.json`) with template, item and last-updated time.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `project` | string | Yes | Project name |
-| `path` | string | Yes | Workspace-relative file path |
-| `content` | string | Yes | File content (UTF-8) |
-| `overwrite` | boolean | No | Replace an existing file (default: `false`) |
-| `dryRun` | boolean | No | Preview only (default: `false`) |
+| — | — | — | No arguments |
 
----
-
-### `workspace_patch_file`
-Safely patch a file with context-matched replacements — every patch must match or nothing is written.
+### `modgen_blueprint`
+Reopen a generated mod's editable blueprint — template, metadata, full stat
+set, and the stats source (vanilla sample vs defaults). Feed the result into
+`modgen_regenerate` after editing.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `project` | string | Yes | Project name |
-| `path` | string | Yes | Workspace-relative file path |
-| `patches` | array | Yes | `{ oldText, newText?, count?, description? }[]` — ordered, all-or-nothing |
+| `project` | string | Yes | Project name (from `modgen_generate` / `modgen_list`) |
 
----
-
-### `workspace_delete_file`
-Delete a file or directory. Requires `force:true` (+ `recursive:true` for non-empty dirs); `dryRun` previews by default.
-
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `project` | string | Yes | Project name |
-| `path` | string | Yes | Workspace-relative path |
-| `force` | boolean | No | Explicit intent required for deletion (default: `false`) |
-| `recursive` | boolean | No | Allow deleting a non-empty directory |
-| `dryRun` | boolean | No | Preview only (default: `true`) |
-
----
-
-### `workspace_rename_file`
-Rename/move a file or directory within the project.
+### `modgen_regenerate`
+Rewrite a generated mod from its blueprint after editing. `stats` is a patch
+keyed by property name (`null` resets a stat back to auto), `randomize` is a
+list of stat keys to re-roll inside the vanilla range, and the mod/item
+metadata fields update `mod.info`. The script, README, blueprint and
+validation are all regenerated atomically — the folder never drifts.
 
 | Param | Type | Required | Description |
 |---|---|---|---|
-| `project` | string | Yes | Project name |
-| `from` | string | Yes | Source workspace-relative path |
-| `to` | string | Yes | Target workspace-relative path |
-| `overwrite` | boolean | No | Replace the target if it exists (default: `false`) |
+| `project` | string | Yes | Project name to regenerate |
+| `stats` | object | No | Stat patch — `{ "MaxDamage": 2.2 }` pins, `{ "MaxDamage": null }` resets to auto |
+| `randomize` | string[] | No | Stat keys to re-roll inside the vanilla range |
+| `modName` / `author` / `description` | string | No | Update mod metadata (`mod.info`) |
+| `itemName` / `displayName` / `icon` / `module` | string | No | Update the item definition |
 
 ---
 
 ## Dependencies
 
 - `@modelcontextprotocol/sdk` 1.30
+- `adm-zip` (pure-JS zip read/write — no native dependencies)
 - `node:sqlite` (built-in, no native dependencies)
 - `zod` 3.25
 - Node.js ≥ 22.5

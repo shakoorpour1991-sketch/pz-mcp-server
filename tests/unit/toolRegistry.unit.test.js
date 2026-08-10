@@ -30,16 +30,15 @@ const EXPECTED_TOOLS = [
   'workshop_download',
   'workshop_analyze',
   'workspace_create',
-  'workspace_delete_file',
   'workspace_inspect',
   'workspace_list',
-  'workspace_list_files',
-  'workspace_patch_file',
-  'workspace_read_file',
-  'workspace_rename_file',
-  'workspace_status',
-  'workspace_validate',
-  'workspace_write_file',
+  'detect_pz_paths',
+  'install_mod',
+  'modgen_templates',
+  'modgen_generate',
+  'modgen_list',
+  'modgen_blueprint',
+  'modgen_regenerate',
 ];
 
 describe('tool registry (audit P2)', () => {
@@ -86,6 +85,11 @@ describe('tool registry (audit P2)', () => {
       ['analyze_recipe_chain', { seed: 'Axe' }, false],
       ['index_knowledge_base', { overwrite: 'not-a-bool' }, true],
       ['list_knowledge_topics', {}, false],
+      ['detect_pz_paths', {}, false],
+      ['install_mod', { source: '' }, true],
+      ['install_mod', { source: '/some/Mod.zip' }, false],
+      ['install_mod', { source: '/x', overwrite: 'yes' }, true],
+      ['install_mod', { source: '/x', targetDir: '', dryRun: true }, true],
     ];
     const byName = new Map(ALL_TOOLS.map((t) => [t.name, t]));
     for (const [name, args, expectFail] of cases) {

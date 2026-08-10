@@ -18,6 +18,8 @@ import type { PathManager } from "../utils/PathManager.js";
 import type { SteamWorkshopClient } from "../workshop/SteamWorkshopClient.js";
 import type { SteamCmdDownloader } from "../workshop/SteamCmdDownloader.js";
 import type { WorkspaceManager } from "../workspace/WorkspaceManager.js";
+import type { ModInstaller } from "../modinstall/ModInstaller.js";
+import type { ModGenManager } from "../modgen/ModGenManager.js";
 
 /**
  * Everything a tool handler may need. Populated once at server startup and
@@ -39,6 +41,10 @@ export interface ToolContext {
   activeWorkshopDownloads: Set<string>;
   /** Rooted, safety-first mod workspace (workspace_* tools). */
   workspaceManager: WorkspaceManager;
+  /** Smart mod installer (detect_pz_paths / install_mod). */
+  modInstaller: ModInstaller;
+  /** Beginner-friendly mod generator (modgen_*). */
+  modGenManager: ModGenManager;
 }
 
 /**

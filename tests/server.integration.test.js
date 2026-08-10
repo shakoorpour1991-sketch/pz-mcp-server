@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DatabaseSync } from 'node:sqlite';
+import AdmZip from 'adm-zip';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.resolve(__dirname, '..', 'dist', 'index.js');
@@ -144,16 +145,15 @@ const TOOLS = [
   'workshop_download',
   'workshop_analyze',
   'workspace_create',
-  'workspace_delete_file',
   'workspace_inspect',
   'workspace_list',
-  'workspace_list_files',
-  'workspace_patch_file',
-  'workspace_read_file',
-  'workspace_rename_file',
-  'workspace_status',
-  'workspace_validate',
-  'workspace_write_file',
+  'detect_pz_paths',
+  'install_mod',
+  'modgen_templates',
+  'modgen_generate',
+  'modgen_list',
+  'modgen_blueprint',
+  'modgen_regenerate',
 ];
 
 describe('pz-mcp-server integration', () => {
@@ -197,6 +197,81 @@ describe('pz-mcp-server integration', () => {
     const result = await client.call('tools/list');
     const names = result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [...TOOLS].sort());
+  });
+
+  test('install_mod installs a mod from a zip; detect_pz_paths reports paths', async () => {
+    const zip = new AdmZip();
+    zip.addFile('MyInstalledMod/mod.info', Buffer.from('id=MyInstalledMod\nname=My Installed Mod\nversion=1.0\n'));
+    zip.addFile('MyInstalledMod/media/scripts/items.txt', Buffer.from('item InstalledDagger { Type = Weapon, }'));
+    const zipPath = path.join(tmpDir, 'my-installed-mod.zip');
+    zip.writeZip(zipPath);
+
+    const modsTarget = path.join(tmpDir, 'Zomboid', 'mods');
+    const result = await client.call('tools/call', {
+      name: 'install_mod',
+      arguments: { source: zipPath, targetDir: modsTarget },
+    });
+    const text = result.content[0].text;
+    assert.ok(text.includes('installed'), text);
+    const sc = result.structuredContent;
+    assert.equal(sc.mods.length, 1);
+    assert.equal(sc.mods[0].status, 'installed');
+    assert.equal(sc.mods[0].modId, 'MyInstalledMod');
+    assert.equal(sc.mods[0].filesCopied, 2);
+    assert.ok(fs.existsSync(path.join(modsTarget, 'MyInstalledMod', 'mod.info')));
+    assert.ok(fs.existsSync(path.join(modsTarget, 'MyInstalledMod', 'media', 'scripts', 'items.txt')));
+
+    const detect = await client.call('tools/call', { name: 'detect_pz_paths', arguments: {} });
+    const d = detect.structuredContent;
+    assert.equal(typeof d.platform, 'string');
+    assert.ok(typeof d.modsDir.path === 'string' && d.modsDir.path.length > 0);
+    assert.equal(typeof d.modsDir.exists, 'boolean');
+    assert.equal(typeof d.modsDir.writable, 'boolean');
+  });
+
+  test('modgen workflow: templates → generate → list → blueprint → regenerate', async () => {
+    const tpl = await client.call('tools/call', { name: 'modgen_templates', arguments: {} });
+    const templates = tpl.structuredContent.templates;
+    assert.equal(templates.length, 5);
+    assert.ok(templates.some((t) => t.id === 'melee_weapon'));
+    assert.ok(templates.every((t) => t.fields.length >= 5 && t.fields[0].label));
+
+    const gen = await client.call('tools/call', {
+      name: 'modgen_generate',
+      arguments: {
+        template: 'melee_weapon',
+        name: 'GenSword',
+        modId: 'gen_sword',
+        modName: 'Generated Sword',
+        itemName: 'GenSwordItem',
+      },
+    });
+    const g = gen.structuredContent;
+    assert.equal(g.dryRun, false);
+    assert.equal(g.project, 'GenSword');
+    assert.equal(g.blueprint.mod.id, 'gen_sword');
+    assert.equal(g.blueprint.mod.itemName, 'GenSwordItem');
+    assert.equal(g.validation.ready, true);
+    assert.ok(g.files.includes('modgen.blueprint.json'));
+    assert.ok(g.files.includes('README.md'));
+    assert.ok(g.files.includes('mod.info'));
+    assert.ok(g.files.includes('42/media/scripts/gen_sword_items.txt'));
+
+    const list = await client.call('tools/call', { name: 'modgen_list', arguments: {} });
+    assert.ok(list.structuredContent.projects.some((p) => p.project === 'GenSword'));
+
+    const bp = await client.call('tools/call', { name: 'modgen_blueprint', arguments: { project: 'GenSword' } });
+    assert.equal(bp.structuredContent.kind, 'pz-modgen');
+    assert.equal(bp.structuredContent.mod.itemName, 'GenSwordItem');
+
+    const regen = await client.call('tools/call', {
+      name: 'modgen_regenerate',
+      arguments: { project: 'GenSword', stats: { MaxDamage: 2.2 }, randomize: ['CriticalChance'] },
+    });
+    const r = regen.structuredContent;
+    assert.equal(r.blueprint.stats.MaxDamage, 2.2);
+    assert.equal(r.validation.ready, true);
+    assert.ok(r.script.includes('MaxDamage = 2.2'));
   });
 
   test('parse_game_files parses fixture game scripts', async () => {

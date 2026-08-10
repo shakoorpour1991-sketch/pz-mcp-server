@@ -26,7 +26,9 @@ export const ICONS = {
   stack:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>',
 };
 export const TOOL_ICONS = { validate_script:'shield', generate_script:'spark', search_vanilla:'search', check_references:'link',
-  analyze_mod:'scan', parse_game_files:'db', index_knowledge_base:'book', search_knowledge_base:'search', list_knowledge_topics:'book' };
+  analyze_mod:'scan', parse_game_files:'db', index_knowledge_base:'book', search_knowledge_base:'search', list_knowledge_topics:'book',
+  detect_pz_paths:'scan', install_mod:'download',
+  modgen_templates:'spark', modgen_generate:'spark', modgen_list:'folder', modgen_blueprint:'doc', modgen_regenerate:'spark' };
 export const TOOL_CATS = [
   { id:'search', label:'Search & Query', icon:'search', match:['search_vanilla','search_recipes'] },
   { id:'gen', label:'Generation', icon:'spark', match:['generate_script','export_mod_script'] },
@@ -34,6 +36,8 @@ export const TOOL_CATS = [
   { id:'analysis', label:'Analysis', icon:'scan', match:['analyze_mod','parse_game_files','analyze_recipe_chain','detect_recipe_conflicts'] },
   { id:'kb', label:'Knowledge Base', icon:'book', match:['index_knowledge_base','search_knowledge_base','list_knowledge_topics'] },
   { id:'ws', label:'Workshop', icon:'download', match:['workshop_search','workshop_get_details','workshop_download','workshop_analyze'] },
+  { id:'install', label:'Install & Detect', icon:'download', match:['detect_pz_paths','install_mod'] },
+  { id:'modgen', label:'Mod Generator', icon:'spark', match:['modgen_templates','modgen_generate','modgen_list','modgen_blueprint','modgen_regenerate'] },
 ];
 export function catForTool(name){ const c = TOOL_CATS.find(x => x.match.includes(name)); return c ? c.id : 'search'; }
 /* Beginner-friendly explanations for every tool (keyed by MCP tool name) */
@@ -123,19 +127,55 @@ export const TOOL_GUIDES = {
     how:'<b>id</b> is required (numeric id or URL). This runs the full pipeline — download, parse and analysis — so it can take a while.',
     ex:'id: "2696145877"',
   },
+  detect_pz_paths: {
+    what:'Smart cross-platform detection of your Project Zomboid install, mods folder and Steam Workshop folder.',
+    how:'No arguments needed — press Run. It checks the PZ_MCP path env vars first, then the Steam registry + libraryfolders.vdf (Windows), Steam libraries (Linux/macOS), then common install locations. <b>modsDir</b> is where install_mod puts mods — set <b>PZ_MODS_DIR</b> (or the Installer tab → set folder) to override.',
+    ex:'—',
+  },
+  install_mod: {
+    what:'Install a mod from a .zip archive or a mod folder into Project Zomboid\'s mods directory.',
+    how:'<b>source</b> is required — an absolute path to a .zip file or a folder. It finds every mod inside (single mods, B42 versioned folders, multi-mod packs, flat zips), refuses unsafe archives, and never overwrites unless <b>overwrite</b>:true (conflicts are skipped and reported). Set <b>targetDir</b> to install elsewhere, or <b>dryRun</b> to preview first. Tip: use the Installer tab for drag & drop.',
+    ex:'source: "C:/Downloads/MyMod.zip" · targetDir: "C:/Users/you/Zomboid/mods" (optional)',
+  },
+  modgen_templates: {
+    what:'List the five Mod Generator templates with every editable stat field and the vanilla data each balances against.',
+    how:'No arguments needed — press Run. Shows Simple Item, Melee Weapon, Food, Tool and Clothing with each stat\'s range, unit and hint.',
+    ex:'—',
+  },
+  modgen_generate: {
+    what:'Generate a complete ready-to-ship mod folder from a template — script, mod.info, workshop.txt, README and an editable blueprint.',
+    how:'<b>template</b>, <b>name</b>, <b>modId</b>, <b>modName</b> and <b>itemName</b> are required. Unpinned stats are auto-balanced from real vanilla game data. Optional: <b>author</b>, <b>description</b>, <b>displayName</b>, <b>icon</b>, <b>module</b>, <b>stats</b> (pin values), <b>autoStats</b>, <b>randomize</b> (roll within the vanilla range) and <b>dryRun</b>.',
+    ex:'template: "melee_weapon" · name: "MyWeapon" · modId: "my_weapon" · modName: "My Weapon" · itemName: "MyWeaponItem"',
+  },
+  modgen_list: {
+    what:'List every mod you have generated (projects with a blueprint).',
+    how:'No arguments needed — press Run.',
+    ex:'—',
+  },
+  modgen_blueprint: {
+    what:'Reopen a generated mod\'s editable blueprint to review or change its stats.',
+    how:'<b>project</b> is required — the folder name from modgen_generate / modgen_list.',
+    ex:'project: "MyWeapon"',
+  },
+  modgen_regenerate: {
+    what:'Rewrite a generated mod after editing its blueprint — script, mod.info, README and validation stay in sync.',
+    how:'<b>project</b> is required. Pass <b>stats</b> to pin new values (null resets a stat to auto), <b>randomize</b> (array of stat keys) to re-roll them inside the vanilla range, or change <b>modName</b>/<b>author</b>/<b>description</b>/<b>displayName</b>/<b>icon</b>/<b>module</b>.',
+    ex:'project: "MyWeapon" · stats: { MaxDamage: 2.2 } · randomize: ["CriticalChance"]',
+  },
 };
 
 /* Whole-program guide (main page) */
 export const GUIDE_STEPS = [
   { icon:'power', title:'What is this?', body:'<b>pz-mcp-server</b> is a Model Context Protocol (MCP) server that gives AI assistants live access to your Project Zomboid mod data. This deck is its friendly control panel — you drive the same 17 tools an AI would, right from your browser.' },
   { icon:'link', title:'How the deck connects', body:'The bridge (<b>admin/bridge.mjs</b>) serves this page on <b>port 8787</b> and pipes JSON-RPC to the real MCP server over stdio. Watch the pill in the header — when it turns green <b>Live</b>, the server is ready. It reconnects automatically.' },
-  { icon:'scan', title:'The 6 tabs', body:'<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Config</b> — accent color, console behaviour and server controls.' },
+  { icon:'scan', title:'The 7 tabs', body:'<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Installer</b> — auto-detect your game paths and drop mods in (.zip or folders) to install them into Zomboid/mods. <b>Config</b> — accent color, console behaviour and server controls.' },
   { icon:'play', title:'Playground workflow', body:'Open a tool card, fill the fields and press <b>Run</b>. Required fields are marked with a red <b>*</b> and are validated live — an empty required field disables Run with a red ring. Results appear in the result card (with a Copy button), long output collapses behind <b>Show more</b>, and every call lands in <b>Recent Runs</b> so you can re-open it later.' },
   { icon:'search', title:'Typical flow', body:'<b>1.</b> parse_game_files once to index the game. <b>2.</b> search_vanilla / search_recipes to research. <b>3.</b> generate_script to create content. <b>4.</b> validate_script + check_references to verify. <b>5.</b> analyze_mod for a full mod audit, or workshop_analyze for community mods.' },
   { icon:'db', title:'Database & Knowledge tabs', body:'The Database tab runs the same FTS5 search as search_vanilla. The Knowledge Base tools index and search your markdown modding docs — useful for keeping your research one query away.' },
   { icon:'download', title:'Workshop tab', body:'Search Steam, paste a URL/id for guaranteed resolution, download a mod via SteamCMD, then run the full analyze pipeline — download, parse, balance check and a complete Mod Report.' },
+  { icon:'download', title:'Installer tab', body:'Press <b>Detect paths</b> to auto-find the game install and mods folder on any machine (Steam registry, library VDFs, common paths). Then drag & drop <b>.zip files or whole mod folders</b> (or use Browse) — they are uploaded to the bridge, scanned for mods, and installed into the mods directory. Conflicting mods are skipped by default; tick <b>Overwrite</b> to replace them.' },
   { icon:'graph', title:'Recipe Chain tab', body:'Type any item or recipe id (a recipe like <b>MillFlour</b> gives the richest graph) and press <b>Build graph</b>. Recipe nodes are amber, items cyan; green arrows mean <b>produces</b>, amber means <b>consumes</b>. Click a node to inspect it, drag to pan, ctrl+scroll to zoom. <b>Show recipe conflicts</b> lists items several recipes claim to make — click one to graph it.' },
-  { icon:'arrowR', title:'Keyboard & tips', body:'<span class="kbd">1–6</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.' },
+  { icon:'arrowR', title:'Keyboard & tips', body:'<span class="kbd">1–7</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.' },
 ];
 
 export const EXAMPLES = {
@@ -171,7 +211,7 @@ export const CHAIN_CHIPS = [
 ];
 export const CHAIN_COLW = 236, CHAIN_NODE_W = 168, CHAIN_NODE_H = 46, CHAIN_H = 640, CHAIN_CAP = 14, CHAIN_PITCH = 60;
 
-export const VIEWS = ['status','playground','database','workshop','chain','settings'];
+export const VIEWS = ['status','playground','database','workshop','chain','installer','generator','settings'];
 
 export const MEM_BUDGET_MB = 512;
 

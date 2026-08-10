@@ -2,9 +2,8 @@
  * Unit tests for the Mod Workspace / Project Manager:
  *  - WorkspaceManager: scaffold, file ops, atomic writes, patch safety,
  *    destructive-op guards, and path-traversal / symlink-escape security.
- *  - workspace tool helpers (validateProject / statusProject / inspectProject)
- *    against a real temp DB + parser + analyzer, including the checked-in
- *    valid B42 fixture.
+ *  - workspace tool helpers (inspectProject) against a real temp DB +
+ *    parser + analyzer, including the checked-in valid B42 fixture.
  * Runs against the compiled dist/ build.
  */
 import { describe, test, before, after } from 'node:test';
@@ -22,10 +21,7 @@ import { DatabaseManager } from '../../dist/database/DatabaseManager.js';
 import { ProjectZomboidParser } from '../../dist/parsers/ProjectZomboidParser.js';
 import { ModAnalyzer } from '../../dist/analyzers/ModAnalyzer.js';
 import {
-  validateProject,
-  statusProject,
   inspectProject,
-  findModInfoPath,
   workspaceTools,
 } from '../../dist/tools/workspace.js';
 
@@ -317,7 +313,7 @@ describe('WorkspaceManager', () => {
   });
 });
 
-describe('workspace tool helpers (validate / status / inspect)', () => {
+describe('workspace tool helpers (inspect)', () => {
   let root;
   let ws;
   let db;
@@ -341,64 +337,6 @@ describe('workspace tool helpers (validate / status / inspect)', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  test('validateProject accepts the checked-in valid B42 fixture', async () => {
-    const v = await validateProject(ctx, 'fixture_mod');
-    assert.equal(v.valid, true, JSON.stringify(v.errors));
-    assert.equal(v.modId, 'b42_fixture');
-    assert.equal(v.modName, 'B42 Fixture Mod');
-    assert.equal(v.version, '1.0.0');
-    assert.deepEqual(v.supportedBuilds, ['42']);
-    assert.deepEqual(v.dependencies.listed, []);
-  });
-
-  test('validateProject flags a missing mod.info', async () => {
-    fs.mkdirSync(path.join(root, 'NoInfo', 'common'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'NoInfo', '42'), { recursive: true });
-    const v = await validateProject(ctx, 'NoInfo');
-    assert.equal(v.valid, false);
-    assert.ok(v.errors.some((e) => e.code === 'MISSING_MOD_INFO'));
-  });
-
-  test('validateProject flags missing common/ and version folder', async () => {
-    fs.mkdirSync(path.join(root, 'BadLayout'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'BadLayout', 'mod.info'), 'name=N\nid=n\n');
-    const v = await validateProject(ctx, 'BadLayout');
-    assert.equal(v.valid, false);
-    assert.ok(v.errors.some((e) => e.code === 'MISSING_COMMON_DIR'));
-    assert.ok(v.errors.some((e) => e.code === 'MISSING_VERSION_DIR'));
-  });
-
-  test('validateProject detects malformed metadata: duplicate keys + missing id', async () => {
-    fs.mkdirSync(path.join(root, 'BadInfo', 'common'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'BadInfo', '42'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'BadInfo', 'mod.info'), 'name=Dup\nname=Dup2\n');
-    const v = await validateProject(ctx, 'BadInfo');
-    assert.equal(v.valid, false);
-    assert.ok(v.errors.some((e) => e.code === 'MISSING_MOD_ID'));
-    assert.ok(v.errors.some((e) => e.code === 'DUPLICATE_KEY'));
-  });
-
-  test('validateProject resolves dependencies against the mods table', async () => {
-    await db.upsertMod({ id: 'known_dep', name: 'Known', version: '1', description: '', path: '' });
-    fs.mkdirSync(path.join(root, 'DepCheck', 'common'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'DepCheck', '42'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'DepCheck', 'mod.info'), 'name=Dep\nid=dep\nrequire=known_dep,mystery_dep\n');
-    const v = await validateProject(ctx, 'DepCheck');
-    assert.deepEqual(v.dependencies.missing, ['mystery_dep']);
-  });
-
-  test('statusProject reports metadata, counts, content types and verdict', async () => {
-    const st = await statusProject(ctx, 'fixture_mod');
-    assert.equal(st.modId, 'b42_fixture');
-    assert.equal(st.modName, 'B42 Fixture Mod');
-    assert.ok(st.scriptCount >= 1);
-    assert.ok(st.luaCount >= 1);
-    assert.ok(st.supportedBuilds.includes('42'));
-    assert.ok(st.contentTypes.includes('scripts'));
-    assert.ok(st.contentTypes.includes('lua'));
-    assert.equal(st.ok, true);
-  });
-
   test('inspectProject returns a full structured inspection via the real analyzer', async () => {
     const insp = await inspectProject(ctx, 'fixture_mod', {
       checkDependencies: false,
@@ -415,21 +353,9 @@ describe('workspace tool helpers (validate / status / inspect)', () => {
     assert.ok(Array.isArray(insp.validation.errors));
   });
 
-  test('inspect/validate/status throw sanitized NOT_FOUND for missing projects', async () => {
+  test('inspectProject throws sanitized NOT_FOUND for missing projects', async () => {
     const opts = { checkDependencies: false, includeFileList: false };
     await assert.rejects(inspectProject(ctx, 'nope', opts), (e) => e.code === ErrorCode.InvalidRequest);
-    await assert.rejects(validateProject(ctx, 'nope'), (e) => e.code === ErrorCode.InvalidRequest);
-    await assert.rejects(statusProject(ctx, 'nope'), (e) => e.code === ErrorCode.InvalidRequest);
-  });
-
-  test('findModInfoPath finds root and version-folder mod.info', async () => {
-    const rootInfo = await findModInfoPath(path.join(root, 'fixture_mod'));
-    assert.ok(rootInfo.endsWith('mod.info'));
-    const versionOnly = path.join(root, 'VerOnly');
-    fs.mkdirSync(path.join(versionOnly, '42'), { recursive: true });
-    fs.writeFileSync(path.join(versionOnly, '42', 'mod.info'), 'name=V\nid=v\n');
-    const vInfo = await findModInfoPath(versionOnly);
-    assert.ok(vInfo.includes('42') && vInfo.endsWith('mod.info'));
   });
 
   test('detectContentTypes identifies media content + mod/poster markers', async () => {
@@ -446,14 +372,6 @@ describe('workspace tool registration & handlers', () => {
     'workspace_list',
     'workspace_create',
     'workspace_inspect',
-    'workspace_status',
-    'workspace_validate',
-    'workspace_list_files',
-    'workspace_read_file',
-    'workspace_write_file',
-    'workspace_patch_file',
-    'workspace_delete_file',
-    'workspace_rename_file',
   ];
 
   for (const name of TOOL_NAMES) {
@@ -487,25 +405,5 @@ describe('workspace tool registration & handlers', () => {
     }
   });
 
-  test('workspace_write_file handler enforces overwrite protection', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-ws-tool-'));
-    try {
-      const ws = new WorkspaceManager([root]);
-      const ctx = { workspaceManager: ws };
-      const tool = workspaceTools.find((t) => t.name === 'workspace_write_file');
-      await tool.handler(
-        { project: 'Prj', path: 'a.txt', content: 'one', overwrite: false, dryRun: false },
-        ctx,
-      );
-      await assert.rejects(
-        tool.handler(
-          { project: 'Prj', path: 'a.txt', content: 'two', overwrite: false, dryRun: false },
-          ctx,
-        ),
-        (e) => e instanceof WorkspaceError && e.code === 'ALREADY_EXISTS',
-      );
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
+
 });

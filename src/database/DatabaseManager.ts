@@ -1073,26 +1073,29 @@ export class DatabaseManager {
   }
 
   /**
-   * Items whose properties.Type matches exactly (e.g. "Weapon", "Armor",
-   * "Ammo") — the precise baseline query for ModAnalyzer balance analysis.
+   * Items whose properties[propertyKey] matches exactly (e.g. Type="Weapon").
+   * The precise baseline query for ModAnalyzer balance analysis and the Mod
+   * Generator's vanilla auto-stats. `propertyKey` defaults to "Type" but can
+   * target the Build 42 spelling ("ItemType", values like "base:weapon").
    * Replaces an FTS keyword search + in-memory filter, which could both miss
    * and over-match (mod-analyzer review: exact Type baseline).
    */
   async getItemsByPropertyType(
     propertyType: string,
     limit: number = 1000,
+    propertyKey: string = "Type",
   ): Promise<GameItem[]> {
     const rows = this.db
       .prepare(
         `
       SELECT ${ITEM_SELECT_COLUMNS}
       FROM items
-      WHERE type = 'item' AND json_extract(properties, '$.Type') = ?
+      WHERE type = 'item' AND json_extract(properties, ?) = ?
       ORDER BY name ASC
       LIMIT ?
     `,
       )
-      .all(propertyType, limit) as unknown as ItemRow[];
+      .all(`$.${propertyKey}`, propertyType, limit) as unknown as ItemRow[];
 
     return rows.map((row) => this.rowToItem(row));
   }

@@ -8,6 +8,8 @@ import { analysisTools } from "./analysis.js";
 import { localDataTools } from "./localData.js";
 import { workshopTools } from "./workshop.js";
 import { workspaceTools } from "./workspace.js";
+import { installerTools } from "./installer.js";
+import { modgenTools } from "./modgen.js";
 
 export { ToolRegistry };
 export type { ToolContext, McpTool, McpToolResult } from "./registry.js";
@@ -20,4 +22,6 @@ export const ALL_TOOLS = [
   ...localDataTools,
   ...workshopTools,
   ...workspaceTools,
+  ...installerTools,
+  ...modgenTools,
 ];

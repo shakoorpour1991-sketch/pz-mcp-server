@@ -139,6 +139,39 @@ export const AnalyzeModSchema = z.object({
     .describe("Check compatibility with vanilla"),
 });
 
+/** detect_pz_paths — no arguments; reports everything the smart detection found. */
+export const DetectPzPathsSchema = z.object({});
+
+export const InstallModSchema = z.object({
+  source: z
+    .string()
+    .min(1)
+    .max(4096)
+    .describe(
+      "Path to a .zip archive or a mod folder to install (absolute path)",
+    ),
+  targetDir: z
+    .string()
+    .min(1)
+    .max(4096)
+    .optional()
+    .describe(
+      "Destination mods directory (default: auto-detected <home>/Zomboid/mods, overridable with PZ_MODS_DIR)",
+    ),
+  overwrite: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Replace an already-installed mod with the same id or folder name (default false — conflicts are skipped and reported)",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Preview which mods would be installed and where — no disk changes",
+    ),
+});
+
 export const ParseGameFilesSchema = z.object({
   gamePath: z
     .string()
@@ -323,6 +356,136 @@ export const WorkshopAnalyzeSchema = z.object({
 export const ListKnowledgeTopicsSchema = z.object({});
 
 // ---------------------------------------------------------------------------
+// Mod Generator (beginner-friendly mod creation)
+// ---------------------------------------------------------------------------
+
+/** Shared name regex: a folder name directly under the workspace root. */
+const ModgenProjectName = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+export const ModgenTemplatesSchema = z.object({});
+
+export const ModgenGenerateSchema = z.object({
+  template: z
+    .enum(["simple_item", "melee_weapon", "food", "tool", "clothing"])
+    .describe("Which beginner template to build on"),
+  name: ModgenProjectName.describe(
+    "Project folder name (single path segment, no slashes)",
+  ),
+  modId: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .describe("Unique mod id used in mod.info (alphanumeric + _ or -)"),
+  modName: z
+    .string()
+    .min(1)
+    .max(256)
+    .describe("Human-readable mod name shown in the game's mod list"),
+  author: z.string().max(256).optional().describe("Mod author"),
+  description: z.string().max(2000).optional().describe("Mod description"),
+  itemName: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_]+$/)
+    .describe(
+      "Internal item id (the script block name — letters, digits, underscores)",
+    ),
+  displayName: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe("In-game item name shown to players (defaults to itemName)"),
+  icon: z
+    .string()
+    .max(128)
+    .optional()
+    .describe(
+      "Vanilla sprite reference for the item's icon (defaults per template)",
+    ),
+  module: z
+    .string()
+    .max(64)
+    .default("Base")
+    .describe("Script module (default Base — item id is then just itemName)"),
+  stats: z
+    .record(z.union([z.number(), z.string(), z.boolean()]))
+    .optional()
+    .describe(
+      "Stat overrides keyed by property name — these are pinned and kept as-is",
+    ),
+  autoStats: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Auto-balance unpinned stats from real vanilla game data (default true)",
+    ),
+  randomize: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Roll auto stats randomly inside the vanilla-derived range instead of the median",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe("Preview the blueprint and script — no project is created"),
+});
+
+export const ModgenListSchema = z.object({});
+
+export const ModgenBlueprintSchema = z.object({
+  project: ModgenProjectName.describe(
+    "Project name to reopen (must contain a modgen.blueprint.json)",
+  ),
+});
+
+export const ModgenRegenerateSchema = z.object({
+  project: ModgenProjectName.describe("Project name to regenerate"),
+  modName: z.string().min(1).max(256).optional().describe("New mod name"),
+  author: z.string().max(256).optional().describe("New author"),
+  description: z
+    .string()
+    .max(2000)
+    .optional()
+    .describe("New description (empty string clears it)"),
+  itemName: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_]+$/)
+    .optional()
+    .describe("New item id"),
+  displayName: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe("New in-game item name"),
+  icon: z.string().max(128).optional().describe("New icon reference"),
+  module: z.string().max(64).optional().describe("New script module"),
+  stats: z
+    .record(
+      z.union([z.number(), z.string(), z.boolean(), z.null()]),
+    )
+    .optional()
+    .describe(
+      "Stat patch keyed by property name; a null value resets that stat back to auto",
+    ),
+  randomize: z
+    .array(z.string().max(64))
+    .max(100)
+    .optional()
+    .describe("Stat keys to re-roll inside the vanilla-derived range"),
+});
+
+// ---------------------------------------------------------------------------
 // Mod Workspace / Project Manager
 // ---------------------------------------------------------------------------
 
@@ -416,111 +579,14 @@ export const WorkspaceInspectSchema = WorkspaceProjectSchema.extend({
     .describe("Include the full recursive file list in the result"),
 });
 
-export const WorkspaceStatusSchema = WorkspaceProjectSchema.extend({});
-
-export const WorkspaceValidateSchema = WorkspaceProjectSchema.extend({});
-
-export const WorkspaceListFilesSchema = WorkspaceProjectSchema.extend({
-  path: z
-    .string()
-    .max(2048)
-    .optional()
-    .describe("Relative path within the project (default: project root)"),
-  recursive: z.boolean().default(true).describe("Recurse into subdirectories"),
-  maxDepth: z
-    .number()
-    .min(1)
-    .max(20)
-    .optional()
-    .describe("Maximum directory depth to descend (default 12)"),
-  maxEntries: z
-    .number()
-    .min(1)
-    .max(5000)
-    .default(2000)
-    .describe("Cap on returned entries (default 2000)"),
-});
-
-export const WorkspaceReadFileSchema = WorkspaceProjectSchema.extend({
-  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
-});
-
-export const WorkspaceWriteFileSchema = WorkspaceProjectSchema.extend({
-  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
-  content: z.string().max(5_000_000).describe("File content (UTF-8 text)"),
-  overwrite: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Replace an existing file (default false — existing files are never silently overwritten)",
-    ),
-  dryRun: z.boolean().default(false).describe("Preview only — no disk changes"),
-});
-
-export const WorkspacePatchFileSchema = WorkspaceProjectSchema.extend({
-  path: z.string().min(1).max(2048).describe("Workspace-relative file path"),
-  patches: z
-    .array(
-      z.object({
-        oldText: z
-          .string()
-          .min(1)
-          .describe("Exact text to match (must exist in the file)"),
-        newText: z
-          .string()
-          .default("")
-          .describe("Replacement text (empty = delete the match)"),
-        count: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe("Require exactly this many matches (default: replace all)"),
-        description: z
-          .string()
-          .max(200)
-          .optional()
-          .describe("Human label shown in errors/results"),
-      }),
-    )
-    .min(1)
-    .max(50)
-    .describe("Ordered context patches — all must match or nothing is written"),
-});
-
-export const WorkspaceDeleteFileSchema = WorkspaceProjectSchema.extend({
-  path: z.string().min(1).max(2048).describe("Workspace-relative path"),
-  force: z
-    .boolean()
-    .default(false)
-    .describe(
-      "Explicit intent required for any deletion (set to true to proceed)",
-    ),
-  recursive: z
-    .boolean()
-    .default(false)
-    .describe("Allow deleting a non-empty directory"),
-  dryRun: z
-    .boolean()
-    .default(true)
-    .describe("Preview the deletion — no disk changes (default true)"),
-});
-
-export const WorkspaceRenameFileSchema = WorkspaceProjectSchema.extend({
-  from: z.string().min(1).max(2048).describe("Source workspace-relative path"),
-  to: z.string().min(1).max(2048).describe("Target workspace-relative path"),
-  overwrite: z
-    .boolean()
-    .default(false)
-    .describe("Replace the target if it exists (default false)"),
-});
-
 /**
  * Tool name → input schema. Imported by admin/bridge.mjs so the dashboard can
  * (1) normalize every tools/list reply into proper JSON Schema from the live
  * schemas, and (2) pre-validate tools/call arguments before relaying them.
  */
 export const TOOL_SCHEMAS = {
+  detect_pz_paths: DetectPzPathsSchema,
+  install_mod: InstallModSchema,
   search_vanilla: SearchVanillaSchema,
   search_recipes: SearchRecipesSchema,
   generate_script: GenerateScriptSchema,
@@ -541,12 +607,9 @@ export const TOOL_SCHEMAS = {
   workspace_list: WorkspaceListSchema,
   workspace_create: WorkspaceCreateSchema,
   workspace_inspect: WorkspaceInspectSchema,
-  workspace_status: WorkspaceStatusSchema,
-  workspace_validate: WorkspaceValidateSchema,
-  workspace_list_files: WorkspaceListFilesSchema,
-  workspace_read_file: WorkspaceReadFileSchema,
-  workspace_write_file: WorkspaceWriteFileSchema,
-  workspace_patch_file: WorkspacePatchFileSchema,
-  workspace_delete_file: WorkspaceDeleteFileSchema,
-  workspace_rename_file: WorkspaceRenameFileSchema,
+  modgen_templates: ModgenTemplatesSchema,
+  modgen_generate: ModgenGenerateSchema,
+  modgen_list: ModgenListSchema,
+  modgen_blueprint: ModgenBlueprintSchema,
+  modgen_regenerate: ModgenRegenerateSchema,
 };

@@ -640,7 +640,7 @@ export function formatWorkspaceCreated(result: any): string {
   if (result.dryRun) {
     return `🟡 Dry run — no disk changes.\n\nWould scaffold project **${result.project}** at ${result.root} with ${result.created.length} files:\n\n${result.created.map((f: string) => `  ${f}`).join("\n")}`;
   }
-  return `✅ Scaffolded project **${result.project}** at ${result.root}\n\nCreated ${result.created.length} files:\n\n${result.created.map((f: string) => `  ${f}`).join("\n")}\n\nRun workspace_status or workspace_inspect to verify it.`;
+  return `✅ Scaffolded project **${result.project}** at ${result.root}\n\nCreated ${result.created.length} files:\n\n${result.created.map((f: string) => `  ${f}`).join("\n")}\n\nRun workspace_inspect to verify it.`;
 }
 
 export function formatWorkspaceInspect(insp: any): string {
@@ -681,77 +681,176 @@ export function formatWorkspaceInspect(insp: any): string {
   return out;
 }
 
-export function formatWorkspaceStatus(st: any): string {
-  let out = `# Workspace Status — ${st.project}\n\n`;
-  out += `**Path**: ${st.path}\n`;
-  out += `**Mod ID**: ${st.modId ?? "—"} · **Name**: ${st.modName ?? "—"} · **Version**: ${st.version ?? "—"}\n`;
-  if (st.description) out += `**Description**: ${st.description}\n`;
-  out += `**Supported builds**: ${st.supportedBuilds.length ? st.supportedBuilds.join(", ") : "—"}\n`;
-  out += `**Files**: ${st.fileCount} total · ${st.scriptCount} scripts · ${st.luaCount} lua\n`;
-  out += `**Content types**: ${st.contentTypes.length ? st.contentTypes.join(", ") : "—"}\n`;
-  out += `**Verdict**: ${st.ok ? "✅ ready" : st.hasModInfo ? "⚠️ needs work (no content yet)" : "❌ missing mod.info"}\n`;
-  return out;
+// ---------------------------------------------------------------------------
+// Game-path detection + mod install (detect_pz_paths / install_mod)
+// ---------------------------------------------------------------------------
+
+export function formatDetectPaths(result: any): string {
+  const badge = (exists: boolean, writable?: boolean) => {
+    if (!exists) return "— (not created yet)";
+    return writable === false ? "⚠ not writable" : "✓ exists";
+  };
+  const lines: string[] = [];
+  lines.push("# Project Zomboid path detection");
+  lines.push(`**Platform:** \`${result.platform}\` · **Home:** \`${result.home}\``);
+  lines.push("");
+
+  const game = result.gameInstall?.path;
+  lines.push(
+    `**Game install:** ${game ? `\`${game}\`` : "*not found*"} ${game ? `(detected via ${result.gameInstall.source})` : "— set PROJECTZOMBOID_PATH or pass gamePath manually"}`,
+  );
+  lines.push(
+    `**User data dir:** \`${result.userDataDir?.path}\` ${badge(result.userDataDir?.exists)}`,
+  );
+  lines.push(
+    `**Mods dir:** \`${result.modsDir?.path}\` ${badge(result.modsDir?.exists, result.modsDir?.writable)}`,
+  );
+  const ws = result.workshopDir?.path;
+  lines.push(
+    `**Workshop dir:** ${ws ? `\`${ws}\`` : "*not found*"} ${result.workshopDir?.exists ? "✓ exists" : ""}`,
+  );
+  const env = result.envOverrides ?? {};
+  if (Object.keys(env).length > 0) {
+    lines.push("");
+    lines.push("**Env overrides:** " + Object.entries(env).map(([k, v]) => `\`${k}=\`${v}\``).join(" · "));
+  }
+  return lines.join("\n");
 }
 
-export function formatWorkspaceValidate(v: any): string {
-  let out = `# Workspace Validate — ${v.project}\n\n`;
-  out += `**Verdict**: ${v.valid ? "✅ valid" : "❌ invalid"}\n`;
-  if (v.modId || v.modName || v.version) {
-    out += `**Metadata**: ${v.modId ?? "?"} · ${v.modName ?? "?"} · v${v.version ?? "?"}\n`;
+export function formatInstallResult(r: any): string {
+  const out: string[] = [];
+  const kind = r.sourceKind === "zip" ? "zip archive" : "mod folder";
+  out.push(
+    r.dryRun
+      ? `# 🔍 Dry run — preview for \`${r.source}\` (${kind})`
+      : `# 📦 Installed mods from \`${r.source}\` (${kind})`,
+  );
+  out.push(`**Target:** \`${r.targetDir}\``);
+  out.push("");
+  for (const m of r.mods ?? []) {
+    const id = m.modId ? ` \`${m.modId}\`` : "";
+    const ver = m.version ? ` v${m.version}` : "";
+    if (m.status === "installed") {
+      out.push(`- ✅ **${m.name}**${id}${ver} → installed (${m.filesCopied ?? 0} files)`);
+    } else if (m.status === "planned") {
+      out.push(`- 🔍 **${m.name}**${id}${ver} → would install to \`${m.targetPath}\``);
+    } else if (m.status === "skipped") {
+      out.push(`- ⏭️ **${m.name}**${id}${ver} → skipped: ${m.reason ?? "conflict"}`);
+    } else {
+      out.push(`- ❌ **${m.name}**${id}${ver} → failed: ${m.reason ?? "unknown error"}`);
+    }
   }
-  out += `**Supported builds**: ${v.supportedBuilds.length ? v.supportedBuilds.join(", ") : "—"}\n`;
-  const deps = v.dependencies;
-  out += `**Dependencies**: ${deps.listed.length ? deps.listed.join(", ") : "none"}`;
-  if (deps.missing.length) out += ` (❌ missing: ${deps.missing.join(", ")})`;
-  out += `\n\n`;
-  for (const e of v.errors) {
-    out += `- ❌ [${e.code}] ${e.message}\n`;
+  for (const w of r.warnings ?? []) {
+    out.push(`\n> ⚠️ ${w}`);
   }
-  for (const w of v.warnings) {
-    out += `- ⚠️ [${w.code}] ${w.message}\n`;
+  out.push("");
+  out.push(r.summary ?? "");
+  if (r.dryRun) {
+    out.push("\n*Run again without dryRun to install.*");
   }
-  for (const i of v.info) {
-    out += `- ℹ️ [${i.code}] ${i.message}\n`;
-  }
-  if (!v.errors.length && !v.warnings.length) out += `- No issues.\n`;
-  return out;
+  return out.join("\n");
 }
 
-export function formatWorkspaceFileList(entries: any[], rel: string): string {
-  const files = entries.filter((e) => e.type === "file");
-  const dirs = entries.filter((e) => e.type === "dir");
-  let out = `# Files — ${rel} (${files.length} files, ${dirs.length} dirs)\n\n`;
+// ---------------------------------------------------------------------------
+// Mod Generator (modgen_*)
+// ---------------------------------------------------------------------------
+
+export function formatModgenTemplates(templates: any[]): string {
+  let out = `# Mod Generator templates (${templates.length})\n\n`;
+  for (const t of templates) {
+    out += `## ${t.label}\n`;
+    out += `${t.short}\n`;
+    const vanilla = t.vanilla;
+    if (vanilla) {
+      out += `\n> 📊 Auto-stats derive from **${vanilla.sampleCount}** ${vanilla.label} in the vanilla database.\n`;
+    } else {
+      out += `\n> 📊 Auto-stats use balanced defaults (vanilla data not parsed yet).\n`;
+    }
+    out += `\n| Field | Type | Range | Auto |\n|---|---|---|---|\n`;
+    for (const f of t.fields) {
+      const range =
+        f.kind === "number"
+          ? `${f.min ?? "–"} – ${f.max ?? "–"}${f.unit ? " " + f.unit : ""}`
+          : f.enumValues
+            ? f.enumValues.join(" / ")
+            : "—";
+      out += `| ${f.label} (\`${f.key}\`) | ${f.kind} | ${range} | ${f.auto ? "✅" : ""} |\n`;
+    }
+    out += "\n";
+  }
+  return out.trimEnd();
+}
+
+function modgenValidationBlock(v: any): string {
+  if (!v) return "";
+  const lines: string[] = [];
+  lines.push(
+    `**Validation**: ${v.ready ? "✅ ready to ship" : "❌ needs attention"} (script ${v.scriptValid ? "✅" : "❌"} · folder ${v.projectValid ? "✅" : "❌"})`,
+  );
+  for (const w of v.scriptWarnings ?? []) lines.push(`- ⚠️ ${w}`);
+  for (const e of v.projectErrors ?? []) lines.push(`- ❌ ${e}`);
+  for (const w of v.projectWarnings ?? []) lines.push(`- ⚠️ ${w}`);
+  if (v.note) lines.push(`- ℹ️ ${v.note}`);
+  return lines.join("\n");
+}
+
+function modgenStatsTable(blueprint: any): string {
+  const rows = Object.entries(blueprint.stats ?? {})
+    .map(([key, value]) => `| ${key} | \`${String(value)}\` |`)
+    .join("\n");
+  return `| Stat | Value |\n|---|---|\n${rows}`;
+}
+
+export function formatModgenGenerate(r: any): string {
+  const m = r.blueprint?.mod ?? {};
+  const out: string[] = [];
+  if (r.dryRun) {
+    out.push(`# 🟡 Mod Generator dry run — \`${m.name}\``);
+    out.push(`Would create ${r.files.length} files and write the blueprint below.`);
+  } else {
+    out.push(`# ✨ Generated mod \`${m.name}\` (${m.modName})`);
+    out.push(`**Location**: workspace project \`${r.project}\``);
+  }
+  out.push(`**Item**: ${m.displayName} (\`${m.itemName}\` · module \`${m.module}\` · icon \`${m.icon}\`)`);
+  out.push(
+    r.blueprint?.statsSource?.kind === "vanilla"
+      ? `**Stats**: auto-balanced against ${r.blueprint.statsSource.sampleCount} ${r.blueprint.statsSource.label} from the vanilla database`
+      : `**Stats**: balanced defaults (vanilla data not parsed — run parse_game_files for data-driven stats)`,
+  );
+  if (!r.dryRun) out.push("");
+  if (!r.dryRun) out.push(`**Files (${r.files?.length ?? 0})**:`);
+  if (!r.dryRun) {
+    for (const f of r.files ?? []) out.push(`  - \`${f}\``);
+  }
+  if (r.validation) out.push("", modgenValidationBlock(r.validation));
+  out.push("", "### Blueprint stats", modgenStatsTable(r.blueprint));
+  out.push("", "Reopen with `modgen_blueprint`, edit stats, and `modgen_regenerate` anytime.");
+  return out.join("\n");
+}
+
+export function formatModgenList(entries: any[]): string {
+  if (!entries.length) {
+    return "# Mod Generator projects\n\nNone yet — use `modgen_generate` to create your first mod.";
+  }
+  let out = `# Mod Generator projects (${entries.length})\n\n`;
   for (const e of entries) {
-    out += `- ${e.type === "dir" ? "📁" : "📄"} ${e.path}${e.size !== undefined ? ` (${formatBytes(e.size)})` : ""}\n`;
+    out += `- **${e.modName}** (${e.templateLabel}) — item \`${e.itemName}\` · updated ${e.updatedAt.slice(0, 10)} · \`modgen_blueprint project=${e.project}\`\n`;
   }
-  return out;
+  return out.trimEnd();
 }
 
-export function formatWorkspaceFileRead(r: any): string {
-  return `# ${r.path} (${formatBytes(r.size)})\n\n\`\`\`\n${r.content}\n\`\`\``;
-}
-
-export function formatWorkspaceFileWrite(r: any): string {
-  if (r.dryRun) {
-    return `🟡 Dry run — would write ${formatBytes(r.bytes)} to ${r.abs}`;
-  }
-  return `✅ Wrote ${formatBytes(r.bytes)} to ${r.abs}`;
-}
-
-export function formatWorkspaceFilePatch(r: any): string {
-  if (!r.changed) {
-    return `ℹ️ No changes — patches matched nothing new in ${r.path}`;
-  }
-  return `✅ Patched ${r.path} — ${r.changes.length} replacement(s) applied\n${r.changes.map((c: any) => `  - ${c.description || c.oldText.slice(0, 60)} → ${c.newText.slice(0, 40) || "(removed)"}`).join("\n")}`;
-}
-
-export function formatWorkspaceFileDelete(r: any): string {
-  if (r.dryRun) {
-    return `🟡 Dry run — would delete ${r.type} ${r.path} (${r.abs})`;
-  }
-  return `🗑️ Deleted ${r.type} ${r.path}`;
-}
-
-export function formatWorkspaceFileRename(r: any): string {
-  return `✅ Moved ${r.from} → ${r.to}`;
+export function formatModgenBlueprint(bp: any, project: string): string {
+  const m = bp.mod;
+  const out: string[] = [];
+  out.push(`# Mod Generator blueprint — \`${project}\``);
+  out.push(`**Template**: ${bp.template} · **Mod**: ${m.modName} (id \`${m.id}\`) · **Item**: ${m.displayName} (\`${m.itemName}\`)`);
+  out.push(
+    bp.statsSource?.kind === "vanilla"
+      ? `**Stats source**: ${bp.statsSource.sampleCount} ${bp.statsSource.label} (vanilla DB)`
+      : "**Stats source**: balanced defaults",
+  );
+  out.push(`**Created**: ${bp.createdAt} · **Updated**: ${bp.updatedAt}`);
+  out.push("", "### Stats", modgenStatsTable(bp));
+  out.push("", "Edit stats and call `modgen_regenerate` to rewrite the mod.");
+  return out.join("\n");
 }

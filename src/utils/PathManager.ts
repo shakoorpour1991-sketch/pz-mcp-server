@@ -4,7 +4,34 @@ import { access } from "fs/promises";
 import { isAbsolute, join, parse, resolve } from "path";
 import { homedir } from "os";
 import logger from "./logger.js";
-import { pzInstallEnvPath } from "./config.js";
+import {
+  modsDirEnv,
+  pzInstallEnvPath,
+  workshopDirEnv,
+} from "./config.js";
+
+/** A detected path with existence (and optional writability) flags. */
+export interface PzPathInfo {
+  path: string;
+  exists: boolean;
+  writable?: boolean;
+  writableError?: string;
+}
+
+/** Consolidated result of detectAllPaths (detect_pz_paths tool). */
+export interface PzPathsResult {
+  platform: NodeJS.Platform;
+  home: string;
+  gameInstall: { path: string | null; source: string };
+  userDataDir: PzPathInfo;
+  modsDir: PzPathInfo;
+  workshopDir: { path: string | null; exists: boolean };
+  envOverrides: {
+    gamePath?: string;
+    modsDir?: string;
+    workshopDir?: string;
+  };
+}
 
 export class PathManager {
   private commonPaths: string[] = [];
@@ -88,26 +115,169 @@ export class PathManager {
   }
 
   async detectProjectZomboidPath(): Promise<string | null> {
+    return (await this.detectProjectZomboidPathDetailed()).path;
+  }
+
+  /**
+   * detectProjectZomboidPath plus the detection source ('env' | 'steam' |
+   * 'common' | null) so detect_pz_paths can tell the user WHY a path was
+   * picked (and when nothing was found).
+   */
+  async detectProjectZomboidPathDetailed(): Promise<{
+    path: string | null;
+    source: string;
+  }> {
     // First check environment variable override
     const envPath = pzInstallEnvPath();
     if (envPath && this.isValidProjectZomboidInstallation(envPath)) {
-      return envPath;
+      return { path: envPath, source: "env" };
     }
 
     // Then try to detect from Steam registry/config
     const steamPath = await this.detectSteamInstallation();
     if (steamPath) {
-      return steamPath;
+      return { path: steamPath, source: "steam" };
     }
 
     // Then try common installation paths
     for (const path of this.commonPaths) {
       if (this.isValidProjectZomboidInstallation(path)) {
-        return path;
+        return { path, source: "common" };
       }
     }
 
+    return { path: null, source: "none" };
+  }
+
+  /**
+   * Project Zomboid user-data root (saves, config, mods, workshop cache):
+   * <home>/Zomboid on every platform. May not exist yet — callers use the
+   * `exists` flag.
+   */
+  detectUserDataDir(): string {
+    return join(homedir(), "Zomboid");
+  }
+
+  /**
+   * The directory PZ loads manually-installed mods from: <home>/Zomboid/mods.
+   * Overridable with PZ_MODS_DIR (also settable from the Control Deck). The
+   * folder may not exist yet — the mod installer creates it.
+   */
+  detectModsDir(): string {
+    const env = modsDirEnv();
+    if (env) return env;
+    return join(homedir(), "Zomboid", "mods");
+  }
+
+  /**
+   * Steam Workshop content dir for PZ (AppID 108600). Resolution order:
+   * PZ_WORKSHOP_DIR env → derived from the game install's Steam library →
+   * every known Steam library's workshop dir → PZ's own workshop cache under
+   * <home>/Zomboid/workshop.
+   */
+  async detectWorkshopDir(): Promise<string | null> {
+    const env = workshopDirEnv();
+    if (env) return env;
+
+    // Derive from the game install when it lives inside a Steam library.
+    const game = await this.detectProjectZomboidPath();
+    if (game) {
+      const m = game.match(/^(.*[\\/])steamapps[\\/]common[\\/]ProjectZomboid$/i);
+      if (m) {
+        return join(m[1], "steamapps", "workshop", "content", "108600");
+      }
+    }
+
+    // Otherwise scan every Steam library we can find.
+    for (const lib of await this.findSteamLibraries()) {
+      const p = join(lib, "steamapps", "workshop", "content", "108600");
+      if (existsSync(p)) return p;
+    }
+
+    // PZ's own workshop cache under the user data dir.
+    const cache = join(homedir(), "Zomboid", "workshop");
+    if (existsSync(cache)) return cache;
     return null;
+  }
+
+  /**
+   * Every Steam library root the machine exposes (registry + libraryfolders.vdf
+   * on Windows, common roots on Linux/macOS). Used for workshop-dir detection.
+   */
+  private async findSteamLibraries(): Promise<string[]> {
+    const libs: string[] = [];
+    const roots: string[] = [];
+    if (process.platform === "win32") {
+      const reg = await this.readSteamRegistryPath();
+      if (reg) roots.push(reg);
+      roots.push(
+        "C:\\Program Files (x86)\\Steam",
+        "C:\\Program Files\\Steam",
+      );
+    } else if (process.platform === "linux") {
+      const home = homedir();
+      roots.push(
+        join(home, ".steam/debian-installation"),
+        join(home, ".local/share/Steam"),
+        join(home, ".steam/steam"),
+      );
+    } else if (process.platform === "darwin") {
+      roots.push(join(homedir(), "Library/Application Support/Steam"));
+    }
+
+    for (const root of roots) {
+      // The Steam root itself is usually library 0.
+      libs.push(root);
+      const vdf = join(root, "steamapps", "libraryfolders.vdf");
+      if (existsSync(vdf)) {
+        try {
+          libs.push(
+            ...this.parseSteamLibraryFolders(readFileSync(vdf, "utf-8")),
+          );
+        } catch {
+          // unreadable vdf — skip
+        }
+      }
+    }
+    return [...new Set(libs)];
+  }
+
+  /**
+   * Consolidated detection used by detect_pz_paths: game install, user-data
+   * dir, mods dir and workshop dir in one object, with exists/writable flags.
+   */
+  async detectAllPaths(): Promise<PzPathsResult> {
+    const home = homedir();
+    const { path: gamePath, source } =
+      await this.detectProjectZomboidPathDetailed();
+    const userDataDir = this.detectUserDataDir();
+    const modsDir = this.detectModsDir();
+    const workshopDir = await this.detectWorkshopDir();
+    const writable = await this.isAncestorWritable(modsDir);
+    const envGame = pzInstallEnvPath();
+    const envMods = modsDirEnv();
+    const envWs = workshopDirEnv();
+    return {
+      platform: process.platform,
+      home,
+      gameInstall: { path: gamePath, source },
+      userDataDir: { path: userDataDir, exists: existsSync(userDataDir) },
+      modsDir: {
+        path: modsDir,
+        exists: existsSync(modsDir),
+        writable: writable.writable,
+        ...(writable.error !== undefined ? { writableError: writable.error } : {}),
+      },
+      workshopDir: {
+        path: workshopDir,
+        exists: workshopDir !== null && existsSync(workshopDir),
+      },
+      envOverrides: {
+        ...(envGame !== undefined ? { gamePath: envGame } : {}),
+        ...(envMods !== undefined ? { modsDir: envMods } : {}),
+        ...(envWs !== undefined ? { workshopDir: envWs } : {}),
+      },
+    };
   }
 
   private async detectSteamInstallation(): Promise<string | null> {

@@ -38,6 +38,7 @@ export const EnvSchema = z.object({
   PROJECTZOMBOID_PATH: z.string().min(1).optional(),
   PZ_PATH: z.string().min(1).optional(),
   PZ_WORKSHOP_DIR: z.string().min(1).optional(),
+  PZ_MODS_DIR: z.string().min(1).optional(),
   STEAMCMD_PATH: z.string().min(1).optional(),
   STEAMCMD_USER: z.string().min(1).optional(),
   STEAMCMD_PASS: z.string().min(1).optional(),
@@ -126,6 +127,24 @@ export function gameVersion(): string {
  */
 export function pzInstallEnvPath(): string | undefined {
   return validateEnvConfig().PROJECTZOMBOID_PATH || validateEnvConfig().PZ_PATH;
+}
+
+/**
+ * Explicit Project Zomboid mods directory (where install_mod drops mods).
+ * Override with PZ_MODS_DIR (default: <home>/Zomboid/mods on every platform).
+ * Also settable from the Control Deck → Installer tab (persisted via the
+ * bridge into the child process env).
+ */
+export function modsDirEnv(): string | undefined {
+  return validateEnvConfig().PZ_MODS_DIR;
+}
+
+/**
+ * Explicit Steam Workshop content dir (AppID 108600) for workshop downloads.
+ * Override with PZ_WORKSHOP_DIR.
+ */
+export function workshopDirEnv(): string | undefined {
+  return validateEnvConfig().PZ_WORKSHOP_DIR;
 }
 
 /**
