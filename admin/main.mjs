@@ -2913,6 +2913,17 @@ function boot(){
       termApply();
     }
   });
+  // Scroll perf: tag <html> while ANYTHING scrolls (capture phase catches inner
+  // scrollers — wire log, server log, modals, terminal — not just the page) so
+  // the ambient background animations (blob drift, shimmer, pulses) pause on the
+  // compositor, freeing GPU bandwidth for the scroll painting itself.
+  let _scrollPauseT = 0;
+  document.addEventListener('scroll', () => {
+    const de = document.documentElement;
+    if (!de.classList.contains('scrolling')) de.classList.add('scrolling');
+    clearTimeout(_scrollPauseT);
+    _scrollPauseT = setTimeout(() => de.classList.remove('scrolling'), 150);
+  }, { capture:true, passive:true });
   // Real fullscreen (requestFullscreen): exiting via Esc/button/OS returns the
   // graph to the launcher card automatically.
   document.addEventListener('fullscreenchange', () => {
