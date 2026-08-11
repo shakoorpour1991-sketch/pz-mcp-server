@@ -627,7 +627,9 @@ function metricCard(id, label, rc, sub) {
     rc +
     '" data-card="metric-' +
     id +
-    '"><div class="m-top">' +
+    '"><div class="m-top" data-act="card-collapse" data-card="metric-' +
+    id +
+    '">' +
     ringSVG(id, rc) +
     '<div style="min-width:0"><div class="m-label">' +
     label +
@@ -684,7 +686,7 @@ function statusHTML() {
     ) +
     "</div>" +
     '<section class="glass card panel-card kb-idx-card" data-card="kb-idx">' +
-    "<h3>" +
+    '<h3 data-act="card-collapse" data-card="kb-idx">' +
     ICONS.book +
     " Knowledge Base Index" +
     cardCollapseBtn("kb-idx") +
@@ -692,17 +694,17 @@ function statusHTML() {
     '<div class="kb-idx-grid" id="kbIdxGrid"></div>' +
     "</section>" +
     '<div class="status-grid">' +
-    '<section class="glass card panel-card" data-card="transport"><h3>' +
+    '<section class="glass card panel-card" data-card="transport"><h3 data-act="card-collapse" data-card="transport">' +
     ICONS.link +
     " Transports & State" +
     cardCollapseBtn("transport") +
     '</h3><div id="transportRows"></div></section>' +
-    '<section class="glass card panel-card" data-card="srvlog"><h3>' +
+    '<section class="glass card panel-card" data-card="srvlog"><h3 data-act="card-collapse" data-card="srvlog">' +
     ICONS.doc +
     " Server Log" +
     cardCollapseBtn("srvlog") +
     '<span class="badge b-dim" style="margin-left:auto">pino · stderr</span></h3><div class="srvlog" id="srvLog"></div></section>' +
-    '<section class="glass card panel-card" data-card="info"><h3>' +
+    '<section class="glass card panel-card" data-card="info"><h3 data-act="card-collapse" data-card="info">' +
     ICONS.spark +
     " Server Info" +
     cardCollapseBtn("info") +

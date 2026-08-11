@@ -918,7 +918,20 @@ main {
   height: 15px;
   color: rgb(var(--accent-rgb));
 }
-/* Collapse/expand toggle on Status-tab cards */
+/* Collapse/expand toggle on Status-tab cards — the whole card header
+   (panel-card h3 / metric .m-top) is the click target; the chevron button
+   is the visible affordance. */
+.panel-card[data-card] > h3,
+.metric[data-card] > .m-top {
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background 0.15s;
+  user-select: none;
+}
+.panel-card[data-card] > h3:hover,
+.metric[data-card] > .m-top:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
 .card-collapse {
   display: inline-flex;
   align-items: center;
