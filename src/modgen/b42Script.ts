@@ -12,7 +12,7 @@
 import type { ModgenTemplate } from "./templates.js";
 
 /** Structural slice of ModgenBlueprint needed to render script + translation. */
-export interface BlueprintLike {
+interface BlueprintLike {
   mod: {
     module: string;
     itemName: string;
@@ -47,7 +47,7 @@ function fmtValue(v: unknown): string {
 const SAFE_MODULE = /^[A-Za-z0-9_]+$/;
 
 /** Module names must be identifier-safe; fall back to Base otherwise. */
-export function safeModule(module: string): string {
+function safeModule(module: string): string {
   return SAFE_MODULE.test(module) ? module : "Base";
 }
 

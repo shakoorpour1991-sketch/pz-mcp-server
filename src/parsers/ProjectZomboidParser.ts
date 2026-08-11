@@ -14,7 +14,7 @@ import { scanScriptBlocks, ScanBlock } from "../utils/scriptScanner.js";
 import { isBlockType } from "../utils/blockTypes.js";
 import logger from "../utils/logger.js";
 
-export interface ParseResults {
+interface ParseResults {
   itemCount: number;
   recipeCount: number;
   soundCount: number;

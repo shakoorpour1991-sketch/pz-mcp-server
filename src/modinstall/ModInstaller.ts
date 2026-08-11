@@ -50,13 +50,13 @@ export class ModInstallError extends Error {
   }
 }
 
-export interface ModInfoMeta {
+interface ModInfoMeta {
   id?: string;
   name?: string;
   version?: string;
 }
 
-export interface ModInstallEntry {
+interface ModInstallEntry {
   /** Folder name as installed under the target mods dir. */
   name: string;
   modId?: string;
@@ -70,7 +70,7 @@ export interface ModInstallEntry {
   filesCopied?: number;
 }
 
-export interface ModInstallResult {
+interface ModInstallResult {
   source: string;
   sourceKind: "zip" | "folder";
   /** Where mods were (or would be) installed. */
@@ -81,7 +81,7 @@ export interface ModInstallResult {
   dryRun: boolean;
 }
 
-export interface ModInstallOptions {
+interface ModInstallOptions {
   targetDir?: string;
   overwrite?: boolean;
   dryRun?: boolean;
@@ -502,7 +502,7 @@ export class ModInstaller {
 
 /** Minimal mod.info metadata read (id/name/version) — same line format the
  * game and ProjectZomboidParser.parseModInfo use (`key = value`). */
-export async function readModInfoMeta(
+async function readModInfoMeta(
   modInfoPath: string,
 ): Promise<ModInfoMeta> {
   try {
@@ -540,7 +540,7 @@ async function readModInfoId(modInfoPath: string): Promise<string | undefined> {
 
 /** Replace characters Windows/macOS cannot handle in folder names, and guard
  * against Windows reserved device names (CON, NUL, COM1…). */
-export function sanitizeFolderName(name: string): string {
+function sanitizeFolderName(name: string): string {
   const invalid = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
   const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
   let n = String(name)

@@ -16,9 +16,9 @@ import { mkdirSync, writeFileSync } from "fs";
 import { dirname, join, sep } from "path";
 
 /** Default total uncompressed size cap for one archive (8 GiB). */
-export const DEFAULT_MAX_ZIP_BYTES = 8 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_ZIP_BYTES = 8 * 1024 * 1024 * 1024;
 
-export interface ZipExtractSummary {
+interface ZipExtractSummary {
   entryCount: number;
   fileCount: number;
   totalBytes: number;

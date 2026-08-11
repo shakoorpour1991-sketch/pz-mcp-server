@@ -12,7 +12,7 @@ import {
 } from "./zedScriptsRuleEngine.js";
 import { getZedScriptsKnowledge } from "./zedScriptsKnowledge.js";
 
-export interface ValidationResult {
+interface ValidationResult {
   isValid: boolean;
   errors: ValidationError[];
   warnings: ValidationWarning[];
@@ -31,7 +31,7 @@ export interface ValidationResult {
   };
 }
 
-export interface ValidationError {
+interface ValidationError {
   line: number;
   column?: number;
   message: string;
@@ -69,11 +69,11 @@ export interface ScriptValidationOptions {
   zedScripts?: boolean;
 }
 
-export interface ValidationWarning extends ValidationError {
+interface ValidationWarning extends ValidationError {
   severity: "warning";
 }
 
-export interface ReferenceValidationResult {
+interface ReferenceValidationResult {
   reference: string;
   type: string;
   isValid: boolean;

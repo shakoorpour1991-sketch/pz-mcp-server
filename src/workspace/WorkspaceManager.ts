@@ -29,7 +29,7 @@ import { randomBytes } from "crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
 
 /** Stable, machine-readable error codes for workspace operations. */
-export type WorkspaceErrorCode =
+type WorkspaceErrorCode =
   | "PATH_ESCAPE"
   | "INVALID_PATH"
   | "NOT_FOUND"
@@ -78,14 +78,14 @@ export interface CreateProjectOptions {
   dryRun?: boolean;
 }
 
-export interface CreateProjectResult {
+interface CreateProjectResult {
   project: string;
   root: string;
   created: string[];
   dryRun: boolean;
 }
 
-export interface ProjectInfo {
+interface ProjectInfo {
   name: string;
   root: string;
   path: string;
@@ -100,13 +100,13 @@ export interface ProjectFileEntry {
   size?: number;
 }
 
-export interface ListOptions {
+interface ListOptions {
   recursive?: boolean;
   maxDepth?: number;
   maxEntries?: number;
 }
 
-export interface FilePatch {
+interface FilePatch {
   oldText: string;
   newText?: string;
   /** Exact number of occurrences required (default: replace all). */
@@ -114,24 +114,24 @@ export interface FilePatch {
   description?: string;
 }
 
-export interface PatchChange {
+interface PatchChange {
   oldText: string;
   newText: string;
   description?: string;
 }
 
-export interface WriteOptions {
+interface WriteOptions {
   overwrite?: boolean;
   dryRun?: boolean;
 }
 
-export interface DeleteOptions {
+interface DeleteOptions {
   force?: boolean;
   recursive?: boolean;
   dryRun?: boolean;
 }
 
-export interface RenameOptions {
+interface RenameOptions {
   overwrite?: boolean;
 }
 

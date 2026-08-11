@@ -14,7 +14,7 @@ import type { DatabaseManager } from "../database/DatabaseManager.js";
 import type { ModgenTemplate } from "./templates.js";
 
 /** BloodLocation values documented for Build 42 clothing (API docs 42.20). */
-export const BLOOD_LOCATIONS = new Set([
+const BLOOD_LOCATIONS = new Set([
   "Apron",
   "Bag",
   "Foot_L",
@@ -52,7 +52,7 @@ export const BLOOD_LOCATIONS = new Set([
   "UpperLegs",
 ]);
 
-export interface B42Result {
+interface B42Result {
   errors: string[];
   warnings: string[];
   info: string[];

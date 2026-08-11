@@ -45,14 +45,14 @@ import {
   type ZedParameterTypeInfo,
 } from "./zedScriptsKnowledge.js";
 
-export type ZedDiagnosticSeverity = "error" | "warning" | "info";
+type ZedDiagnosticSeverity = "error" | "warning" | "info";
 
 /**
  * Diagnostic provenance — distinguishes the checks we ported verbatim from
  * the ZedScripts extension (ORIGINAL_ZEDSCRIPT) from the extensions this
  * server adds on top (dev_functionality: deep-scan hierarchy checks, …).
  */
-export type ZedProvenance = "ORIGINAL_ZEDSCRIPT" | "dev_functionality";
+type ZedProvenance = "ORIGINAL_ZEDSCRIPT" | "dev_functionality";
 
 /** One structured diagnostic produced by the ZedScripts layer. */
 export interface ZedDiagnostic {
@@ -83,7 +83,7 @@ export interface ZedDiagnostic {
   source: "zedscripts";
 }
 
-export interface ZedScriptsDiagnosticsOptions {
+interface ZedScriptsDiagnosticsOptions {
   /** File the content came from — attached to every diagnostic. */
   filePath?: string;
 }

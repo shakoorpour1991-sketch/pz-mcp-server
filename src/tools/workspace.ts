@@ -33,7 +33,7 @@ import {
 // Shared result shapes
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceInspectResult {
+interface WorkspaceInspectResult {
   project: string;
   path: string;
   modId?: string;
@@ -65,12 +65,12 @@ export interface WorkspaceInspectResult {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers (exported so unit tests can drive them with a mocked context)
+// Helpers
 // ---------------------------------------------------------------------------
 
 /** Absolute path of a project folder (WorkspaceError flows to the dispatcher's
  * single error mapper — see utils/mcpErrors.ts). */
-export function resolveProjectAbs(
+function resolveProjectAbs(
   workspaceManager: WorkspaceManager,
   project: string,
 ): string {

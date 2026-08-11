@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dead exports removed across `src/` (whole-project src audit)** — an export-reference scan (exported symbols never imported anywhere in src/tests/admin/scripts, verified against every consumer) found 92 exported declarations nothing consumes; all 92 `export` keywords stripped across 28 files (types that shape a module's own results — analyzer/validator/parser/modgen/workshop/workspace result types — stay local, shrinking the emitted `.d.ts` surface), plus two genuinely dead symbols removed outright (`isRealPng` in `modgen/assets.ts` — an unused function; `SearchType` in `utils/blockTypes.ts` — an unused type alias; both had zero usages even in-file) and a stale "exported so unit tests can drive them" comment corrected in `src/tools/workspace.ts`. Build + lint + all 559 tests stay green; re-running the scanner now reports zero dead exports
+
 ### Added
 
 - **Control Deck full tool wiring + project hygiene (whole-project audit fixes)** — closes every gap the audit found:

@@ -57,7 +57,7 @@ export const EnvSchema = z.object({
   PZ_MCP_MAX_DOWNLOAD_BYTES: z.coerce.number().int().positive().optional(),
 });
 
-export type EnvConfig = z.infer<typeof EnvSchema>;
+type EnvConfig = z.infer<typeof EnvSchema>;
 
 /**
  * Parse + validate the environment. Throws with a per-variable breakdown on

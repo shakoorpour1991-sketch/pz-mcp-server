@@ -57,7 +57,7 @@ export const BASE_KEYWORDS = [
 // Group 1 = keyword, group 2 = name (same capture order as the deep regex).
 const BLOCK_RE = new RegExp("^(" + BASE_KEYWORDS.join("|") + ")\\s+([^{]+)");
 
-export interface ScanBlockOptions {
+interface ScanBlockOptions {
   /**
    * Extra block keywords to recognize as block headers (may be multi-token,
    * e.g. "component FluidContainer"). Only meaningful together with `nested`:

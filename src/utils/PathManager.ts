@@ -7,7 +7,7 @@ import logger from "./logger.js";
 import { modsDirEnv, pzInstallEnvPath, workshopDirEnv } from "./config.js";
 
 /** A detected path with existence (and optional writability) flags. */
-export interface PzPathInfo {
+interface PzPathInfo {
   path: string;
   exists: boolean;
   writable?: boolean;
@@ -15,7 +15,7 @@ export interface PzPathInfo {
 }
 
 /** Consolidated result of detectAllPaths (detect_pz_paths tool). */
-export interface PzPathsResult {
+interface PzPathsResult {
   platform: NodeJS.Platform;
   home: string;
   gameInstall: { path: string | null; source: string };

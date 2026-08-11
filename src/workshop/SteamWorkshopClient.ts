@@ -35,7 +35,7 @@ const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const DEFAULT_TIMEOUT_MS = 15000;
 const ITEM_ID_RE = /^\d{6,15}$/;
 
-export interface WorkshopItemSummary {
+interface WorkshopItemSummary {
   id: string;
   title: string;
   author: string;
@@ -47,7 +47,7 @@ export interface WorkshopItemSummary {
   url: string;
 }
 
-export interface WorkshopItemDetails extends WorkshopItemSummary {
+interface WorkshopItemDetails extends WorkshopItemSummary {
   appId: string;
   fileSize: number;
   fileUrl: string;
@@ -60,7 +60,7 @@ export interface WorkshopItemDetails extends WorkshopItemSummary {
   workspaceAccepted: boolean;
 }
 
-export interface SteamWorkshopClientOptions {
+interface SteamWorkshopClientOptions {
   /** Override the cache file location (tests). */
   cacheFile?: string;
   /** Override the fetch implementation (tests). */

@@ -27,7 +27,7 @@ import { WorkspaceError } from "../workspace/WorkspaceManager.js";
  * this only tames error messages that would otherwise echo the machine
  * layout back to a client.
  */
-export function sanitizeErrorMessage(message: string): string {
+function sanitizeErrorMessage(message: string): string {
   return message.replace(
     /[A-Za-z]:[\\/][^\s\n)]*|(?:\/home\/|\/Users\/|\/mnt\/[a-z]\/)[^\s\n)]*/g,
     "<local path>",

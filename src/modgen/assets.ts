@@ -37,7 +37,7 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /** Encode an RGB image (8-bit, truecolor, non-interlaced) as a PNG buffer. */
-export function encodePng(
+function encodePng(
   width: number,
   height: number,
   pixel: (x: number, y: number) => Rgb,
@@ -122,14 +122,3 @@ export function makeIconPng(color: Rgb): Buffer {
   });
 }
 
-/** True if the buffer looks like a real (non-1×1) PNG image. */
-export function isRealPng(buf: Buffer): boolean {
-  return (
-    buf.length > 100 &&
-    buf.length >= 8 &&
-    buf[0] === 0x89 &&
-    buf[1] === 0x50 && // P
-    buf[2] === 0x4e && // N
-    buf[3] === 0x47 // G
-  );
-}

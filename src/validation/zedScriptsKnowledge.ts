@@ -48,25 +48,25 @@ export const ZED_VALUE_TYPES = {
   TRANSLATION: "translation",
 } as const;
 
-export interface ZedArrayType {
+interface ZedArrayType {
   separator: string;
   type: "string" | "integer" | "float" | "boolean";
 }
 
-export interface ZedObjectType {
+interface ZedObjectType {
   keyValueSeparator: string;
   keyType: "string" | "integer" | "float" | "boolean";
   valueType: "string" | "integer" | "float" | "boolean";
   pairsSeparator: string;
 }
 
-export interface ZedBlockType {
+interface ZedBlockType {
   name: string;
   fullType?: boolean;
   noAutoImport?: boolean;
 }
 
-export interface ZedTranslationType {
+interface ZedTranslationType {
   keyPattern?: string;
   sourceFile?: string;
 }
@@ -80,13 +80,13 @@ export interface ZedParameterTypeInfo {
   callback?: unknown;
 }
 
-export interface ZedDeprecatedInfo {
+interface ZedDeprecatedInfo {
   replacedBy?: string;
   description?: string;
   version?: string;
 }
 
-export interface ZedNeedsInfo {
+interface ZedNeedsInfo {
   name?: string;
   values?: Array<string | number | boolean>;
   valueToType?: Record<string, string>;
@@ -118,7 +118,7 @@ export interface ZedParameter {
   anyName?: boolean;
 }
 
-export interface ZedIdInfo {
+interface ZedIdInfo {
   optional?: string[];
   parentsWithout?: string[];
   values?: string[];
@@ -141,7 +141,7 @@ export interface ZedBlockData {
   description?: string;
 }
 
-export interface ZedScriptsSourceInfo {
+interface ZedScriptsSourceInfo {
   source: string;
   dataset: string;
   vendoredBy: string;
@@ -150,7 +150,7 @@ export interface ZedScriptsSourceInfo {
   commitShort: string;
 }
 
-export interface ZedScriptsKnowledge {
+interface ZedScriptsKnowledge {
   blocks: Map<string, ZedBlockData>;
   source: ZedScriptsSourceInfo;
 }
@@ -420,7 +420,7 @@ export function getKnownBlockNames(): Set<string> {
  * newest verified Build 42 documentation, so these are accepted rather than
  * flagged as unknown — "verified game data wins" conflict resolution.
  */
-export interface VanillaVerifiedData {
+interface VanillaVerifiedData {
   source: {
     generatedBy: string;
     gameInstall: string;
@@ -440,7 +440,7 @@ export interface VanillaVerifiedData {
 let vanillaVerifiedCache: VanillaVerifiedData | null = null;
 
 /** Lazily load the vanilla-verified extensions (memoized per process). */
-export function getVanillaVerified(): VanillaVerifiedData {
+function getVanillaVerified(): VanillaVerifiedData {
   if (vanillaVerifiedCache) return vanillaVerifiedCache;
   vanillaVerifiedCache = loadJson(
     "vanillaVerified.json",

@@ -8,7 +8,7 @@
  */
 
 /** Separator styles used by PZ script blocks. */
-export type PropertySeparator = "=" | ":" | "[:=]";
+type PropertySeparator = "=" | ":" | "[:=]";
 
 const PROPERTY_LINE_RE: Record<PropertySeparator, RegExp> = {
   // Value may be a comma-separated list ("Base.Potato, Base.Cabbage,"), so

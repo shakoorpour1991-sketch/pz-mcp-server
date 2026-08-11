@@ -18,7 +18,7 @@ const LEGACY_TYPE_TO_ITEMTYPE: Record<string, string> = {
   literature: "base:literature",
 };
 
-export interface ItemTemplate {
+interface ItemTemplate {
   type: string;
   category: string;
   baseStats: Record<string, any>;

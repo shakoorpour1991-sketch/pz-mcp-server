@@ -32,12 +32,12 @@ import { PZ_APPID } from "./SteamWorkshopClient.js";
 import { PathManager } from "../utils/PathManager.js";
 import logger from "../utils/logger.js";
 
-export interface SteamCmdRunResult {
+interface SteamCmdRunResult {
   code: number;
   output: string;
 }
 
-export interface DownloadResult {
+interface DownloadResult {
   id: string;
   downloadedPath: string;
   bytes: number;
@@ -47,7 +47,7 @@ export interface DownloadResult {
   note?: string;
 }
 
-export interface DownloadProgress {
+interface DownloadProgress {
   /** Bytes on disk in the (still-temp) download folder so far. */
   bytes: number;
   /** Expected total bytes (from workshop metadata); 0 when unknown. */
@@ -57,7 +57,7 @@ export interface DownloadProgress {
   elapsedMs: number;
 }
 
-export interface SteamCmdDownloaderOptions {
+interface SteamCmdDownloaderOptions {
   /** Explicit steamcmd binary path (else env STEAMCMD_PATH, else common paths). */
   steamCmdPath?: string;
   /** Explicit workshop output dir (else env PZ_WORKSHOP_DIR, else Steam install). */

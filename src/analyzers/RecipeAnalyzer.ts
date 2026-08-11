@@ -29,9 +29,9 @@ import {
  * out to thousands of nodes — stop at the cap and flag truncation instead of
  * hanging the tool reply (recipe-chain review).
  */
-export const CHAIN_MAX_NODES = 500;
+const CHAIN_MAX_NODES = 500;
 
-export interface ChainNode {
+interface ChainNode {
   id: string;
   kind: "recipe" | "item" | "unknown";
   name: string;
@@ -67,7 +67,7 @@ export interface ChainNode {
   cycle?: boolean;
 }
 
-export interface ChainResult {
+interface ChainResult {
   seed: string;
   seedKind: "recipe" | "item" | "unknown";
   nodes: ChainNode[];
@@ -84,7 +84,7 @@ export interface ChainResult {
   pathFound?: boolean;
 }
 
-export interface RecipeConflict {
+interface RecipeConflict {
   /** The item id produced by more than one recipe. */
   item: string;
   /** The recipes (ids) that all claim to produce it. */
@@ -97,7 +97,7 @@ export interface RecipeConflict {
   severity: "high" | "low";
 }
 
-export interface ConflictResult {
+interface ConflictResult {
   conflicts: RecipeConflict[];
   totalRecipes: number;
 }

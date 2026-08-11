@@ -23,7 +23,7 @@
 export type ModgenTemplateId =
   "simple_item" | "melee_weapon" | "food" | "tool" | "clothing";
 
-export type StatFieldKind = "number" | "bool" | "enum" | "string";
+type StatFieldKind = "number" | "bool" | "enum" | "string";
 
 export interface StatField {
   /** The Project Zomboid script property this field maps to. */
@@ -49,7 +49,7 @@ export interface StatField {
 }
 
 /** How ready this template's output is for a typical beginner. */
-export type ModgenMaturity = "ready" | "beta";
+type ModgenMaturity = "ready" | "beta";
 
 export interface ModgenTemplate {
   id: ModgenTemplateId;

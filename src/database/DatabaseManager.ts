@@ -92,7 +92,7 @@ export interface GameItem {
   calories?: number | undefined;
 }
 
-export interface SearchOptions {
+interface SearchOptions {
   type?: string;
   category?: string;
   tags?: string;
@@ -166,7 +166,7 @@ export interface GameRecipe {
 }
 
 export type RecipeIngredientRole = "ingredient" | "tool" | "output";
-export type RecipeRefType = "item" | "tag" | "mapper";
+type RecipeRefType = "item" | "tag" | "mapper";
 
 export interface RecipeIngredient {
   recipeId: string;
@@ -177,7 +177,7 @@ export interface RecipeIngredient {
   sortOrder: number;
 }
 
-export interface RecipeSearchOptions {
+interface RecipeSearchOptions {
   query?: string;
   category?: string;
   skill?: string;
@@ -189,7 +189,7 @@ export interface RecipeSearchOptions {
   limit?: number;
 }
 
-export interface RecipeSearchResult {
+interface RecipeSearchResult {
   id: string;
   name: string;
   module: string;

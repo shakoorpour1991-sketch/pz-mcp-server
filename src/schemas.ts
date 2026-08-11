@@ -715,7 +715,7 @@ export const ModgenRegenerateSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Workspace-relative paths are strictly confined to the configured roots. */
-export const WorkspaceProjectSchema = z.object({
+const WorkspaceProjectSchema = z.object({
   project: z
     .string()
     .min(1)

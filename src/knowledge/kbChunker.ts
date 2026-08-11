@@ -33,7 +33,7 @@ export const KB_DOC_TYPES = [
 export type KbDocType = (typeof KB_DOC_TYPES)[number];
 
 /** One searchable unit of a doc. */
-export interface KbChunk {
+interface KbChunk {
   /** Unique id: `<docTopic>#<slug>`, deterministic from content order. */
   chunkTopic: string;
   docTopic: string;
@@ -58,7 +58,7 @@ export interface KbChunk {
 }
 
 /** Fully parsed + chunked doc, ready for the KB tables. */
-export interface KbParsedDoc {
+interface KbParsedDoc {
   docTopic: string;
   title: string;
   source: string;
@@ -72,7 +72,7 @@ export interface KbParsedDoc {
 }
 
 /** Frontmatter values: scalars and inline arrays. */
-export interface FrontmatterMeta {
+interface FrontmatterMeta {
   [key: string]: string | string[];
 }
 

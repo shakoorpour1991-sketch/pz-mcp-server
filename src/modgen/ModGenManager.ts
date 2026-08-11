@@ -44,7 +44,7 @@ import { inspectProject } from "../tools/workspace.js";
 // Blueprint shape (the editable, reopenable config of a generated mod)
 // ---------------------------------------------------------------------------
 
-export interface ModgenRange {
+interface ModgenRange {
   min: number;
   max: number;
   median: number;
@@ -53,7 +53,7 @@ export interface ModgenRange {
   count: number;
 }
 
-export interface ModgenStatsSource {
+interface ModgenStatsSource {
   kind: "vanilla" | "defaults";
   label: string;
   sampleCount: number;
@@ -64,7 +64,7 @@ export interface ModgenStatsSource {
   sourceFiles?: number;
 }
 
-export interface ModgenModInfo {
+interface ModgenModInfo {
   name: string;
   id: string;
   modName: string;
@@ -88,7 +88,7 @@ export interface ModgenBlueprint {
   updatedAt: string;
 }
 
-export interface ModgenScriptDiagnostic {
+interface ModgenScriptDiagnostic {
   /** Source file, when the script was read from disk. */
   file?: string;
   line: number;
@@ -104,7 +104,7 @@ export interface ModgenScriptDiagnostic {
   expected?: string;
 }
 
-export interface ModgenValidation {
+interface ModgenValidation {
   scriptValid: boolean;
   projectValid: boolean;
   ready: boolean;
@@ -135,7 +135,7 @@ export interface ModgenValidation {
   note?: string;
 }
 
-export interface ModgenGenerateResult {
+interface ModgenGenerateResult {
   project: string;
   /** Absolute path of the project folder on disk. */
   absPath: string;
@@ -146,7 +146,7 @@ export interface ModgenGenerateResult {
   validation?: ModgenValidation;
 }
 
-export interface ModgenListEntry {
+interface ModgenListEntry {
   project: string;
   template: ModgenTemplateId;
   templateLabel: string;
@@ -155,7 +155,7 @@ export interface ModgenListEntry {
   updatedAt: string;
 }
 
-export interface ModgenGenerateArgs {
+interface ModgenGenerateArgs {
   template: ModgenTemplateId;
   name: string;
   modId: string;
@@ -172,7 +172,7 @@ export interface ModgenGenerateArgs {
   dryRun?: boolean;
 }
 
-export interface ModgenRegenerateArgs {
+interface ModgenRegenerateArgs {
   project: string;
   modName?: string;
   author?: string;

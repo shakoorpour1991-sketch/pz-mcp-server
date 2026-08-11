@@ -17,7 +17,7 @@ import { parseKbDoc, type KbDocType } from "./kbChunker.js";
  * for existing v2 databases. The KB DB is a disposable cache, so the v1 → v2
  * migration is a clean drop + recreate: index tools repopulate.
  */
-export const KB_SCHEMA_VERSION = 3;
+const KB_SCHEMA_VERSION = 3;
 
 export class KnowledgeBaseManager {
   private db!: DatabaseSync;

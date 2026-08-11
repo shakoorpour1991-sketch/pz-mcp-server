@@ -24,5 +24,3 @@ export function isBlockType(value: string): value is BlockType {
 
 /** Search tool type filter — the six block types plus 'all'. */
 export const SEARCH_TYPES = [...BLOCK_TYPES, "all"] as const;
-
-export type SearchType = (typeof SEARCH_TYPES)[number];

@@ -15,7 +15,7 @@ import { ValidationEngine } from "../validation/ValidationEngine.js";
 import { gameVersion } from "../utils/config.js";
 import logger from "../utils/logger.js";
 
-export interface ModAnalysisResult {
+interface ModAnalysisResult {
   modName?: string;
   modPath: string;
   modInfo?: ModInfo;
@@ -28,7 +28,7 @@ export interface ModAnalysisResult {
   recommendations: string[];
 }
 
-export interface StructureAnalysis {
+interface StructureAnalysis {
   hasModInfo: boolean;
   hasCorrectStructure: boolean;
   scriptCount: number;
@@ -40,7 +40,7 @@ export interface StructureAnalysis {
   hasCommonFolder: boolean;
 }
 
-export interface Issue {
+interface Issue {
   file: string;
   line?: number;
   column?: number;
@@ -50,7 +50,7 @@ export interface Issue {
   suggestion?: string;
 }
 
-export interface BalanceAnalysis {
+interface BalanceAnalysis {
   itemCount: number;
   averageStats: Record<string, number>;
   outliers: Array<{
@@ -64,7 +64,7 @@ export interface BalanceAnalysis {
   recommendations: string[];
 }
 
-export interface CompatibilityAnalysis {
+interface CompatibilityAnalysis {
   conflicts: Array<{ type: string; item: string; conflictsWith: string }>;
   missingDependencies: string[];
   incompatibleMods: string[];
@@ -75,12 +75,12 @@ export interface CompatibilityAnalysis {
   };
 }
 
-export interface PerformanceAnalysis {
+interface PerformanceAnalysis {
   largeFiles: Array<{ file: string; size: number }>;
   recommendations: string[];
 }
 
-export interface QualityMetrics {
+interface QualityMetrics {
   overall: number; // 0-100
   structure: number;
   syntax: number;
@@ -88,7 +88,7 @@ export interface QualityMetrics {
   documentation: number;
 }
 
-export interface AnalysisOptions {
+interface AnalysisOptions {
   checkBalance?: boolean;
   checkCompatibility?: boolean;
   checkPerformance?: boolean;
