@@ -255,31 +255,30 @@ describe("Mod Generator", () => {
   });
 
   test("randomize rolls auto stats inside the vanilla range", async () => {
-    const res1 = await manager.generate(ctx, {
-      ...baseArgs(),
-      name: "RollA",
-      modId: "roll_a",
-      itemName: "RollAItem",
-      randomize: true,
-    });
-    const res2 = await manager.generate(ctx, {
-      ...baseArgs(),
-      name: "RollB",
-      modId: "roll_b",
-      itemName: "RollBItem",
-      randomize: true,
-    });
-    assert.equal(res1.blueprint.statsSource.kind, "vanilla");
-    const r = res1.blueprint.statsSource.ranges.MaxDamage;
-    const val = res1.blueprint.stats.MaxDamage;
-    assert.ok(
-      val >= r.p25 - 1e-9 && val <= r.p75 + 1e-9,
-      `rolled ${val} inside IQR [${r.p25}, ${r.p75}]`,
-    );
-    assert.ok(
-      res1.blueprint.stats.MaxDamage !== 1.0 ||
-        res2.blueprint.stats.MaxDamage !== 1.0,
-    );
+    const rolls = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await manager.generate(ctx, {
+        ...baseArgs(),
+        name: `Roll${i}`,
+        modId: `roll_${i}`,
+        itemName: `Roll${i}Item`,
+        randomize: true,
+      });
+      assert.equal(res.blueprint.statsSource.kind, "vanilla");
+      const r = res.blueprint.statsSource.ranges.MaxDamage;
+      const val = res.blueprint.stats.MaxDamage;
+      assert.ok(
+        val >= r.p25 - 1e-9 && val <= r.p75 + 1e-9,
+        `rolled ${val} inside IQR [${r.p25}, ${r.p75}]`,
+      );
+      rolls.push(val);
+    }
+    // Rolls are step-rounded, so a roll can legitimately land on the median
+    // (with the seeded [0.7, 1.0, 1.6] data the IQR is [0.7, 1.0] and a 0.1
+    // step puts ~1/6 of rolls on 1.0) — a two-roll pair would flake. Six
+    // independent rolls make "all identical" astronomically unlikely
+    // (~1/46k) while still proving randomize actually varies.
+    assert.ok(new Set(rolls).size > 1, `rolls varied: ${rolls.join(", ")}`);
   });
 
   test("dryRun previews the exact file plan without writing anything", async () => {
