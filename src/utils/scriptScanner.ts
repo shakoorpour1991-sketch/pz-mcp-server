@@ -30,7 +30,7 @@
  */
 
 /** Container types whose inner lines must never leak as fake items. */
-const BASE_KEYWORDS = [
+export const BASE_KEYWORDS = [
   "item",
   "recipe",
   "craftRecipe",
@@ -123,12 +123,39 @@ export function stripLineComments(
   return { code, inBlockComment };
 }
 
-/** Count { and } in a comment-stripped line. Shared by the scanner and ValidationEngine. */
+/**
+ * Count { and } in a comment-stripped line, ignoring braces inside quoted
+ * strings. An unbalanced brace in a quoted value (`DisplayName = "A {brace"`)
+ * must not shift the brace depth for every following line — that would
+ * mis-parent every subsequent block (a sibling becomes a nested child →
+ * spurious WRONG_PARENT / MISSING_PARAMETER, or silently skips checks).
+ * Shared by the scanner, the ZedScripts layer (extractSections,
+ * validateModuleLevelHeaders) and ValidationEngine.validateSyntax.
+ */
 export function countBraces(code: string): { open: number; close: number } {
-  return {
-    open: (code.match(/\{/g) || []).length,
-    close: (code.match(/\}/g) || []).length,
-  };
+  let open = 0;
+  let close = 0;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (quote !== null) {
+      // Inside a string: only the matching unescaped quote ends it.
+      if (ch === "\\") {
+        i++; // skip the escaped character
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === "{") {
+      open++;
+    } else if (ch === "}") {
+      close++;
+    }
+  }
+  return { open, close };
 }
 
 function escapeRe(s: string): string {
@@ -343,15 +370,17 @@ export function scanScriptBlocks(
       currentBlock.content.push(rawLine.trim());
 
       // A block closes when brace depth returns to the level it started at
-      // (after the header line's own braces were counted above).
-      if (braceLevel <= currentBlockStartLevel && line.includes("}")) {
+      // (after the header line's own braces were counted above). The gate
+      // is the string-aware close count, not a raw `includes("}")` — a `}`
+      // inside a quoted value (DisplayName = "}") must never close a block.
+      if (braceLevel <= currentBlockStartLevel && closeBraces > 0) {
         finalizeBlock(lineNumber);
       }
     }
 
     // Module exit: the module's own '}' drops depth to 0. (The module's
     // opening brace was counted, so its close lands exactly at 0.)
-    if (inModule && braceLevel === 0 && line.includes("}") && !currentBlock) {
+    if (inModule && braceLevel === 0 && closeBraces > 0 && !currentBlock) {
       inModule = false;
       pastModuleHeader = false;
       currentModule = defaultModule;

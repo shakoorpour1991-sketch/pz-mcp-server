@@ -134,18 +134,24 @@ describe("ZedScripts knowledge layer — valid Build 42 scripts", () => {
 
   test("legacy B41 recipe blocks keep the existing lenient handling", async () => {
     // rawType `recipe` is not in the Build 42 dataset — no knowledge-layer
-    // diagnostics (no MISSING_PARAMETER for tags, no ID rules).
+    // diagnostics (no MISSING_PARAMETER for tags, no ID rules), and `recipe`
+    // must NOT be flagged as an unknown block keyword (NOT_VALID_BLOCK) at
+    // module scope — it is a scanner-recognized BASE_KEYWORDS entry.
     const script = [
-      "recipe Make LegacyPlank",
+      "module Test",
       "{",
-      "\tResult:Base.Plank=2,",
-      "\tTime:150.0,",
-      "\tCategory:Carpentry,",
+      "    recipe Make LegacyPlank",
+      "    {",
+      "        Result:Base.Plank=2,",
+      "        Time:150.0,",
+      "        Category:Carpentry,",
+      "    }",
       "}",
     ].join("\n");
     const result = await engine.validateScript(script, "recipe");
     assert.deepEqual(result.errors, []);
     assert.equal(result.isValid, true);
+    assert.deepEqual(result.warnings, [], JSON.stringify(result.warnings));
   });
 });
 
@@ -185,8 +191,10 @@ describe("ZedScripts knowledge layer — AI-generation mistakes", () => {
       "}",
     ].join("\n");
     const result = await engine.validateScript(script, "item");
-    const wrong = find(result, "WRONG_VALUES");
-    assert.ok(wrong);
+    // Scalar parameter, one wrong value → the singular WRONG_VALUE code
+    // (ZedScripts parity; WRONG_VALUES is reserved for array/object lists).
+    const wrong = find(result, "WRONG_VALUE");
+    assert.ok(wrong, JSON.stringify(result.errors.concat(result.warnings)));
     assert.equal(wrong.severity, "error");
     assert.ok(wrong.suggestion.includes("base:weapon"));
     assert.equal(result.isValid, false);
@@ -244,6 +252,205 @@ describe("ZedScripts knowledge layer — AI-generation mistakes", () => {
     assert.equal(missing.severity, "error");
     assert.ok(missing.message.includes("tags"));
     assert.equal(result.isValid, false);
+  });
+
+  test("array parameter wrong values emit WRONG_VALUES (plural)", async () => {
+    const script = [
+      "item Shirt",
+      "{",
+      "\tItemType = base:clothing,",
+      "\tBloodLocation = Apron;NotASpot,",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "item");
+    const wrong = find(result, "WRONG_VALUES");
+    assert.ok(wrong, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.equal(wrong.severity, "error");
+    assert.ok(wrong.message.includes("NotASpot"), wrong.message);
+    assert.ok(!find(result, "WRONG_VALUE"));
+    assert.equal(result.isValid, false);
+  });
+
+  test("double commas on recipe input lines are flagged INVALID_COMMA", async () => {
+    const script = [
+      "module TestMod",
+      "{",
+      "    craftRecipe MakeX",
+      "    {",
+      "        tags = Test,",
+      "        inputs",
+      "        {",
+      "            item 1 Base.Log,,",
+      "        }",
+      "        outputs",
+      "        {",
+      "            item 1 Base.Plank,",
+      "        }",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "recipe");
+    const diag = find(result, "INVALID_COMMA");
+    assert.ok(diag, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.equal(diag.severity, "warning");
+    assert.ok(
+      !codes(result).includes("INVALID_VALUE"),
+      "the extra comma must not surface as a confusing item-list message",
+    );
+  });
+
+  test("double commas on property lines are flagged INVALID_COMMA", async () => {
+    const script = [
+      "item SampleKnife",
+      "{",
+      "\tItemType = base:weapon,,",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "item");
+    const diag = find(result, "INVALID_COMMA");
+    assert.ok(diag, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.equal(diag.severity, "warning");
+    assert.ok(diag.suggestion.includes("base:weapon,"), diag.suggestion);
+  });
+
+  test("required parameter inside a block comment is still reported missing", async () => {
+    const script = [
+      "module TestMod",
+      "{",
+      "    craftRecipe MakePlank",
+      "    {",
+      "        /*",
+      "        tags = Test,",
+      "        */",
+      "        Time = 150,",
+      "        inputs { item 1 Base.Log, }",
+      "        outputs { item 1 Base.Plank, }",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "recipe");
+    const missing = find(result, "MISSING_PARAMETER");
+    assert.ok(missing, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.ok(missing.message.includes("tags"), missing.message);
+    assert.equal(result.isValid, false);
+  });
+
+  test("section header inside a block comment is not mistaken for real children", async () => {
+    const script = [
+      "module TestMod",
+      "{",
+      "    craftRecipe MakePlank",
+      "    {",
+      "        tags = Test,",
+      "        /*",
+      "        inputs",
+      "        {",
+      "            item 1 Base.Log,",
+      "        }",
+      "        */",
+      "        outputs { item 1 Base.Plank, }",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "recipe");
+    const child = find(result, "MISSING_CHILD_BLOCK");
+    assert.ok(child, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.ok(/inputs/.test(child.message), child.message);
+  });
+
+  test("unbalanced brace inside a quoted value cannot corrupt the scan", async () => {
+    const script = [
+      "module Test",
+      "{",
+      "    item Weird",
+      "    {",
+      "        DisplayName = \"A {brace\",",
+      "        ItemType = base:weapon,",
+      "    }",
+      "    item Next",
+      "    {",
+      "        ItemType = base:weapon,",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "item");
+    // The `{` inside the quoted DisplayName must not shift brace depth —
+    // otherwise `item Next` is mis-scanned as a nested child of `item Weird`
+    // and flagged WRONG_PARENT. DisplayName's own deprecation warning is the
+    // only expected finding.
+    const diags = result.errors.concat(result.warnings);
+    assert.ok(
+      !diags.some((d) => d.code === "WRONG_PARENT"),
+      JSON.stringify(diags),
+    );
+    assert.ok(codes(result).includes("DEPRECATED_PARAMETER_VERSION"));
+  });
+
+  test("a closing brace inside a quoted value cannot close a same-line-header block", async () => {
+    const script = [
+      "module Test",
+      "{",
+      "    item Weird {",
+      "        DisplayName = \"}\",",
+      "        ItemType = base:weapon,",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script, "item");
+    // The `}` inside the quoted DisplayName must not finalize the block at
+    // that line — otherwise ItemType is never parsed and the item is
+    // reported missing its required ItemType.
+    assert.deepEqual(result.errors, [], JSON.stringify(result.errors));
+    assert.ok(codes(result).includes("DEPRECATED_PARAMETER_VERSION"));
+  });
+
+  test("template vehicle headers keep the full multi-word name", async () => {
+    const script = [
+      "module Test",
+      "{",
+      "    template vehicle My Van",
+      "    {",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script);
+    const idDiag = result.errors
+      .concat(result.warnings)
+      .find((d) => d.code === "ID_CANNOT_CONTAIN_SPACES");
+    // The template name is "My Van" (the first token `vehicle` is the type
+    // qualifier) — the ID rules must see the FULL name, not the last token.
+    assert.ok(idDiag, JSON.stringify(result.errors.concat(result.warnings)));
+    assert.equal(idDiag.value, "My Van");
+  });
+
+  test("spaced ID reports only ID_CANNOT_CONTAIN_SPACES, not INVALID_ID", async () => {
+    const script = [
+      "module Test",
+      "{",
+      "    entity E",
+      "    {",
+      "        components",
+      "        {",
+      "            component SpriteConfig",
+      "            {",
+      "                health = 200,",
+      "                face SINGLE Extra",
+      "                {",
+      "                }",
+      "            }",
+      "        }",
+      "    }",
+      "}",
+    ].join("\n");
+    const result = await engine.validateScript(script);
+    const all = result.errors.concat(result.warnings);
+    assert.ok(
+      all.some((d) => d.code === "ID_CANNOT_CONTAIN_SPACES"),
+      JSON.stringify(all),
+    );
+    // The space check short-circuits the values check — no double-reporting
+    // of the same header.
+    assert.ok(!all.some((d) => d.code === "INVALID_ID"), JSON.stringify(all));
   });
 
   test("missing comma is flagged with the corrected line", async () => {

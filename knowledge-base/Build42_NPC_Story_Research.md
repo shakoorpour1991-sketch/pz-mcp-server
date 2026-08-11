@@ -1,3 +1,10 @@
+---
+title: "Project Zomboid Build 42 NPC/Story/Encounter System Research"
+build: "42.18"
+source: "Project Zomboid Build 42.18 game files"
+tags: [pz, modding, build42, npc, story, encounters]
+---
+
 # Project Zomboid Build 42 NPC/Story/Encounter System Research
 
 > Research source: Project Zomboid Build 42.18 at `D:\Games\ProjectZomboid\ProjectZomboid`

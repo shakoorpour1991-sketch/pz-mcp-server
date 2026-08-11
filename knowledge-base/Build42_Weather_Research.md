@@ -1,3 +1,10 @@
+---
+title: "Project Zomboid Build 42 Weather/Climate System Research"
+build: "42.20"
+source: "Project Zomboid Build 42.18+ (42.20) media/lua/"
+tags: [pz, modding, build42, weather, climate]
+---
+
 # Project Zomboid Build 42 Weather/Climate System Research
 
 **Game Version:** Build 42.18+ (42.20)  

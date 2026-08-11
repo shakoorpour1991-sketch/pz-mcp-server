@@ -145,7 +145,12 @@ export const discoveryTools: McpTool<z.ZodTypeAny>[] = [
           const kb = await ctx.knowledgeBaseManager.search(primary.name, {
             limit: 3,
           });
-          kbDocs = kb.map((d) => ({ topic: d.topic, title: d.title }));
+          // Link at the file level (docTopic/docTitle) — search hits are
+          // section chunks; the doc id is what resources/knowledge:// expose.
+          kbDocs = kb.map((d) => ({
+            topic: d.docTopic,
+            title: d.docTitle,
+          }));
         } catch {
           kbDocs = []; // KB not indexed — relations still work without docs
         }

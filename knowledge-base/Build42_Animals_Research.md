@@ -1,3 +1,10 @@
+---
+title: "Build 42 — Animals & Husbandry System"
+build: "42.18"
+source: "Project Zomboid Build 42.18 game files (media/)"
+tags: [pz, modding, build42, animals, husbandry]
+---
+
 # Build 42 — Animals & Husbandry System
 
 > Research compiled from Project Zomboid Build 42.18 game files.

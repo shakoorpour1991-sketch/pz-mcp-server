@@ -16,6 +16,7 @@
     "format": "prettier --write src/**/*.ts",
     "format:check": "prettier --check src/**/*.ts",
     "verify:deck": "node scripts/_verify_deck.mjs",
+    "verify:kb": "node scripts/_verify_kb.mjs",
     "prepublishOnly": "npm test"
   },
   "keywords": [

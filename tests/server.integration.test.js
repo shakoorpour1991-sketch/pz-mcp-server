@@ -154,6 +154,7 @@ const TOOLS = [
   "index_knowledge_base",
   "index_javadocs",
   "search_knowledge_base",
+  "get_knowledge_section",
   "list_knowledge_topics",
   "analyze_recipe_chain",
   "detect_recipe_conflicts",
@@ -401,6 +402,41 @@ describe("pz-mcp-server integration", () => {
     assert.ok(list.content[0].text.includes("Cooking"));
   });
 
+  test("search_knowledge_base supports multi-type filters and inline content", async () => {
+    // The kb fixture docs are root-level → research type.
+    const filtered = await client.call("tools/call", {
+      name: "search_knowledge_base",
+      arguments: { query: "water", types: ["research"], limit: 5 },
+    });
+    const fResults = filtered.structuredContent.results;
+    assert.ok(fResults.length >= 1);
+    assert.ok(fResults.every((r) => r.type === "research"));
+
+    const none = await client.call("tools/call", {
+      name: "search_knowledge_base",
+      arguments: { query: "water", types: ["javadocs"], limit: 5 },
+    });
+    assert.deepEqual(none.structuredContent.results, []);
+
+    const withContent = await client.call("tools/call", {
+      name: "search_knowledge_base",
+      arguments: {
+        query: "water",
+        includeContent: true,
+        maxContent: 4000,
+      },
+    });
+    const withBody = withContent.structuredContent.results.filter(
+      (r) => r.content !== undefined,
+    );
+    assert.ok(withBody.length > 0, "includeContent returns chunk bodies");
+    for (const r of withBody) {
+      assert.equal(typeof r.chars, "number");
+      assert.equal(typeof r.words, "number");
+      assert.ok(r.content.length > 0);
+    }
+  });
+
   test("index_javadocs ingests a javadocs tree and search returns Java API results", async () => {
     const javadocsSrc = path.join(tmpDir, "javadocs-src");
     fs.cpSync(path.join(__dirname, "fixtures", "javadocs"), javadocsSrc, {
@@ -426,10 +462,9 @@ describe("pz-mcp-server integration", () => {
       name: "search_knowledge_base",
       arguments: { query: "FixtureGlobals", limit: 5 },
     });
-    assert.ok(search.content[0].text.includes("zombie.FixtureGlobals"));
     assert.ok(
       search.structuredContent.results.some(
-        (r) => r.topic === "zombie.FixtureGlobals",
+        (r) => r.docTopic === "javadocs/zombie.FixtureGlobals",
       ),
     );
 
@@ -440,12 +475,13 @@ describe("pz-mcp-server integration", () => {
     assert.ok(
       methodSearch.structuredContent.results.some(
         (r) =>
-          r.topic === "zombie.FixtureGlobals" && /getPlayer/.test(r.snippet),
+          r.docTopic === "javadocs/zombie.FixtureGlobals" &&
+          /getPlayer/.test(r.snippet),
       ),
     );
 
     const resource = await client.call("resources/read", {
-      uri: "knowledge://zombie.FixtureGlobals",
+      uri: "knowledge://javadocs%2Fzombie.FixtureGlobals",
     });
     assert.ok(
       resource.contents[0].text.includes("Unofficial PZ JavaDocs 42.20.0"),
@@ -455,7 +491,89 @@ describe("pz-mcp-server integration", () => {
       name: "list_knowledge_topics",
       arguments: {},
     });
-    assert.ok(list.content[0].text.includes("zombie.GitVersion"));
+    assert.ok(list.content[0].text.includes("javadocs/zombie.GitVersion"));
+  });
+
+  test("get_knowledge_section reads one section by name (no slug guessing)", async () => {
+    const secDir = path.join(tmpDir, "kb-sections");
+    fs.mkdirSync(secDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(secDir, "Guide.md"),
+      "# Guide\n\nIntro paragraph.\n\n## Watering\n\nWater is essential for crops.\n\n## Forging\n\nMetalworking needs a forge.\n",
+    );
+    await client.call("tools/call", {
+      name: "index_knowledge_base",
+      arguments: { path: secDir },
+    });
+
+    // Heading match by name — no slug guessing.
+    const res = await client.call("tools/call", {
+      name: "get_knowledge_section",
+      arguments: { topic: "Guide", section: "Forging" },
+    });
+    assert.ok(res.content[0].text.includes("Guide#forging"));
+    assert.ok(res.content[0].text.includes("forge"));
+    assert.equal(res.structuredContent.docTopic, "Guide");
+    assert.equal(res.structuredContent.section, "Forging");
+    assert.ok(!res.content[0].text.includes("crops")); // not the whole doc
+
+    // Case-insensitive prefix heading matching.
+    const lower = await client.call("tools/call", {
+      name: "get_knowledge_section",
+      arguments: { topic: "Guide", section: "wateri" },
+    });
+    assert.equal(lower.structuredContent.section, "Watering");
+
+    // Full chunk id in topic works directly.
+    const byChunk = await client.call("tools/call", {
+      name: "get_knowledge_section",
+      arguments: { topic: "Guide#forging" },
+    });
+    assert.equal(byChunk.structuredContent.topic, "Guide#forging");
+
+    // No match → helpful error listing the doc's available sections.
+    await assert.rejects(
+      client.call("tools/call", {
+        name: "get_knowledge_section",
+        arguments: { topic: "Guide", section: "NoSuchSection" },
+      }),
+      /Available sections:/,
+    );
+
+    // Batch mode: sections[] reads several sections in one call; a miss is a
+    // null entry, not an error, and the reply lists available sections.
+    const batch = await client.call("tools/call", {
+      name: "get_knowledge_section",
+      arguments: {
+        topic: "Guide",
+        sections: ["Watering", "Forging", "NoSuchSection"],
+      },
+    });
+    const bs = batch.structuredContent;
+    assert.equal(bs.docTopic, "Guide");
+    assert.equal(bs.results.length, 3);
+    assert.equal(bs.results[0].section, "Watering");
+    assert.equal(bs.results[1].section, "Forging");
+    assert.equal(bs.results[2], null);
+    assert.ok(batch.content[0].text.includes("2/3 section(s) matched"));
+    assert.ok(batch.content[0].text.includes("Available sections:"));
+  });
+
+  test("get_knowledge_section matches javadocs members by name", async () => {
+    // The javadocs fixture (indexed by the earlier javadocs test) has
+    // `public static IsoPlayer getPlayer(int playerNum)` members.
+    const section = await client.call("tools/call", {
+      name: "get_knowledge_section",
+      arguments: {
+        topic: "javadocs/zombie.FixtureGlobals",
+        section: "getPlayer",
+      },
+    });
+    const sc = section.structuredContent;
+    assert.equal(sc.docTopic, "javadocs/zombie.FixtureGlobals");
+    assert.ok(sc.section.includes("getPlayer"), sc.section);
+    assert.ok(sc.topic.startsWith("javadocs/zombie.FixtureGlobals#"));
+    assert.ok(section.content[0].text.includes("getPlayer"));
   });
 
   test("index_javadocs rejects a non-existent source dir", async () => {
@@ -492,7 +610,7 @@ describe("pz-mcp-server integration", () => {
     });
     assert.ok(
       search.structuredContent.results.some(
-        (r) => r.topic === "zombie.iso.IsoObject",
+        (r) => r.docTopic === "javadocs/zombie.iso.IsoObject",
       ),
     );
     assert.ok(search.content[0].text.includes("📘 JavaDocs"));
@@ -1133,6 +1251,31 @@ describe("pz-mcp-server integration", () => {
         client.call("resources/read", { uri: "knowledge://NoSuchTopic" }),
         /Topic not found/,
       );
+    });
+
+    test("resources/read rejects a malformed percent-escaped URI", async () => {
+      await assert.rejects(
+        client.call("resources/read", { uri: "knowledge://%zz" }),
+        /Malformed resource URI/,
+      );
+    });
+
+    test("resources/read returns a single #section chunk", async () => {
+      const kbDir = path.join(tmpDir, "kb3");
+      fs.mkdirSync(kbDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(kbDir, "Guide.md"),
+        "# Guide\n\n## Section One\n\nWater is essential for crops.\n\n## Section Two\n\nMetalworking needs a forge.\n",
+      );
+      await client.call("tools/call", {
+        name: "index_knowledge_base",
+        arguments: { path: kbDir },
+      });
+      const result = await client.call("resources/read", {
+        uri: `knowledge://${encodeURIComponent("Guide#section-one")}`,
+      });
+      assert.ok(result.contents[0].text.includes("Water is essential"));
+      assert.ok(!result.contents[0].text.includes("forge"));
     });
   });
 

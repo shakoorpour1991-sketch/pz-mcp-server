@@ -22,6 +22,7 @@ const EXPECTED_TOOLS = [
   "index_knowledge_base",
   "index_javadocs",
   "search_knowledge_base",
+  "get_knowledge_section",
   "list_knowledge_topics",
   "analyze_recipe_chain",
   "detect_recipe_conflicts",
@@ -83,6 +84,9 @@ describe("tool registry (audit P2)", () => {
       ["generate_script", { type: "item", name: "X", properties: {} }, false],
       ["validate_script", { content: "item X {}", type: "item" }, false],
       ["validate_script", { content: "item X {}", type: "not-a-type" }, true],
+      // zedScripts escape hatch: boolean only, defaults to true
+      ["validate_script", { content: "item X {}", zedScripts: false }, false],
+      ["validate_script", { content: "item X {}", zedScripts: "no" }, true],
       ["workshop_download", { id: "" }, true],
       ["workshop_download", { id: "123456" }, false], // dryRun defaults to false
       ["workshop_download", { id: "123456", dryRun: "yes" }, true],
@@ -100,6 +104,45 @@ describe("tool registry (audit P2)", () => {
       ["index_javadocs", { output: "C:/x" }, false],
       ["index_javadocs", { source: "/some/javadocs", output: "C:/x" }, false],
       ["list_knowledge_topics", {}, false],
+      ["get_knowledge_section", { topic: "" }, true],
+      ["get_knowledge_section", { topic: "wiki/Java" }, false],
+      ["get_knowledge_section", { topic: "wiki/Java#section-one" }, false],
+      ["get_knowledge_section", { topic: "wiki/Java", section: 42 }, true],
+      // KB search v3: multi-select types, inline content, content budget
+      [
+        "search_knowledge_base",
+        { query: "x", types: ["research", "wiki"] },
+        false,
+      ],
+      ["search_knowledge_base", { query: "x", types: ["bogus"] }, true],
+      ["search_knowledge_base", { query: "x", type: "javadocs" }, false],
+      ["search_knowledge_base", { query: "x", type: "bogus" }, true],
+      [
+        "search_knowledge_base",
+        { query: "x", includeContent: true },
+        false,
+      ],
+      [
+        "search_knowledge_base",
+        { query: "x", includeContent: "yes" },
+        true,
+      ],
+      ["search_knowledge_base", { query: "x", maxContent: 50000 }, true],
+      ["search_knowledge_base", { query: "x", maxContent: 0 }, true],
+      [
+        "search_knowledge_base",
+        { query: "x", includeContent: true, maxContent: 12000 },
+        false,
+      ],
+      // get_knowledge_section batch mode (sections[])
+      [
+        "get_knowledge_section",
+        { topic: "wiki/Java", sections: ["a", "b"] },
+        false,
+      ],
+      ["get_knowledge_section", { topic: "wiki/Java", sections: [] }, false],
+      ["get_knowledge_section", { topic: "wiki/Java", sections: [""] }, true],
+      ["get_knowledge_section", { topic: "wiki/Java", sections: 5 }, true],
       ["detect_pz_paths", {}, false],
       ["install_mod", { source: "" }, true],
       ["install_mod", { source: "/some/Mod.zip" }, false],

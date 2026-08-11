@@ -8,12 +8,15 @@ import {
   IndexJavadocsSchema,
   SearchKnowledgeBaseSchema,
   ListKnowledgeTopicsSchema,
+  GetKnowledgeSectionSchema,
 } from "../schemas.js";
 import type { McpTool } from "./registry.js";
 import {
   formatJavadocsIndexResults,
   formatKbIndexResults,
   formatKbSearchResults,
+  formatKbSection,
+  formatKbSections,
   formatKbTopics,
   formatParseResults,
 } from "../utils/formatters.js";
@@ -28,6 +31,7 @@ import {
   JavaDocIndexer,
   type JavadocsIngestResult,
 } from "../knowledge/javadocs/JavaDocIndexer.js";
+import type { KbDocType } from "../knowledge/kbChunker.js";
 
 export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
@@ -77,7 +81,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "index_knowledge_base",
     description:
-      "Index markdown knowledge base docs (title, source, content) into a searchable FTS database",
+      "Index markdown knowledge base docs into the chunked search database. Docs are cleaned, split into section chunks, and tagged with a portable doc type (wiki / api-docs / mods-analysis / research). Note: JavaDocs are a separate corpus — run index_javadocs to index them (index_knowledge_base skips the javadocs/ directory by default)",
     inputSchema: IndexKnowledgeBaseSchema,
     handler: async (args, ctx) => {
       const { path: kbPath, overwrite } = args;
@@ -206,8 +210,11 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         };
       }
       const indexDir = inputPath ? outputPath! : sourcePath;
+      // Namespace javadocs topics under `javadocs/` (KB v2: path-prefixed
+      // topics are collision-proof and self-describing).
       const index = await ctx.knowledgeBaseManager.indexDirectory(indexDir, {
         overwrite: args.overwrite,
+        topicPrefix: "javadocs",
       });
 
       const result = {
@@ -229,14 +236,33 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "search_knowledge_base",
     description:
-      "Search knowledge base docs with relevance ranking and topic filter",
+      'Search knowledge base docs with relevance ranking (bm25 with column weights, stemmed, prefix as a no-hit fallback). Returns section-level chunks — each result is a precise unit (a wiki section or a single javadocs method/field) with read-cost metadata (chars/words). Type-aware defaults: natural-language queries rank prose docs (wiki/research/api-docs) first so javadocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank javadocs first. Set includeContent: true to get the chunk bodies inline (search + read in one call, capped by maxContent). Filters: topic (exact doc topic), type / types (single or multi-select doc types), package (Java package, javadocs only). JavaDocs must be indexed with index_javadocs first — index_knowledge_base skips javadocs/. Examples: {query: "blacksmithing recipe"}, {query: "getSquare", type: "javadocs", package: "zombie.iso"}, {query: "blacksmithing", includeContent: true}',
     inputSchema: SearchKnowledgeBaseSchema,
     handler: async (args, ctx) => {
-      const { query, topic, limit } = args;
-      const results = await ctx.knowledgeBaseManager.search(
+      const {
         query,
-        topic ? { topic, limit } : { limit },
-      );
+        topic,
+        limit,
+        type,
+        types,
+        package: pkg,
+        includeContent,
+        maxContent,
+      } = args;
+      const opts: {
+        topic?: string;
+        limit?: number;
+        type?: KbDocType;
+        types?: KbDocType[];
+        package?: string;
+        includeContent?: boolean;
+        maxContent?: number;
+      } = { limit, includeContent, maxContent };
+      if (topic) opts.topic = topic;
+      if (type) opts.type = type;
+      if (types?.length) opts.types = types;
+      if (pkg) opts.package = pkg;
+      const results = await ctx.knowledgeBaseManager.search(query, opts);
       return {
         content: [
           {
@@ -265,6 +291,61 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
           },
         ],
         structuredContent: { topics: structuredClone(topics) },
+      };
+    },
+  },
+  {
+    name: "get_knowledge_section",
+    description:
+      "Read one section of a knowledge base doc by name — no slug guessing needed. Pass a doc topic (wiki/Java, javadocs/zombie.iso.IsoGameCharacter) plus the section heading or javadocs member name ('Section One', 'getPlayer', 'public static void Load()'), or a full chunk id (wiki/Java#section-one) to read it directly. Returns only that chunk (a wiki section or a single method/field), not the whole page. On no match, the reply lists the doc's available sections. Batch mode: pass sections: ['getPlayer', 'Load'] to read several members of one doc in a single call (a miss yields null for that entry instead of an error).",
+    inputSchema: GetKnowledgeSectionSchema,
+    handler: async (args, ctx) => {
+      const { topic, section, sections } = args;
+      // Batch mode: sections[] resolves several members in one round trip.
+      // An inline #section in `topic` names the exact chunk and wins over
+      // the batch (mirroring the documented single-section contract
+      // "omitted when topic already carries a #section").
+      if (sections && sections.length > 0 && topic.indexOf("#") === -1) {
+        const res = await ctx.knowledgeBaseManager.getSections(topic, sections);
+        if (!res) {
+          const docTopic = topic.split("#")[0];
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Doc not found: ${docTopic}. Run index_knowledge_base / index_javadocs first, or check the topic id.`,
+          );
+        }
+        return {
+          content: [{ type: "text", text: formatKbSections(res) }],
+          structuredContent: structuredClone(res),
+        };
+      }
+      const res = await ctx.knowledgeBaseManager.getSection(topic, section);
+      if (!res) {
+        const docTopic = topic.split("#")[0];
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Doc not found: ${docTopic}. Run index_knowledge_base / index_javadocs first, or check the topic id.`,
+        );
+      }
+      if (!res.match) {
+        // Report the effective requested section (from the section param or
+        // the #fragment in the topic) so inline misses aren't shown as "".
+        const hashIdx = topic.indexOf("#");
+        const want = hashIdx === -1 ? section ?? "" : topic.slice(hashIdx + 1);
+        const list = res.sections.slice(0, 20).join("; ");
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `No section matched "${want}" in ${res.docTopic}. Available sections: ${list || "(none)"}`,
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatKbSection(res.match),
+          },
+        ],
+        structuredContent: structuredClone(res.match),
       };
     },
   },

@@ -13,8 +13,27 @@
  * The data is Build 42 focused. Where it conflicts with this server's own
  * Build 42.20-verified checks (e.g. `item` requires `ItemType`), the verified
  * checks win; the data only *adds* diagnostics that do not contradict them.
+ *
+ * Scope cut (documented, not silently dropped): the port script vendors three
+ * files — `roots.json` + `itemParameters.json` in addition to
+ * `scriptsBlocks.json` — but only `scriptsBlocks.json` (plus SOURCE.json and
+ * vanillaVerified.json) is loaded here. The other two are knowingly unused:
+ *  - `roots.json` describes the ROOT-* file constructs (alias/blend/layers /
+ *    default.txt …): those live at file root in their own no-comma file
+ *    format (`layers.txt` etc.) outside the module-scoped scripts this
+ *    validator accepts, and validateModuleLevelHeaders only scans module
+ *    scope (depth 1) by design — validating root files would need a separate
+ *    file-class pipeline the validate_script tool does not own.
+ *  - `itemParameters.json` lists item-class-specific parameters
+ *    (base:food → calories/nutrition …). It is not loaded as an allowlist
+ *    because the real 42.20 vanilla items use far more parameters per class
+ *    than the dataset lists ("verified game data wins" — enforcing it would
+ *    false-positive on every vanilla item).
+ * Both stay vendored for provenance/parity with the upstream dataset and are
+ * re-loadable if a future tool wants them.
  */
 import { readFileSync } from "fs";
+import { BASE_KEYWORDS } from "../utils/scriptScanner.js";
 
 /** The value types pz-scripts-data uses for parameter typing. */
 export const ZED_VALUE_TYPES = {
@@ -353,16 +372,11 @@ export function getZedParameter(
   return null;
 }
 
-/**
- * All known script-block keywords: dataset keys ∪ scanner keywords.
- * Normalized to lowercase — the dataset stores mixed-case keys
- * (e.g. "craftRecipe", "component ContextMenuConfig") while header scanning
- * compares case-insensitively.
- */
+/** Memoized per-process known block-name set. */
 let knownBlockNamesCache: Set<string> | null = null;
 
 /**
- * All known script-block keywords: dataset keys ∪ scanner keywords ∪
+ * All known script-block keywords: dataset keys ∪ shared-scanner keywords ∪
  * vanilla-verified extras. Normalized to lowercase — the dataset stores
  * mixed-case keys (e.g. "craftRecipe", "component ContextMenuConfig") while
  * header scanning compares case-insensitively. Memoized per process.
@@ -374,16 +388,18 @@ export function getKnownBlockNames(): Set<string> {
   for (const key of knowledge.blocks.keys()) {
     names.add(key.toLowerCase());
   }
-  // Scanner-recognized keywords that may not be dataset entries.
-  for (const keyword of [
-    "module",
-    "mod",
-    "event",
-    "bodylocation",
-    "creature",
-    "outputs",
-    "inputs",
-  ]) {
+  // Every keyword the shared scanner recognizes as a block header — derived
+  // from BASE_KEYWORDS so the two lists can never drift. This includes the
+  // legacy B41 `recipe` block, which the Build 42 dataset deliberately does
+  // not model (getZedBlock leaves it to the lenient legacy checks): it must
+  // never be flagged as an unknown block keyword (NOT_VALID_BLOCK).
+  for (const keyword of BASE_KEYWORDS) {
+    names.add(keyword.toLowerCase());
+  }
+  // Module plumbing that is not a dataset entry and not a BASE_KEYWORDS
+  // container: `module` has its own scanner handling, `outputs`/`inputs` are
+  // craftRecipe sections.
+  for (const keyword of ["module", "outputs", "inputs"]) {
     names.add(keyword);
   }
   // Block keywords verified against the real game tree that the dataset does

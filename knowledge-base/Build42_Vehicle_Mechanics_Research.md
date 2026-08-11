@@ -1,3 +1,10 @@
+---
+title: "Build 42 Vehicle Mechanics — Full Research"
+build: "42.20"
+source: "Project Zomboid Build 42 (v42.20.0) media/scripts/generated/vehicles/ and media/lua/Vehicles/"
+tags: [pz, modding, build42, vehicles, mechanics]
+---
+
 # Build 42 Vehicle Mechanics — Full Research
 
 > **Game:** Project Zomboid Build 42 (v42.20.0)

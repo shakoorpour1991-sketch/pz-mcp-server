@@ -1,3 +1,10 @@
+---
+title: "Build 42 Farming System Research"
+build: "42.20"
+source: "Project Zomboid v42.20.0 game files (media/lua/server/Farming/, media/scripts/generated/)"
+tags: [pz, modding, build42, farming]
+---
+
 # Build 42 Farming System Research
 
 > Source: Project Zomboid v42.20.0 game files, media/lua/server/Farming/, media/scripts/generated/

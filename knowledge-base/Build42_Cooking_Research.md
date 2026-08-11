@@ -1,3 +1,10 @@
+---
+title: "Build 42 Cooking/Nutrition System Research"
+build: "42.20"
+source: "Project Zomboid Build 42 (v42.20.0) game scripts"
+tags: [pz, modding, build42, cooking, nutrition]
+---
+
 # Build 42 Cooking/Nutrition System Research
 
 > Source: Project Zomboid Build 42 (v42.20.0)

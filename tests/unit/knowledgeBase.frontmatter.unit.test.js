@@ -101,9 +101,11 @@ describe('KnowledgeBaseManager: YAML frontmatter (A7)', () => {
     assert.deepEqual(hits, []);
   });
 
-  test('body text remains searchable', async () => {
+  test('body text remains searchable (chunk-level result)', async () => {
     const hits = await kb.search('loot tables');
     assert.ok(hits.length > 0);
-    assert.equal(hits[0].topic, 'loot-system');
+    // Search hits are section chunks; the parent doc topic identifies the file.
+    assert.equal(hits[0].docTopic, 'loot-system');
+    assert.ok(hits[0].topic.startsWith('loot-system#'));
   });
 });

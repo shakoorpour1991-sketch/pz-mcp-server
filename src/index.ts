@@ -171,7 +171,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     resources: topics.map((t) => ({
       uri: `knowledge://${encodeURIComponent(t.topic)}`,
       name: t.topic,
-      description: `${t.title} (${t.lines} lines, ${t.words} words)`,
+      description: `${t.title} (${t.docType}, ${t.lines} lines, ${t.words} words)`,
       mimeType: "text/markdown",
       size: t.chars,
     })),
@@ -180,14 +180,26 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri as string;
-  const match = uri.match(/^knowledge:\/\/([^/?#]+)(?:\/.*)?$/);
+  // Topics are path-prefixed (wiki/Java) and may name a section (…AStar#search),
+  // so the whole segment after knowledge:// is percent-encoded and decoded
+  // before the '#' fragment is split off (KB v2 resource reads).
+  const match = uri.match(/^knowledge:\/\/(.+)$/);
   if (!match) {
     throw new McpError(
       ErrorCode.InvalidRequest,
       `Unknown resource URI: ${uri}`,
     );
   }
-  const topic = decodeURIComponent(match[1]);
+  let topic: string;
+  try {
+    topic = decodeURIComponent(match[1]);
+  } catch {
+    // Malformed percent-escapes (e.g. knowledge://%zz) are not valid topics.
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `Malformed resource URI: ${uri}`,
+    );
+  }
   const doc = await knowledgeBaseManager.getTopic(topic);
   if (!doc) {
     throw new McpError(ErrorCode.InvalidRequest, `Topic not found: ${topic}`);

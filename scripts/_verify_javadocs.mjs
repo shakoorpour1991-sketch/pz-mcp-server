@@ -49,37 +49,38 @@ try {
 
   const kb = new KnowledgeBaseManager(join(tmp, "data"));
   await kb.initialize();
-  const index = await kb.indexDirectory(outDir);
-  console.log(`KB indexed ${index.topics} topics from ${index.files} files\n`);
+  // index_javadocs namespaces javadocs topics under `javadocs/` (KB v2).
+  const index = await kb.indexDirectory(outDir, { topicPrefix: "javadocs" });
+  console.log(`KB indexed ${index.topics} topics / ${index.chunks} chunks from ${index.files} files\n`);
   check("KB index has no errors", index.errors.length === 0);
 
   // Representative API searches (the MCP search_knowledge_base path).
   const searches = [
-    { q: "IsoObject", topic: "zombie.iso.IsoObject", label: "class by name" },
-    { q: "IsoPlayer", topic: "zombie.characters.IsoPlayer", label: "class by name" },
-    { q: "IUpdater", topic: "zombie.interfaces.IUpdater", label: "interface" },
+    { q: "IsoObject", topic: "javadocs/zombie.iso.IsoObject", label: "class by name" },
+    { q: "IsoPlayer", topic: "javadocs/zombie.characters.IsoPlayer", label: "class by name" },
+    { q: "IUpdater", topic: "javadocs/zombie.interfaces.IUpdater", label: "interface" },
     { q: "getThirst", topic: null, label: "method name" },
     { q: "hasTrait", topic: null, label: "method name" },
   ];
   for (const s of searches) {
-    // Free-text search must return relevant zombie.* hits.
+    // Free-text search must return relevant zombie.* hits (chunk-level now).
     const hits = await kb.search(s.q, { limit: 5 });
-    const topics = hits.map((h) => h.topic);
-    const relevant = hits.some((h) => h.topic.startsWith("zombie"));
+    const topics = hits.map((h) => h.docTopic);
+    const relevant = hits.some((h) => h.docTopic.startsWith("javadocs/zombie"));
     // Exact-type lookup: topic filter pinpoints the class doc itself (bm25
     // free-text ranking may surface heavy users of a type before the type).
     let exact = true;
     if (s.topic) {
       const filtered = await kb.search(s.q, { topic: s.topic, limit: 1 });
-      exact = filtered.length === 1 && filtered[0].topic === s.topic;
+      exact = filtered.length === 1 && filtered[0].docTopic === s.topic;
     }
     const ok = relevant && exact;
     check(`search "${s.q}"`, ok, ok ? topics.slice(0, 3).join(", ") : `(relevant=${relevant} exact=${exact})`);
   }
 
   // Class-level query: full doc body must carry signatures.
-  const doc = await kb.getTopic("zombie.iso.IsoObject");
-  check("getTopic zombie.iso.IsoObject", doc !== null);
+  const doc = await kb.getTopic("javadocs/zombie.iso.IsoObject");
+  check("getTopic javadocs/zombie.iso.IsoObject", doc !== null);
   if (doc) {
     check(
       "doc carries method signatures + provenance",
@@ -97,7 +98,7 @@ try {
   try {
     const row = raw
       .prepare("SELECT source FROM knowledge_docs WHERE topic = ?")
-      .get("zombie.iso.IsoObject");
+      .get("javadocs/zombie.iso.IsoObject");
     check("source column tagged", /42\.\d+/.test(row?.source ?? ""), row?.source ?? "none");
   } finally {
     raw.close();

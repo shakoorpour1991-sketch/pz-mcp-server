@@ -110,7 +110,7 @@ The server finds your Project Zomboid installation **on any machine** and can in
 
 | Channel         | Tools                                                                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- |
-| `DISCOVERY`     | `search_vanilla` (v2: structured filters, fuzzy resolution, AI context, relations, provenance) · `search_knowledge_base` · `list_knowledge_topics` |
+| `DISCOVERY`     | `search_vanilla` (v2: structured filters, fuzzy resolution, AI context, relations, provenance) · `search_knowledge_base` · `get_knowledge_section` · `list_knowledge_topics` |
 | `SCRIPT`        | `generate_script` · `validate_script` · `check_references` · `export_mod_script`                  |
 | `LOCAL DATA`    | `parse_game_files` · `index_knowledge_base` · `index_javadocs`                                    |
 | `ANALYSIS`      | `analyze_mod` · `analyze_recipe_chain` · `detect_recipe_conflicts`                                |
@@ -184,7 +184,7 @@ parse_game_files        # index the vanilla game into the SQLite DB
   → export_mod_script   # dry-run, then write into a mod's media/scripts
 ```
 
-**Knowledge base**: `index_knowledge_base` once, then `search_knowledge_base` / `list_knowledge_topics` for every lookup.
+**Knowledge base**: `index_knowledge_base` once, then `search_knowledge_base` / `get_knowledge_section` / `list_knowledge_topics` for every lookup. Docs are stored as **section chunks** (per-method/field for JavaDocs), topics are path-prefixed (`wiki/Java`, `javadocs/zombie.iso.IsoObject`), and a chunk can be read directly via `knowledge://<topic>#<section>` or `get_knowledge_section` (matches a heading or javadocs member by name — `getPlayer`, no slug guessing). Search is **type-aware** — natural-language queries rank prose docs (wiki/research/api-docs) before the javadocs constant flood, identifier queries (`getPlayer`, `Base.Hammer`) rank javadocs first, and bodyless bare-signature chunks are downweighted; bm25 weights favor titles/signatures over bodies, the last term is prefix-matched only as a fallback (`"cooking"` no longer matches `cookie`), and `search_knowledge_base` supports `types` multi-select, `includeContent` (search + read in one call, budget-capped) and per-result `chars`/`words` so agents can budget context before reading.
 
 **Java API docs**: `index_javadocs` (no arguments) indexes the **repo-shipped distilled JavaDocs markdown** (`knowledge-base/javadocs/` — one file per API type, ~4,700 classes/interfaces/enums/records from the Unofficial PZ JavaDocs) so it works on any machine. Then `search_knowledge_base` returns Java API results alongside your markdown notes — search a class, interface, method, or field name directly. To re-ingest from a raw generated JavaDocs HTML tree (e.g. after regenerating the docs), pass `source` pointing at the tree; the pipeline recursively discovers every class page, parses it programmatically (no manual file lists), and indexes one markdown doc per type under its fully-qualified name (`zombie.iso.IsoObject`), tagged with the docs version.
 

@@ -49,6 +49,7 @@ export const TOOL_ICONS = {
   index_javadocs: "code",
   search_knowledge_base: "search",
   list_knowledge_topics: "book",
+  get_knowledge_section: "book",
   detect_pz_paths: "scan",
   install_mod: "download",
   modgen_templates: "hammer",
@@ -96,6 +97,7 @@ export const TOOL_CATS = [
       "index_javadocs",
       "search_knowledge_base",
       "list_knowledge_topics",
+      "get_knowledge_section",
     ],
   },
   {
@@ -151,7 +153,7 @@ export const TOOL_GUIDES = {
   },
   validate_script: {
     what: "Check a Project Zomboid script for syntax errors, broken references, AND ZedScripts knowledge-layer diagnostics (unknown parameters, wrong values/types, deprecations, missing commas, craftRecipe issues) that catch AI-generated scripts that look plausible but are invalid. Covers ALL 97 block types — entity, model, fluid, physics, timedAction, component variants, etc. — including nested blocks and wrong-parent mistakes.",
-    how: "<b>content</b> is required — paste your script and Run. Optional: <b>filePath</b> to validate a script file on disk (diagnostics then show the file), <b>type</b> (item/recipe/…) to check against, and <b>strict</b> for a deeper pass. Every finding shows file/line/column, a diagnostic code and a fix suggestion — fix and validate again.",
+    how: "<b>content</b> is required — paste your script and Run. Optional: <b>filePath</b> to validate a script file on disk (diagnostics then show the file), <b>type</b> (item/recipe/…) to check against, <b>strict</b> for a deeper pass, and <b>zedScripts: false</b> to skip the Build 42 knowledge layer on a legacy B41-only codebase. Every finding shows file/line/column, a diagnostic code and a fix suggestion — fix and validate again.",
     ex: "content: module Base { entity MyFurnace { … } } · filePath: C:/mods/MyMod/media/scripts/items.txt",
   },
   check_references: {
@@ -170,8 +172,8 @@ export const TOOL_GUIDES = {
     ex: 'gamePath: "C:/Program Files (x86)/Steam/steamapps/common/ProjectZomboid" (optional)',
   },
   index_knowledge_base: {
-    what: "Index markdown modding docs so they become searchable.",
-    how: "Nothing is required — indexes the default docs folder. Optional: <b>path</b> to a different docs dir, and <b>overwrite</b> (default true; set false for an incremental sync).",
+    what: "Index markdown modding docs so they become searchable — cleaned, split into precise section chunks, and tagged with a portable doc type (wiki / api-docs / mods-analysis / research). Topics are path-prefixed (e.g. wiki/Farming) so names never collide.",
+    how: "Nothing is required — indexes the default docs folder. Optional: <b>path</b> to a different docs dir, and <b>overwrite</b> (default true; set false for an incremental sync). Note: the javadocs/ folder is skipped — run <b>index_javadocs</b> for Java API docs.",
     ex: 'path: "C:/Users/you/Documents/PZ-Docs" (optional)',
   },
   index_javadocs: {
@@ -180,14 +182,19 @@ export const TOOL_GUIDES = {
     ex: '{} — or source: "C:/Users/you/PZ-JavaDocs" to re-ingest from HTML',
   },
   search_knowledge_base: {
-    what: "Search the indexed knowledge-base docs with relevance ranking and topic filters.",
-    how: '<b>query</b> is required, e.g. "loot distribution". Optional: <b>topic</b> (exact filename without .md) and <b>limit</b> (default 10).',
-    ex: 'query: "loot distribution" · limit: 10',
+    what: "Search the indexed knowledge base with relevance ranking (bm25 with column weights, stemmed + prefix-matched). Results are <b>section-level chunks</b> — a wiki section or a single javadocs method/field — not whole pages, so every hit is precise. Click <b>View section</b> on a result to read exactly that chunk.",
+    how: '<b>query</b> is required, e.g. "blacksmithing recipe". Natural-language queries rank prose docs (wiki/research/api-docs) first so JavaDocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank JavaDocs first. Optional: <b>topic</b> (exact doc topic, e.g. wiki/Farming), <b>type</b> or <b>types</b> (single / multi-select doc types — e.g. types: research + wiki for prose only), <b>package</b> (Java package — javadocs only, e.g. zombie.iso), <b>includeContent</b> (return full chunk bodies inline — search + read in one call, capped by <b>maxContent</b>, default 8000 chars), and <b>limit</b> (default 10). JavaDocs must be indexed first via index_javadocs.',
+    ex: 'query: "getSquare" · type: "javadocs" · package: "zombie.iso"',
   },
   list_knowledge_topics: {
-    what: "List every indexed knowledge-base topic with stats.",
+    what: "List every indexed knowledge-base doc with stats (chunks, lines, words). Topics are path-prefixed — wiki/…, javadocs/…, api-docs/… — so they're self-describing and never collide.",
     how: "No arguments needed — just press Run.",
     ex: "—",
+  },
+  get_knowledge_section: {
+    what: "Read exactly one section of a knowledge-base doc — a single wiki section or one javadocs method/field — without loading the whole page. Batch mode: <b>sections</b> (one per line) reads several members of one doc in a single call.",
+    how: "<b>topic</b> is required — a doc topic (e.g. <b>wiki/Farming</b> or <b>javadocs/zombie.iso.IsoGameCharacter</b>) or a full chunk id (<b>wiki/Farming#crops</b>). Optional <b>section</b>: the heading or javadocs member name to read (e.g. getPlayer). Or pass <b>sections</b> (one per line) to read several at once — a miss yields null for that entry instead of an error. On no match the reply lists the doc's available sections.",
+    ex: 'topic: "javadocs/zombie.characters.IsoPlayer" · section: "getPlayer"',
   },
   analyze_recipe_chain: {
     what: "Walk the recipe dependency graph from one item: what makes it, what it makes, what consumes it.",
@@ -266,7 +273,7 @@ export const GUIDE_STEPS = [
   {
     icon: "power",
     title: "What is this?",
-    body: "<b>pz-mcp-server</b> is a Model Context Protocol (MCP) server that gives AI assistants live access to your Project Zomboid mod data. This deck is its friendly control panel — you drive the same 17 tools an AI would, right from your browser.",
+    body: "<b>pz-mcp-server</b> is a Model Context Protocol (MCP) server that gives AI assistants live access to your Project Zomboid mod data. This deck is its friendly control panel — you drive every MCP tool an AI would, right from your browser.",
   },
   {
     icon: "link",
@@ -291,7 +298,7 @@ export const GUIDE_STEPS = [
   {
     icon: "db",
     title: "Database & Knowledge tabs",
-    body: "The Database tab runs the same FTS5 search as search_vanilla. The Knowledge Base tools index and search your markdown modding docs — useful for keeping your research one query away.",
+    body: "The Database tab runs the same FTS5 search as search_vanilla, plus a knowledge-base search that returns precise <b>section chunks</b> (a wiki section or a single javadocs method/field). Hit <b>View section</b> on any result to drill into exactly that chunk — no more reading whole pages.",
   },
   {
     icon: "download",
@@ -350,48 +357,11 @@ export const EXAMPLES = {
   index_javadocs: {},
   search_knowledge_base: { query: "loot distribution" },
   list_knowledge_topics: {},
+  get_knowledge_section: {
+    topic: "javadocs/zombie.characters.IsoPlayer",
+    section: "getPlayer",
+  },
 };
-export const EXAMPLE_ACTIONS = [
-  {
-    label: "Search “axe”",
-    tool: "search_vanilla",
-    args: { query: "axe", limit: 10 },
-  },
-  {
-    label: "Generate katana",
-    tool: "generate_script",
-    args: EXAMPLES.generate_script,
-  },
-  {
-    label: "Generate canned food",
-    tool: "generate_script",
-    args: {
-      type: "item",
-      name: "CannedBeans_Custom",
-      module: "Base",
-      properties: {
-        category: "Food",
-        DisplayName: "Canned Beans",
-        Icon: "CannedBeans",
-        HungerChange: -25,
-        Calories: 350,
-        DaysFresh: 30,
-      },
-    },
-  },
-  {
-    label: "Validate sample",
-    tool: "validate_script",
-    args: EXAMPLES.validate_script,
-  },
-  {
-    label: "Check references",
-    tool: "check_references",
-    args: EXAMPLES.check_references,
-  },
-  { label: "List KB topics", tool: "list_knowledge_topics", args: {} },
-];
-
 export const CHAIN_CHIPS = [
   { id: "MillFlour", label: "Mill Flour", hint: "recipe" },
   { id: "MakeCoffeeMug", label: "Coffee Mug", hint: "recipe" },

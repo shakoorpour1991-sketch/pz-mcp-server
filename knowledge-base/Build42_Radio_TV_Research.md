@@ -1,3 +1,10 @@
+---
+title: "Build 42 — Radio, TV & Broadcast System Research"
+build: "42.18"
+source: "Project Zomboid Build 42.18+ media/ scripts"
+tags: [pz, modding, build42, radio, tv, broadcast]
+---
+
 # Build 42 — Radio, TV & Broadcast System Research
 
 **Game:** Project Zomboid Build 42.18+  

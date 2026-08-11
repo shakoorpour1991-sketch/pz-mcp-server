@@ -468,6 +468,7 @@ export function formatKbIndexResults(result: {
   topics: number;
   files: number;
   chars: number;
+  chunks?: number;
   skipped: number;
   removed: number;
   errors: Array<{ file: string; message: string }>;
@@ -475,6 +476,9 @@ export function formatKbIndexResults(result: {
   let output = `## Knowledge Base Index Results\n\n`;
   output += `- **Topics**: ${result.topics} indexed\n`;
   output += `- **Files**: ${result.files} found\n`;
+  if (result.chunks !== undefined) {
+    output += `- **Chunks**: ${result.chunks}\n`;
+  }
   output += `- **Characters**: ${result.chars}\n`;
   if (result.skipped > 0) {
     output += `- **Skipped (unchanged)**: ${result.skipped}\n`;
@@ -513,6 +517,7 @@ export function formatJavadocsIndexResults(result: {
     topics: number;
     files: number;
     chars: number;
+    chunks?: number;
     skipped: number;
     removed: number;
     errors: Array<{ file: string; message: string }>;
@@ -543,7 +548,11 @@ export function formatJavadocsIndexResults(result: {
       output += `- **Stale docs pruned**: ${i.removed}\n`;
     }
   }
-  output += `- **KB topics indexed**: ${k.topics} (${k.files} files, ${k.chars} chars)\n`;
+  output += `- **KB topics indexed**: ${k.topics} (${k.files} files, ${k.chars} chars)`;
+  if (k.chunks !== undefined) {
+    output += `, ${k.chunks} section chunks`;
+  }
+  output += `\n`;
   if (k.skipped > 0) {
     output += `- **KB skipped (unchanged)**: ${k.skipped}\n`;
   }
@@ -566,15 +575,50 @@ export function formatJavadocsIndexResults(result: {
   return output;
 }
 
+/** One knowledge://section render for get_knowledge_section. */
+export function formatKbSection(result: {
+  topic: string;
+  docTopic: string;
+  title: string;
+  section?: string;
+  content: string;
+  lines: number;
+  words: number;
+  chars: number;
+}): string {
+  let output = `**${result.topic}** (${result.title})\n`;
+  output += `Doc: ${result.docTopic} · ${result.lines} lines, ${result.words} words\n\n`;
+  output += result.content;
+  if (!result.content.endsWith("\n")) output += "\n";
+  return output;
+}
+
+const KB_TYPE_ICONS: Record<string, string> = {
+  javadocs: "📘 JavaDocs",
+  wiki: "📚 Wiki",
+  "api-docs": "📖 API Docs",
+  "mods-analysis": "🧩 Mods Analysis",
+  research: "🔬 Research",
+};
+
 export function formatKbSearchResults(
   query: string,
   results: Array<{
     topic: string;
+    docTopic: string;
     title: string;
+    section?: string;
     snippet: string;
     score: number;
-    /** Source file path (javadocs results live under a javadocs-kb dir). */
-    path?: string;
+    /** Portable doc type (wiki/api-docs/javadocs/...). */
+    type: string;
+    /** Read-cost metadata — lets an agent budget context. */
+    chars: number;
+    words: number;
+    /** Full chunk body (present when includeContent was requested). */
+    content?: string;
+    /** True when the inline body was truncated by the maxContent budget. */
+    contentTruncated?: boolean;
   }>,
 ): string {
   if (results.length === 0) {
@@ -583,24 +627,67 @@ export function formatKbSearchResults(
 
   let output = `Found ${results.length} results for "${query}":\n\n`;
   results.forEach((r) => {
-    // Java API docs live under data/javadocs-kb/ (regenerated) or the
-    // repo-shipped knowledge-base/javadocs/ — both end in `javadocs/`.
-    const javadocs = /javadocs(?:-kb)?[\\/]/.test(r.path ?? "");
-    output += `**${r.topic}** (${r.title})${javadocs ? " 📘 JavaDocs" : ""}\n`;
-    output += `  Score: ${r.score}\n`;
+    const tag = KB_TYPE_ICONS[r.type] ?? "";
+    output += `**${r.topic}** (${r.title})${tag ? ` ${tag}` : ""}\n`;
+    output += `  Doc: ${r.docTopic}${r.section ? ` · Section: ${r.section}` : ""}\n`;
+    // Size metadata: ~1 token per 4 chars, so an agent can pick cheap results.
+    output += `  Score: ${r.score} · ${r.chars} chars · ${r.words} words\n`;
     // Collapse the raw content slice to a single line (qwen audit G5: the
     // old snippet.replace(/\n/g, "\n  ") was a no-op for single-line
     // snippets and produced ragged indents for multi-line ones).
-    output += `  ${r.snippet.replace(/\s+/g, " ").trim()}\n\n`;
+    output += `  ${r.snippet.replace(/\s+/g, " ").trim()}\n`;
+    // Inline content (includeContent): search + read in one call.
+    if (r.content) {
+      if (r.contentTruncated) {
+        output += `  ⚠️ body truncated by maxContent — full chunk is ${r.chars} chars (use get_knowledge_section / a larger maxContent)\n`;
+      }
+      output += `  ──\n  ${r.content.replace(/\n/g, "\n  ")}\n`;
+    }
+    output += `\n`;
   });
 
   return output;
+}
+
+/** Batch get_knowledge_section rendering (sections[] param). */
+export function formatKbSections(res: {
+  docTopic: string;
+  sections: string[];
+  results: Array<{
+    topic: string;
+    docTopic: string;
+    title: string;
+    section?: string;
+    content: string;
+    lines: number;
+    words: number;
+    chars: number;
+  } | null>;
+}): string {
+  const matched = res.results.filter((r) => r !== null).length;
+  let out = `**${res.docTopic}** — ${matched}/${res.results.length} section(s) matched\n\n`;
+  res.results.forEach((r, i) => {
+    if (!r) {
+      out += `${i + 1}. (no match)\n\n`;
+      return;
+    }
+    out += `${i + 1}. **${r.topic}** (${r.title} · ${r.words} words)\n`;
+    out += r.content;
+    if (!r.content.endsWith("\n")) out += "\n";
+    out += "\n";
+  });
+  if (res.results.some((r) => r === null)) {
+    const list = res.sections.slice(0, 20).join("; ");
+    out += `Available sections: ${list || "(none)"}\n`;
+  }
+  return out;
 }
 
 export function formatKbTopics(
   topics: Array<{
     topic: string;
     title: string;
+    docType?: string;
     lines: number;
     words: number;
     chars: number;
@@ -612,7 +699,8 @@ export function formatKbTopics(
 
   let output = `## Knowledge Base Topics (${topics.length})\n\n`;
   topics.forEach((t) => {
-    output += `- **${t.topic}**: ${t.title} (${t.lines} lines, ${t.words} words, ${t.chars} chars)\n`;
+    const typeTag = t.docType ? ` (${t.docType})` : "";
+    output += `- **${t.topic}**${typeTag}: ${t.title} (${t.lines} lines, ${t.words} words, ${t.chars} chars)\n`;
   });
 
   return output;

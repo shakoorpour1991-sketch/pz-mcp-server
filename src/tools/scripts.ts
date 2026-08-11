@@ -12,6 +12,7 @@ import {
   ExportModScriptSchema,
 } from "../schemas.js";
 import type { GenerationOptions } from "../generators/ScriptGenerator.js";
+import type { ScriptValidationOptions } from "../validation/ValidationEngine.js";
 import type { McpTool } from "./registry.js";
 import {
   formatReferenceResults,
@@ -54,10 +55,10 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "validate_script",
     description:
-      "Validate Project Zomboid script syntax, structure and references with detailed error reporting — includes the ZedScripts knowledge-layer diagnostics (unknown parameters, wrong values/types, deprecations, required parameters, missing commas, malformed blocks, craftRecipe input/output issues) to catch AI-generated code that looks plausible but is invalid. Pass filePath to validate a script on disk (diagnostics are then file-scoped and include the absolute path)",
+      "Validate Project Zomboid script syntax, structure and references with detailed error reporting — includes the ZedScripts knowledge-layer diagnostics (unknown parameters, wrong values/types, deprecations, required parameters, missing commas, malformed blocks, craftRecipe input/output issues) to catch AI-generated code that looks plausible but is invalid. Set zedScripts=false to skip the Build 42 knowledge layer when validating a legacy B41-only codebase. Pass filePath to validate a script on disk (diagnostics are then file-scoped and include the absolute path)",
     inputSchema: ValidateScriptSchema,
     handler: async (args, ctx) => {
-      const { content, filePath, type, strict } = args;
+      const { content, filePath, type, strict, zedScripts } = args;
       let script = content;
       if (filePath !== undefined) {
         let safePath: string;
@@ -71,11 +72,14 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
         }
         script = await readFile(safePath, "utf-8");
       }
+      const options: ScriptValidationOptions = {};
+      if (filePath !== undefined) options.filePath = filePath;
+      if (zedScripts !== undefined) options.zedScripts = zedScripts;
       const validation = await ctx.validator.validateScript(
         script ?? "",
         type,
         strict,
-        { filePath },
+        options,
       );
 
       return {

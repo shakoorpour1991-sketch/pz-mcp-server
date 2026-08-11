@@ -1299,21 +1299,6 @@ body.rsz-dragging {
   flex-wrap: wrap;
   margin-top: 2px;
 }
-.ex-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 14px;
-}
-.ex-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-right: 2px;
-}
 .pg-toolbar {
   display: flex;
   gap: 10px;
@@ -4095,4 +4080,248 @@ a.link:hover {
   margin-right: 1em;
   color: var(--faint);
   user-select: none;
+}
+
+/* ----------------------------------------------------------------
+   Knowledge-base section drill-down
+   (search_knowledge_base chunk results -> get_knowledge_section)
+   ---------------------------------------------------------------- */
+.kb-res {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kb-row {
+  border: 1px solid var(--stroke-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  transition:
+    border-color 0.15s var(--easeout),
+    background 0.15s var(--easeout),
+    transform 0.15s var(--easeout);
+  content-visibility: auto;
+  contain-intrinsic-size: 92px;
+}
+.kb-row:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+.kb-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kb-title {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-doc {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-meta {
+  margin-top: 6px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.kb-meta span {
+  white-space: nowrap;
+}
+.kb-snippet {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Inline chunk body (search_knowledge_base includeContent) — pre-wrapped so
+   code/markdown stays readable without a full markdown render pass. */
+.kb-inline {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--stroke-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.kb-inc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  min-height: 38px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.kb-inc input {
+  accent-color: rgb(var(--accent-rgb));
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.kb-foot {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+.kb-drill-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.kb-drill-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 2px 0 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--stroke-soft);
+}
+.kb-drill .code-block {
+  margin-top: 10px;
+}
+
+/* ----------------------------------------------------------------
+   Tool-description hover tooltip (? icon in the tool card head)
+   ---------------------------------------------------------------- */
+.tool-q {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--faint);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: help;
+  transition:
+    color 0.15s var(--easeout),
+    border-color 0.15s var(--easeout),
+    background 0.15s var(--easeout);
+}
+.tool-q:hover,
+.tool-q:focus-visible {
+  color: rgb(var(--accent-rgb));
+  border-color: rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.1);
+  outline: none;
+}
+.tool-q-ic {
+  line-height: 1;
+}
+.tool-tip {
+  position: fixed;
+  z-index: 200;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #16171e;
+  border: 1px solid var(--stroke);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.14s var(--easeout),
+    transform 0.14s var(--easeout);
+}
+.tool-tip.show {
+  opacity: 1;
+  transform: none;
+}
+
+/* ----------------------------------------------------------------
+   Knowledge Base Index status (Status page)
+   ---------------------------------------------------------------- */
+.kb-idx-card {
+  margin-top: 16px;
+}
+.kb-idx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+.kb-idx-tile {
+  border: 1px solid var(--stroke-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+}
+.kb-idx-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kb-idx-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+  flex: none;
+}
+.kb-idx-dot.on {
+  background: var(--emerald);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+}
+.kb-idx-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.kb-idx-val {
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.kb-idx-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+.kb-idx-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }

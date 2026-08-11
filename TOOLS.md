@@ -71,6 +71,8 @@ The knowledge layer scans **every block type the dataset describes (97 block typ
 
 **Verified game data wins.** The dataset does not model every keyword/parameter the game itself ships, so a vanilla-verified extensions table (`zedData/vanillaVerified.json`, regenerable via `scripts/_extract_vanilla_verified.mjs`) silently accepts what the real 42.20 script tree uses — `xuiConfig` blocks, `component SpriteConfig` `dontNeedFrame`/`canBePadlocked`/`BreakSound`/…, `part` `hasLightsRear`, `passenger` `door2`/`hasRoof`, `contextEntry` `icon`/`customSubmenu`, `physics` `radius`, `vehicle` `seatNumber`, `entity` `Description`/`BuildDescription`, … — instead of flagging them unknown. The dataset's dependent-parameter (`needs`) rules are not enforced (vanilla violates them and loads fine), and recipe **fluid amounts** (`-fluid 0.2 categories[Water]`) may be decimal like the vanilla recipes. Running the engine over all 1,004 vanilla script files yields zero errors — the only warnings left are genuine deprecations the dataset documents (e.g. vehicle `frontEndHealth` → `frontEndDurability`).
 
+Robustness and parity details: double commas are flagged `INVALID_COMMA` (property lines and recipe input/output entries); a single wrong value on a scalar parameter is `WRONG_VALUE` while array/object lists keep `WRONG_VALUES`; braces inside quoted values are ignored when tracking block boundaries (an unbalanced `{` in a `DisplayName` can't corrupt the scan); `template vehicle <Name>` headers keep the full multi-word name (only the first token is the type qualifier); a required parameter or `inputs`/`outputs` section header inside a `/* ... */` comment can't satisfy its check; and legacy B41 `recipe` headers are never flagged as unknown blocks. The whole layer can be switched off per call with **`zedScripts: false`** (e.g. validating a B41-only codebase).
+
 | Param      | Type    | Required | Description                                                                                                               |
 | ---------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `content`  | string  | No       | Script content to validate (required unless `filePath` is given)                                                          |
@@ -128,14 +130,14 @@ Parse Project Zomboid game files and populate the local SQLite database.
 
 ### `index_knowledge_base`
 
-Index markdown knowledge base docs into a searchable FTS database.
+Index markdown knowledge base docs into the chunked search database. Docs are cleaned (TOC/footer removal, api-docs table collapse), split into **section chunks**, tagged with a portable **doc type** (`wiki` / `api-docs` / `mods-analysis` / `research`), and stored with external-content FTS. JavaDocs are a separate corpus — run `index_javadocs` (this tool skips the `javadocs/` directory by default).
 
 | Param       | Type    | Required | Description                                                                                 |
 | ----------- | ------- | -------- | ------------------------------------------------------------------------------------------- |
 | `path`      | string  | No       | Docs directory (default: `PZ_MCP_KB_PATH` env or the repository's `knowledge-base/` folder) |
 | `overwrite` | boolean | No       | Full re-index (default: `true`); `false` = mtime-based incremental sync                     |
 
-**Output:** Counts of indexed topics, files found, total characters; any per-file errors.
+**Output:** Counts of indexed topics, files found, section chunks, total characters; any per-file errors.
 
 ---
 
@@ -161,15 +163,36 @@ Optionally re-ingest from a raw generated JavaDoc HTML tree (the tree with packa
 
 ### `search_knowledge_base`
 
-Full-text search of knowledge base docs with relevance ranking and topic filter.
+Full-text search of knowledge base docs with relevance ranking. **Stemmed** (`"reload"` finds `reloads`/`reloading`); the last term is **prefix-matched only as a fallback** when a plain match returns nothing (so `"cooking"` no longer floods results with `cookie`/`cookwareLoot`, while partial identifiers like `"getPlay"` still resolve to `getPlayer`). **Results are section-level chunks** — each hit is a precise unit (a wiki section or a single javadocs method/field) with its own `topic` id, readable directly via `knowledge://<topic>` (or `knowledge://<topic>#<section>` for one section).
 
-| Param   | Type   | Required | Description                                    |
-| ------- | ------ | -------- | ---------------------------------------------- |
-| `query` | string | Yes      | Search query                                   |
-| `topic` | string | No       | Filter by exact topic (filename without `.md`) |
-| `limit` | number | No       | Max results, 1–100 (default: 10)               |
+**Type-aware defaults** (the biggest retrieval fix): 96.8% of the corpus is javadocs and most of those are bodyless bare signatures (decompiled PZ fields have no javadoc comments), so a flat ranking used to flood natural-language queries with constants. Now a mixed search (no `type`/`types`/`package` filter) ranks **prose docs (wiki/research/api-docs/mods-analysis) first when the query reads like natural language** ("anvil", "blacksmithing") and **javadocs first when it looks like an identifier** (`getPlayer`, `ANVIL_WEIGHT`, `Base.Hammer`) — with bodyless signature chunks downweighted in the prose case. An explicit filter always uses pure bm25 rank. **bm25 column weights** favor the chunk topic/title/tags over the long content body, so identifier searches surface the exact member first.
 
-**Output:** Matching topics ranked by relevance (bm25), each with title, score, and a content snippet.
+| Param            | Type      | Required | Description                                                                                                                                        |
+| ---------------- | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`          | string    | Yes      | Search query                                                                                                                                       |
+| `topic`          | string    | No       | Filter by exact doc topic — the path-prefixed id (e.g. `wiki/Java`, `javadocs/zombie.iso.IsoObject`)                                                |
+| `type`           | enum      | No       | Single doc type filter: `wiki`, `api-docs`, `javadocs`, `mods-analysis`, `research` (alias for a one-element `types`)                               |
+| `types`          | enum[]    | No       | **Multi-select** doc types, e.g. `["research", "wiki"]` (prose only, no javadocs) — express intent precisely in one call                           |
+| `package`        | string    | No       | Filter by Java package (javadocs only, e.g. `zombie.iso`)                                                                                           |
+| `includeContent` | boolean   | No       | Return full chunk bodies inline (search + read in one call — no `get_knowledge_section` round trips); bodies are filled in rank order up to the budget |
+| `maxContent`     | number    | No       | Total char budget for inline bodies (default 8,000, max 20,000; the first overflow is truncated, later results omit content)                        |
+| `limit`          | number    | No       | Max results, 1–100 (default: 10)                                                                                                                    |
+
+**Output:** Chunks ranked by relevance (bm25), each with `topic` (chunk id), `docTopic` (file-level topic), title, section, score, portable `type`, `source`, a line-window snippet, **read-cost `chars`/`words` metadata** (agents can budget context before reading), and — when `includeContent` was requested — the capped `content` body. JavaDocs must be indexed with `index_javadocs` first.
+
+---
+
+### `get_knowledge_section`
+
+Read **exactly one section** (or a batch of them) of a knowledge base doc by name — no slug guessing. Pass a doc topic (`wiki/Java`, `javadocs/zombie.iso.IsoGameCharacter`) plus the section heading or javadocs member name (`Section One`, `getPlayer`, `public static void Load()`), or a full chunk id (`wiki/Java#section-one`) to read it directly. Matched case-insensitively; on no match the reply lists the doc's available sections.
+
+| Param      | Type     | Required | Description                                                                                                          |
+| ---------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `topic`    | string   | Yes      | Doc topic (path-prefixed id) or a full chunk id (`doc#section`)                                                       |
+| `section`  | string   | No       | Single section heading, member name, or chunk slug — omitted when `topic` already carries a `#section`                |
+| `sections` | string[] | No       | **Batch mode**: resolve several headings/member names in one call (e.g. a handful of javadocs methods on one class) — each entry matched like `section`; a miss yields `null` in `results`, never an error |
+
+**Output:** The single chunk (a wiki section or one javadocs method/field) with its chunk id, doc, title, and content — never the whole page. In batch mode, `results[]` (one entry per requested name, in order, `null` on miss) plus the doc's available sections. An agent hunting several method signatures fetches a handful of ~5-line member chunks in one round trip, not the 100 KB class page.
 
 ---
 
@@ -177,7 +200,7 @@ Full-text search of knowledge base docs with relevance ranking and topic filter.
 
 List all indexed knowledge base topics with stats. No parameters.
 
-**Output:** Each indexed topic with title, line/word/char counts.
+**Output:** Each indexed topic with title, doc type, and line/word/char counts (precomputed at index time — instant even with ~5,000 topics).
 
 ---
 

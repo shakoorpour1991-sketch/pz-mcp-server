@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BLOCK_TYPES, SEARCH_TYPES } from "./utils/blockTypes.js";
+import { KB_DOC_TYPES } from "./knowledge/kbChunker.js";
 
 // Schema definitions for tool inputs
 export const SearchVanillaSchema = z.object({
@@ -217,6 +218,13 @@ export const ValidateScriptSchema = z
       .boolean()
       .default(false)
       .describe("Enable strict validation mode"),
+    zedScripts: z
+      .boolean()
+      .default(true)
+      .optional()
+      .describe(
+        "Run the ZedScripts Build 42 knowledge-layer diagnostics (unknown parameters, wrong values/types, deprecations, required parameters, missing/duplicate commas, block-ID rules, craftRecipe input/output shapes). Default true. Set false to validate a legacy B41-only codebase without the Build 42 knowledge layer.",
+      ),
   })
   .refine((v) => v.content !== undefined || v.filePath !== undefined, {
     message: "Either content or filePath is required",
@@ -423,18 +431,82 @@ export const SearchKnowledgeBaseSchema = z.object({
   query: z
     .string()
     .max(1000)
-    .describe("Search query for knowledge base content"),
+    .describe(
+      "Search query for knowledge base content. Stemmed + prefix-matched (\"reload\" finds reloads/reloading; \"getPlay\" finds getPlayer/getPlayers). Natural-language queries rank prose docs (wiki/research/api-docs) first; javadocs are ranked first for identifier-like queries (camelCase, dotted names).",
+    ),
   topic: z
     .string()
     .max(256)
     .optional()
-    .describe("Filter by exact topic (filename without .md)"),
+    .describe(
+      "Filter by exact doc topic — the path-prefixed topic id (e.g. wiki/Java, javadocs/zombie.iso.IsoObject, api-docs/scripts/items).",
+    ),
+  type: z
+    .enum(KB_DOC_TYPES)
+    .optional()
+    .describe(
+      "Filter by a single doc type: wiki, api-docs, javadocs, mods-analysis, or research. Alias for a one-element types array.",
+    ),
+  types: z
+    .array(z.enum(KB_DOC_TYPES))
+    .max(KB_DOC_TYPES.length)
+    .optional()
+    .describe(
+      'Filter by one or more doc types (multi-select). E.g. types: ["research", "wiki"] searches prose docs only. Overrides type when both are set. Disables the default javadocs/prose reordering — results ranked purely by bm25.',
+    ),
+  package: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Filter by Java package (javadocs only, e.g. zombie.iso or zombie.characters).",
+    ),
+  includeContent: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "Return each result's full chunk body inline (search + read in one call), capped by maxContent. Avoids N+1 round trips per interesting result.",
+    ),
+  maxContent: z
+    .number()
+    .min(1)
+    .max(20000)
+    .default(8000)
+    .optional()
+    .describe(
+      "Total character budget for inline chunk bodies across all results (default 8000, max 20000). Results are filled in rank order until the budget is spent.",
+    ),
   limit: z
     .number()
     .min(1)
     .max(100)
     .default(10)
     .describe("Maximum number of results"),
+});
+
+export const GetKnowledgeSectionSchema = z.object({
+  topic: z
+    .string()
+    .min(1)
+    .max(256)
+    .describe(
+      "Doc topic (path-prefixed id, e.g. wiki/Java, javadocs/zombie.iso.IsoGameCharacter) or a full chunk id (wiki/Java#section-one) to read that section directly.",
+    ),
+  section: z
+    .string()
+    .max(512)
+    .optional()
+    .describe(
+      "Section to read: a heading, member name, or chunk slug (e.g. 'Section One', 'getPlayer', 'public static void Load()'). Matched case-insensitively; omitted when topic already carries a #section.",
+    ),
+  sections: z
+    .array(z.string().min(1).max(512))
+    .max(50)
+    .optional()
+    .describe(
+      "Batch mode: read several sections/members in one call (e.g. a handful of javadocs methods from one class). Each entry is matched like `section`; a miss yields null in that result entry instead of an error. The reply lists the doc's available sections. Ignored when topic already carries a #section.",
+    ),
 });
 
 export const WorkshopSearchSchema = z.object({
@@ -759,6 +831,7 @@ export const TOOL_SCHEMAS = {
   detect_recipe_conflicts: DetectRecipeConflictsSchema,
   export_mod_script: ExportModScriptSchema,
   search_knowledge_base: SearchKnowledgeBaseSchema,
+  get_knowledge_section: GetKnowledgeSectionSchema,
   workshop_search: WorkshopSearchSchema,
   workshop_get_details: WorkshopGetDetailsSchema,
   workshop_download: WorkshopDownloadSchema,

@@ -188,10 +188,11 @@ describe("JavaDocIndexer reproducibility (stale-doc pruning)", () => {
   });
 });
 
-describe("JavaDocIndexer end-to-end KB integration", () => {
+describe("JavaDocIndexer end-to-end KB integration (KB v2)", () => {
   let tmpDir;
   let kb;
   let outDir;
+  const PREFIX = "javadocs";
 
   before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pz-javadocs-e2e-"));
@@ -201,7 +202,8 @@ describe("JavaDocIndexer end-to-end KB integration", () => {
 
     kb = new KnowledgeBaseManager(path.join(tmpDir, "data"));
     await kb.initialize();
-    const index = await kb.indexDirectory(outDir);
+    // index_javadocs namespaces topics under `javadocs/` (KB v2).
+    const index = await kb.indexDirectory(outDir, { topicPrefix: PREFIX });
     assert.deepEqual(index.errors, []);
     assert.equal(index.topics, 6);
   });
@@ -211,45 +213,76 @@ describe("JavaDocIndexer end-to-end KB integration", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("search finds a class by name (FQN topic)", async () => {
+  test("search finds a class by name (path-prefixed FQN doc topic)", async () => {
     const results = await kb.search("FixtureGlobals");
     assert.ok(results.length > 0);
-    assert.equal(results[0].topic, "zombie.FixtureGlobals");
-    assert.equal(results[0].title, "zombie.FixtureGlobals");
-    assert.ok(results[0].snippet.length > 0);
+    const globals = results.find(
+      (r) => r.docTopic === "javadocs/zombie.FixtureGlobals",
+    );
+    assert.notEqual(globals, undefined);
+    assert.equal(globals.docTitle, "zombie.FixtureGlobals");
+    assert.equal(globals.type, "javadocs");
+    assert.ok(globals.snippet.length > 0);
   });
 
   test("search finds an interface", async () => {
     const results = await kb.search("IFixtureUpdater");
     assert.ok(
-      results.some((r) => r.topic === "zombie.interfaces.IFixtureUpdater"),
+      results.some(
+        (r) => r.docTopic === "javadocs/zombie.interfaces.IFixtureUpdater",
+      ),
     );
   });
 
-  test("search finds a method name inside a class doc", async () => {
+  test("search returns the method member chunk with its signature as title", async () => {
     const results = await kb.search("getPlayer");
-    const globals = results.find((r) => r.topic === "zombie.FixtureGlobals");
+    const globals = results.find(
+      (r) => r.docTopic === "javadocs/zombie.FixtureGlobals",
+    );
     assert.notEqual(globals, undefined);
     assert.match(globals.snippet, /getPlayer/);
+    assert.match(globals.title, /getPlayer/);
   });
 
   test("search finds enum constants and record accessors", async () => {
     const strength = await kb.search("Strength");
-    assert.ok(strength.some((r) => r.topic === "zombie.FixtureCapability"));
+    assert.ok(
+      strength.some(
+        (r) => r.docTopic === "javadocs/zombie.FixtureCapability",
+      ),
+    );
     const accessor = await kb.search("x()");
-    assert.ok(accessor.some((r) => r.topic === "zombie.iso.FixtureRecord"));
+    assert.ok(
+      accessor.some((r) => r.docTopic === "javadocs/zombie.iso.FixtureRecord"),
+    );
   });
 
-  test("topic filter returns the exact class doc", async () => {
+  test("topic filter returns chunks of the exact class doc", async () => {
     const results = await kb.search("public static", {
-      topic: "zombie.FixtureGlobals",
+      topic: "javadocs/zombie.FixtureGlobals",
     });
     assert.ok(results.length > 0);
-    assert.ok(results.every((r) => r.topic === "zombie.FixtureGlobals"));
+    assert.ok(
+      results.every((r) => r.docTopic === "javadocs/zombie.FixtureGlobals"),
+    );
+  });
+
+  test("type filter scopes to javadocs only", async () => {
+    const results = await kb.search("getPlayer", { type: "javadocs" });
+    assert.ok(results.length > 0);
+    assert.ok(results.every((r) => r.type === "javadocs"));
+  });
+
+  test("package filter scopes to a Java package", async () => {
+    const results = await kb.search("getPlayer", {
+      package: "zombie",
+    });
+    assert.ok(results.length > 0);
+    assert.ok(results.every((r) => r.package === "zombie"));
   });
 
   test("getTopic returns full API content with provenance and source metadata", async () => {
-    const doc = await kb.getTopic("zombie.FixtureGlobals");
+    const doc = await kb.getTopic("javadocs/zombie.FixtureGlobals");
     assert.notEqual(doc, null);
     assert.equal(doc.title, "zombie.FixtureGlobals");
     assert.ok(doc.content.includes("public static void Load()"));
@@ -264,24 +297,40 @@ describe("JavaDocIndexer end-to-end KB integration", () => {
     try {
       const row = raw
         .prepare("SELECT source FROM knowledge_docs WHERE topic = ?")
-        .get("zombie.FixtureGlobals");
+        .get("javadocs/zombie.FixtureGlobals");
       assert.equal(row.source, "Unofficial PZ JavaDocs 42.20.0");
     } finally {
       raw.close();
     }
   });
 
+  test("getTopic with a #section reads exactly one member chunk", async () => {
+    const results = await kb.search("Load", {
+      topic: "javadocs/zombie.FixtureGlobals",
+    });
+    const loadChunk = results.find((r) => /public static void Load/.test(r.title));
+    assert.notEqual(loadChunk, undefined);
+    const section = await kb.getTopic(loadChunk.topic);
+    assert.notEqual(section, null);
+    assert.ok(section.content.includes("public static void Load"));
+    assert.equal(section.docTopic, "javadocs/zombie.FixtureGlobals");
+    assert.ok(section.lines > 0);
+  });
+
   test("listTopics includes the javadocs topics alongside markdown topics", async () => {
     const topics = await kb.listTopics();
     const names = topics.map((t) => t.topic);
-    assert.ok(names.includes("zombie.FixtureGlobals"));
-    assert.ok(names.includes("zombie.GitVersion"));
-    assert.ok(names.includes("zombie.interfaces.IFixtureUpdater"));
+    assert.ok(names.includes("javadocs/zombie.FixtureGlobals"));
+    assert.ok(names.includes("javadocs/zombie.GitVersion"));
+    assert.ok(names.includes("javadocs/zombie.interfaces.IFixtureUpdater"));
   });
 
   test("incremental re-index after re-ingest skips unchanged docs", async () => {
     await new JavaDocIndexer().ingest(FIXTURES, outDir); // no rewrites → mtime stable
-    const res = await kb.indexDirectory(outDir, { overwrite: false });
+    const res = await kb.indexDirectory(outDir, {
+      overwrite: false,
+      topicPrefix: PREFIX,
+    });
     assert.equal(res.skipped, 6);
     assert.equal(res.topics, 0);
     assert.equal(res.removed, 0);

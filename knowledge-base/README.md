@@ -1,3 +1,10 @@
+---
+title: "PZ Build 42 Modding Knowledge Base"
+build: "42.18"
+source: "Local Project Zomboid Build 42 install analysis"
+tags: [pz, modding, build42, knowledge-base]
+---
+
 # PZ Build 42 Modding Knowledge Base
 
 Project Zomboid Build 42 modding research, organized from analysis of a local Project Zomboid Build 42 install (`D:\Games\ProjectZomboid-42.18` on the dev machine).

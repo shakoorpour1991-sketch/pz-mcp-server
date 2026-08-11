@@ -28,7 +28,6 @@ import {
   TOOL_GUIDES,
   GUIDE_STEPS,
   EXAMPLES,
-  EXAMPLE_ACTIONS,
   CHAIN_CHIPS,
   CHAIN_COLW,
   CHAIN_NODE_W,
@@ -179,6 +178,10 @@ const S = {
     },
   },
   wsDir: null,
+  // Knowledge-base search state for the Database tab (section drill-down).
+  kbdb: { results: null, drill: null, drillContent: null },
+  // Index state shown on the Status page (refreshed from list_knowledge_topics).
+  kbStatus: { state: "idle", docs: 0, javadocs: 0, byType: {}, total: 0 },
   inst: {
     detected: null,
     busy: false,
@@ -391,6 +394,7 @@ async function handshake() {
   loadWorkshopDir();
   loadEnv();
   renderView();
+  refreshKbStatus();
 }
 
 /* ---------- SSE wire ---------- */
@@ -542,6 +546,10 @@ function switchView(name) {
 
 /* ---------- router ---------- */
 function renderView() {
+  // Any re-render can destroy the anchor of a shown description tooltip — the
+  // tip is body-appended, so it must be dismissed explicitly, not left to
+  // mouseout (which may never fire on element removal).
+  hideToolTip();
   const mount = $("#view");
   mount.innerHTML = "";
   const wrap = document.createElement("div");
@@ -571,7 +579,10 @@ function renderView() {
     applyPgSizes();
     if (S.lastResult) restoreResult();
   }
-  if (S.view === "database") renderDbStats();
+  if (S.view === "database") {
+    renderDbStats();
+    restoreKbDb();
+  }
   if (S.view === "workshop") renderWorkshopResults();
   if (S.view === "chain") renderChain();
   if (S.view === "installer") initInstallerView();
@@ -665,6 +676,12 @@ function statusHTML() {
       '<span class="badge b-dim" id="refBadge">— refs</span>',
     ) +
     "</div>" +
+    '<section class="glass card panel-card kb-idx-card">' +
+    "<h3>" +
+    ICONS.book +
+    ' Knowledge Base Index <span class="badge b-dim" style="margin-left:auto">persists across restarts — index once, it stays</span></h3>' +
+    '<div class="kb-idx-grid" id="kbIdxGrid"></div>' +
+    "</section>" +
     '<div class="status-grid">' +
     '<section class="glass card panel-card"><h3>' +
     ICONS.link +
@@ -838,6 +855,180 @@ function updateStatusDom() {
       '<div class="krow"><span class="k">Tools</span><span class="v">' +
       S.tools.length +
       " registered</span></div>";
+  updateKbStatusDom();
+}
+
+/* ---------- knowledge base index status (Status page) ---------- */
+// Reads list_knowledge_topics (stored stats — instant) and reports whether the
+// markdown KB and the JavaDocs corpus are indexed. The KB lives in
+// data/pz_knowledge.db on disk, so it survives restarts: index once, and every
+// session afterwards shows "indexed" here without re-running anything.
+async function refreshKbStatus() {
+  if (!S.handshaken) return;
+  S.kbStatus = { ...S.kbStatus, state: "loading" };
+  updateKbStatusDom();
+  try {
+    const reply = await rpc("tools/call", {
+      name: "list_knowledge_topics",
+      arguments: {},
+    });
+    const topics = reply.result?.structuredContent?.topics || [];
+    const byType = {};
+    let docs = 0,
+      javadocs = 0;
+    for (const t of topics) {
+      const k = t.docType || "other";
+      byType[k] = (byType[k] || 0) + 1;
+      if (k === "javadocs") javadocs++;
+      else docs++;
+    }
+    // Only the computed counts are kept — the raw topics array (~4-5k rows)
+    // is discarded so it isn't retained in state for the whole session.
+    S.kbStatus = {
+      state: "ok",
+      docs,
+      javadocs,
+      byType,
+      total: topics.length,
+    };
+  } catch (e) {
+    S.kbStatus = {
+      ...S.kbStatus,
+      state: "error",
+      error: String((e && e.message) || e),
+    };
+  }
+  updateKbStatusDom();
+}
+function kbIdxTileHTML(label, count, sub, ok, actions) {
+  return (
+    '<div class="kb-idx-tile">' +
+    '<div class="kb-idx-top">' +
+    '<span class="kb-idx-dot' +
+    (ok ? " on" : "") +
+    '"></span>' +
+    '<span class="kb-idx-label">' +
+    esc(label) +
+    "</span>" +
+    '<span class="badge ' +
+    (ok ? "b-ok" : "b-warn") +
+    '" style="margin-left:auto">' +
+    (ok ? "indexed" : "not indexed") +
+    "</span></div>" +
+    '<div class="kb-idx-val num">' +
+    count +
+    "</div>" +
+    '<div class="kb-idx-sub">' +
+    esc(sub) +
+    "</div>" +
+    (actions ? '<div class="kb-idx-actions">' + actions + "</div>" : "") +
+    "</div>"
+  );
+}
+
+/* ---------- tool-description hover tooltip (?) ---------- */
+let _tipEl = null;
+function showToolTip(anchor, text) {
+  if (!text) return;
+  if (_tipEl && _tipEl._owner === anchor) return;
+  hideToolTip();
+  const tip = document.createElement("div");
+  tip.className = "tool-tip";
+  tip.textContent = text;
+  tip._owner = anchor;
+  document.body.appendChild(tip);
+  const r = anchor.getBoundingClientRect();
+  const w = Math.min(400, innerWidth - 24);
+  const left = Math.max(12, Math.min(r.right - w, innerWidth - w - 12));
+  let top = r.bottom + 10;
+  if (top + Math.min(320, innerHeight * 0.42) > innerHeight - 12)
+    top = Math.max(12, r.top - 70);
+  tip.style.width = w + "px";
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+  requestAnimationFrame(() => tip.classList.add("show"));
+  _tipEl = tip;
+}
+function hideToolTip() {
+  if (_tipEl) {
+    _tipEl.remove();
+    _tipEl = null;
+  }
+}
+document.addEventListener("mouseover", (e) => {
+  const q = walkUp(e.target, ".tool-q");
+  if (q) showToolTip(q, q.dataset.desc || "");
+});
+document.addEventListener("mouseout", (e) => {
+  const q = walkUp(e.target, ".tool-q");
+  if (q && (!e.relatedTarget || !q.contains(e.relatedTarget))) hideToolTip();
+});
+document.addEventListener("focusin", (e) => {
+  const q = walkUp(e.target, ".tool-q");
+  if (q) showToolTip(q, q.dataset.desc || "");
+});
+document.addEventListener("focusout", (e) => {
+  if (walkUp(e.target, ".tool-q")) hideToolTip();
+});
+// Dismiss on any click or scroll — a fixed-position tip goes stale relative
+// to its anchor the moment the page (or any scroll container) moves.
+document.addEventListener("pointerdown", hideToolTip);
+document.addEventListener("scroll", hideToolTip, true);
+let _kbIdxHtml = "";
+function updateKbStatusDom() {
+  const grid = $("#kbIdxGrid");
+  if (!grid) return;
+  const s = S.kbStatus;
+  if (s.state === "idle" || s.state === "loading") {
+    grid.innerHTML =
+      '<div class="md-out" style="color:var(--faint);display:flex;align-items:center;gap:10px"><span class="spinner"></span> checking knowledge base index…</div>';
+    return;
+  }
+  if (s.state === "error") {
+    grid.innerHTML =
+      '<div class="md-out" style="color:var(--faint)">Could not read the knowledge base index — is the server running?</div>';
+    return;
+  }
+  const docsBtn =
+    s.docs > 0
+      ? '<button class="btn sm ghost" data-act="go-tool" data-tool="search_knowledge_base">' +
+        ICONS.search +
+        " Search</button>"
+      : '<button class="btn sm" data-act="go-tool" data-tool="index_knowledge_base">' +
+        ICONS.book +
+        " Index now</button>";
+  const jdBtn =
+    s.javadocs > 0
+      ? '<button class="btn sm ghost" data-act="go-tool" data-tool="search_knowledge_base">' +
+        ICONS.search +
+        " Search</button>"
+      : '<button class="btn sm" data-act="go-tool" data-tool="index_javadocs">' +
+        ICONS.code +
+        " Index now</button>";
+  const parts = [];
+  for (const [k, v] of Object.entries(s.byType))
+    if (k !== "javadocs" && v > 0) parts.push(k);
+  const html =
+    kbIdxTileHTML(
+      "Markdown docs",
+      s.docs,
+      parts.length ? parts.join(" · ") : "wiki · api-docs · research · mods-analysis",
+      s.docs > 0,
+      docsBtn,
+    ) +
+    kbIdxTileHTML(
+      "JavaDocs API",
+      s.javadocs,
+      "Unofficial PZ JavaDocs — one entry per API type",
+      s.javadocs > 0,
+      jdBtn,
+    );
+  // The status view re-renders on every 2s telemetry tick — skip the DOM
+  // write when nothing changed so hovered buttons are never rebuilt under
+  // the cursor.
+  if (html === _kbIdxHtml) return;
+  _kbIdxHtml = html;
+  grid.innerHTML = html;
 }
 let _srvLogRaf = 0;
 function renderServerLog() {
@@ -1099,10 +1290,10 @@ function toolCardHTML(tool) {
     "</span>" +
     '<span style="min-width:0;flex:1"><span class="tool-name">' +
     esc(tool.name) +
-    "</span>" +
-    '<span class="tool-desc">' +
-    esc(tool.description || "") +
     "</span></span>" +
+    '<span class="tool-q" tabindex="0" role="img" aria-label="Show tool description" data-desc="' +
+    esc(tool.description || "") +
+    '"><span class="tool-q-ic">?</span></span>' +
     '<span class="badge b-dim" style="flex:none">' +
     getToolFields(tool).length +
     " params</span>" +
@@ -1128,18 +1319,6 @@ function toolCardHTML(tool) {
 }
 function playgroundHTML() {
   return (
-    '<div class="ex-row"><span class="ex-label">Quick actions</span>' +
-    EXAMPLE_ACTIONS.map(
-      (e, i) =>
-        '<button class="btn sm ghost" data-act="example" data-i="' +
-        i +
-        '" style="border:1px solid var(--stroke)">' +
-        ICONS.play +
-        " " +
-        esc(e.label) +
-        "</button>",
-    ).join("") +
-    "</div>" +
     '<div class="play-grid">' +
     '<div class="pg-left">' +
     '<div class="pg-toolbar">' +
@@ -1238,7 +1417,7 @@ function renderSingleTool() {
       ICONS.spark +
       "</span>" +
       '<div style="min-width:0"><div class="tool-name">No tool selected</div>' +
-      '<div class="tool-desc">Pick a tool from the dropdown to configure and run it — or use a quick action above.</div></div></div>';
+      '<div class="tool-desc">Pick a tool from the dropdown to configure and run it — hover the ? icon for its description.</div></div></div>';
     return;
   }
   S.openTool = t.name;
@@ -1430,8 +1609,9 @@ async function callTool(name, args) {
     return;
   }
   if (S.view !== "playground") switchView("playground");
-  // Single-tool playground: quick actions can target any tool — surface its card
-  // (with the Cancel button) so the running state is always visible.
+  // Single-tool playground: go-tool buttons elsewhere (Database tab, Status
+  // page) can target any tool — surface its card (with the Cancel button) so
+  // the running state is always visible.
   const sel = $("#pgToolSelect");
   if (sel && S.pg.tool !== name) {
     S.pg.tool = name;
@@ -1461,6 +1641,10 @@ async function callTool(name, args) {
     showResult(name, text, dt, reply, false);
     pushRecent(name, dt, "ok", text);
     toast(name + " completed · " + dt + "ms");
+    // Indexing changed the knowledge base on disk — refresh the Status page
+    // tiles so the user sees the new indexed state without restarting.
+    if (name === "index_knowledge_base" || name === "index_javadocs")
+      refreshKbStatus();
   } catch (e) {
     const dt = Math.round(performance.now() - t0);
     if (ctrl.signal.aborted) {
@@ -1543,7 +1727,9 @@ function applyPgSizes() {
   } catch {}
 }
 function resultHeadHTML(r) {
-  const long = r.text && r.text.length > 6000;
+  // Same clamp the body uses: long-text Show-more only applies to raw markdown
+  // output — structured KB lists scroll in #resultBody's own viewport.
+  const long = r.text && r.text.length > 6000 && r.kbResults === null;
   return (
     '<span class="tool-ic" style="width:32px;height:32px;border-radius:9px;flex:none">' +
     (ICONS[TOOL_ICONS[r.name]] || ICONS.spark) +
@@ -1593,8 +1779,26 @@ function showResult(name, text, dt, reply, isError) {
   // badges and click-to-open lines — extracted from the tool's structured
   // content so the deck doesn't have to parse markdown.
   const diags = reply ? findDiagnostics(reply.result?.structuredContent) : [];
-  S.lastResult = { name, text, script, reply, isError, dt, diags };
-  const long = text.length > 6000;
+  // KB v2: search_knowledge_base returns section-level chunks with portable
+  // metadata (docTopic, type, package) — render them as a structured list with
+  // per-row "View section" drill-down (get_knowledge_section) instead of a
+  // bare markdown dump, so a hit reads as the exact chunk it is.
+  const kbResults = extractKbResults(name, reply);
+  S.lastResult = {
+    name,
+    text,
+    script,
+    reply,
+    isError,
+    dt,
+    diags,
+    kbResults,
+    kbDrill: null,
+    kbDrillContent: null,
+  };
+  // The long-text clamp only applies to raw markdown output; structured KB
+  // lists scroll inside #resultBody's own viewport instead.
+  const long = text.length > 6000 && kbResults === null;
   card.style.display = "";
   $("#resultHead").innerHTML = resultHeadHTML(S.lastResult);
   const body = $("#resultBody");
@@ -1602,7 +1806,9 @@ function showResult(name, text, dt, reply, isError) {
   body.classList.remove("show-all");
   body.innerHTML = isError
     ? '<div class="md-p" style="color:#FDA4AF">' + esc(text) + "</div>"
-    : renderMD(text);
+    : kbResults !== null
+      ? renderKbResultsBody(kbResults)
+      : renderMD(text);
   if (diags.length) {
     const d = document.createElement("div");
     d.innerHTML = diagPanelHTML(diags, name);
@@ -1632,7 +1838,7 @@ function restoreResult() {
   const card = $("#resultCard");
   if (!card || !S.lastResult) return;
   const r = S.lastResult;
-  const long = r.text && r.text.length > 6000;
+  const long = r.text && r.text.length > 6000 && r.kbResults === null;
   card.style.display = "";
   $("#resultHead").innerHTML = resultHeadHTML(r);
   const body = $("#resultBody");
@@ -1640,12 +1846,217 @@ function restoreResult() {
   body.classList.remove("show-all");
   body.innerHTML = r.isError
     ? '<div class="md-p" style="color:#FDA4AF">' + esc(r.text) + "</div>"
-    : renderMD(r.text);
+    : r.kbResults !== null
+      ? r.kbDrill != null && r.kbDrillContent
+        ? kbSectionHTML(r.kbDrillContent, r.kbResults[r.kbDrill]?.type)
+        : renderKbResultsBody(r.kbResults)
+      : renderMD(r.text);
   if (r.diags && r.diags.length) {
     const d = document.createElement("div");
     d.innerHTML = diagPanelHTML(r.diags, r.name);
     body.appendChild(d.firstElementChild);
   }
+}
+
+/* ---------- knowledge-base results & section drill-down ---------- */
+function extractKbResults(name, reply) {
+  if (name !== "search_knowledge_base" || !reply) return null;
+  const results = reply.result?.structuredContent?.results;
+  return Array.isArray(results) ? results : null;
+}
+function kbTypeBadge(type) {
+  const map = {
+    wiki: "b-info",
+    "api-docs": "b-vio",
+    javadocs: "b-dim",
+    "mods-analysis": "b-warn",
+    research: "b-ok",
+  };
+  return (
+    '<span class="badge ' +
+    (map[type] || "b-dim") +
+    '">' +
+    esc(type || "doc") +
+    "</span>"
+  );
+}
+function kbRowHTML(r, i) {
+  return (
+    '<div class="kb-row">' +
+    '<div class="kb-top">' +
+    '<span class="kb-title mono">' +
+    esc(r.title || r.topic) +
+    "</span>" +
+    kbTypeBadge(r.type) +
+    (r.package
+      ? '<span class="badge b-dim">' + esc(r.package) + "</span>"
+      : "") +
+    '<span class="kb-doc">' +
+    esc(r.docTopic || r.topic) +
+    "</span>" +
+    "</div>" +
+    '<div class="kb-meta">' +
+    (typeof r.chars === "number"
+      ? '<span>✒ ' + r.chars.toLocaleString() + " chars</span>"
+      : "") +
+    (typeof r.words === "number"
+      ? '<span>' + r.words.toLocaleString() + " words</span>"
+      : "") +
+    (typeof r.score === "number" ? '<span>score ' + r.score + "</span>" : "") +
+    "</div>" +
+    '<div class="kb-snippet">' +
+    esc(r.snippet || "") +
+    "</div>" +
+    // Inline chunk bodies come back when the user ticked Include content.
+    (r.content
+      ? '<div class="kb-inline">' + esc(r.content) + "</div>"
+      : "") +
+    '<div class="kb-foot">' +
+    '<button class="btn sm" data-act="kb-section" data-i="' +
+    i +
+    '" title="Read exactly this section via get_knowledge_section">' +
+    ICONS.book +
+    " View section</button>" +
+    "</div></div>"
+  );
+}
+function renderKbResultsBody(results) {
+  if (!results || !results.length) {
+    return '<div class="md-out" style="color:var(--faint)">No knowledge-base results.</div>';
+  }
+  return (
+    '<div class="sec-title" style="margin:0 2px 10px">' +
+    results.length +
+    " section(s) — each hit is one chunk with read-cost stats; click <b>View section</b> to read it, or tick <b>Include content</b> to get bodies inline</div>" +
+    '<div class="kb-res">' +
+    results.map(kbRowHTML).join("") +
+    "</div>"
+  );
+}
+function kbSectionHTML(m, type) {
+  return (
+    '<div class="kb-drill">' +
+    '<div class="kb-drill-head">' +
+    '<button class="btn sm ghost" data-act="kb-back">' +
+    ICONS.back +
+    " Back to results</button>" +
+    kbTypeBadge(type) +
+    '<span class="kb-doc mono">' +
+    esc(m.docTopic || "") +
+    "</span>" +
+    '<span style="flex:1"></span>' +
+    '<button class="btn sm ghost" data-act="kb-copy">' +
+    ICONS.copy +
+    " Copy section</button>" +
+    "</div>" +
+    '<div class="kb-drill-title">' +
+    esc(m.title || m.topic) +
+    "</div>" +
+    '<div class="md-p">' +
+    renderMD(m.content || "") +
+    "</div></div>"
+  );
+}
+async function kbDrillIn(i) {
+  const r = S.lastResult.kbResults && S.lastResult.kbResults[i];
+  const body = $("#resultBody");
+  if (!r || !body) return;
+  body.innerHTML =
+    '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> reading section…</div>';
+  try {
+    const reply = await kbSectionFetch(r.topic);
+    const match = reply.result?.structuredContent;
+    if (!match) throw new Error("empty section response");
+    S.lastResult.kbDrill = i;
+    S.lastResult.kbDrillContent = match;
+    body.innerHTML = kbSectionHTML(match, r.type);
+  } catch (e) {
+    body.innerHTML =
+      '<div class="md-out" style="color:#FDA4AF">✖ ' +
+      esc(e.message || e) +
+      "</div>";
+  }
+}
+async function kbSectionFetch(topic) {
+  return rpc("tools/call", {
+    name: "get_knowledge_section",
+    arguments: { topic },
+  });
+}
+
+/* ---------- knowledge-base search (Database tab) ---------- */
+function restoreKbDb() {
+  const out = $("#kbOut");
+  // No results yet (or a zero-hit search): keep the placeholder guidance.
+  if (!out || !S.kbdb.results || !S.kbdb.results.length) return;
+  if (S.kbdb.drill != null && S.kbdb.drillContent)
+    out.innerHTML = kbSectionHTML(
+      S.kbdb.drillContent,
+      S.kbdb.results[S.kbdb.drill]?.type,
+    );
+  else out.innerHTML = renderKbResultsBody(S.kbdb.results);
+}
+async function kbDbSearch() {
+  const q = $("#kbQuery").value.trim();
+  const type = $("#kbType").value;
+  const inc = $("#kbInclude");
+  const includeContent = !!(inc && inc.checked);
+  const out = $("#kbOut");
+  if (!q) {
+    toast("Type a KB query first", "warn");
+    return;
+  }
+  out.innerHTML =
+    '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> querying knowledge base…</div>';
+  try {
+    const args = { query: q, limit: 15 };
+    if (type) args.type = type;
+    if (includeContent) args.includeContent = true;
+    const reply = await rpc("tools/call", {
+      name: "search_knowledge_base",
+      arguments: args,
+    });
+    const results = reply.result?.structuredContent?.results || [];
+    S.kbdb.results = results;
+    S.kbdb.drill = null;
+    S.kbdb.drillContent = null;
+    out.innerHTML = results.length
+      ? renderKbResultsBody(results)
+      : '<div class="md-out" style="color:var(--faint)">No knowledge-base results for “' +
+        esc(q) +
+        '”. Run <b>index_knowledge_base</b> / <b>index_javadocs</b> first.</div>';
+  } catch (e) {
+    out.innerHTML =
+      '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
+  }
+}
+async function kbDbDrill(i) {
+  const r = S.kbdb.results && S.kbdb.results[i];
+  const out = $("#kbOut");
+  if (!r || !out) return;
+  out.innerHTML =
+    '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> reading section…</div>';
+  try {
+    const reply = await kbSectionFetch(r.topic);
+    const match = reply.result?.structuredContent;
+    if (!match) throw new Error("empty section response");
+    S.kbdb.drill = i;
+    S.kbdb.drillContent = match;
+    out.innerHTML = kbSectionHTML(match, r.type);
+  } catch (e) {
+    out.innerHTML =
+      '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
+  }
+}
+function kbDbBack() {
+  const out = $("#kbOut");
+  if (!out) return;
+  S.kbdb.drill = null;
+  S.kbdb.drillContent = null;
+  out.innerHTML =
+    S.kbdb.results && S.kbdb.results.length
+      ? renderKbResultsBody(S.kbdb.results)
+      : '<div class="md-out" style="color:var(--faint)">Search results will appear here.</div>';
 }
 
 /* ---------- wire log ---------- */
@@ -1728,17 +2139,26 @@ function databaseHTML() {
     "</section>" +
     '<section class="glass card panel-card" style="margin-top:14px">' +
     "<h3>" +
-    ICONS.code +
-    ' JavaDocs API Reference <span class="badge b-dim" style="margin-left:auto">via index_javadocs · search_knowledge_base</span></h3>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
-    '<span style="color:var(--muted);font-size:13px">Search indexed Java API docs alongside your markdown notes. The distilled JavaDocs reference ships with the repo — run <code>index_javadocs</code> (no args) to index it.</span>' +
-    '<button class="btn sm" data-act="go-tool" data-tool="index_javadocs" style="margin-left:auto">' +
-    ICONS.code +
-    " index_javadocs</button>" +
-    '<button class="btn sm" data-act="go-tool" data-tool="search_knowledge_base">' +
+    ICONS.book +
+    ' Knowledge Base <span class="badge b-dim" style="margin-left:auto">via search_knowledge_base · section chunks</span></h3>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    '<input class="field" id="kbQuery" style="flex:1;min-width:200px" placeholder="Search wiki docs, research notes & Java API… e.g. getSquare, blacksmithing, loot" aria-label="Knowledge base query">' +
+    '<select class="field" id="kbType" style="width:150px" aria-label="Doc type filter">' +
+    '<option value="">all types</option><option value="wiki">wiki</option><option value="api-docs">api-docs</option><option value="javadocs">javadocs</option><option value="mods-analysis">mods-analysis</option><option value="research">research</option>' +
+    "</select>" +
+    '<label class="kb-inc" title="Return each chunk full body inline (search + read in one call — no extra get_knowledge_section round trips)"><input type="checkbox" id="kbInclude"> include content</label>' +
+    '<button class="btn primary" data-act="kb-search">' +
     ICONS.search +
     " Search KB</button>" +
+    '<button class="btn sm" data-act="go-tool" data-tool="index_knowledge_base">' +
+    ICONS.book +
+    " index_knowledge_base</button>" +
+    '<button class="btn sm" data-act="go-tool" data-tool="index_javadocs">' +
+    ICONS.code +
+    " index_javadocs</button>" +
     "</div>" +
+    '<div class="f-hint" style="margin:8px 2px 0">Indexed markdown docs + the repo-shipped JavaDocs reference are split into <b>section chunks</b> — search returns precise units with <b>chars/words</b> so you can budget reads, and <b>View section</b> reads exactly one (wiki section or a single method/field). Tick <b>Include content</b> to get chunk bodies inline. Natural-language queries rank wiki/research/api-docs first; identifiers (getSquare) rank JavaDocs first.</div>' +
+    '<div id="kbOut" style="margin-top:14px"><div class="md-out" style="color:var(--faint)">Search results will appear here — each result is one section; click <b>View section</b> to read it.</div></div>' +
     "</section>"
   );
 }
@@ -5398,9 +5818,6 @@ document.addEventListener("click", (e) => {
     } else if (a === "cancel-run") {
       const c = S.pg.ctrls[act.closest(".tool").dataset.tool];
       if (c) c.abort();
-    } else if (a === "example") {
-      const ex = EXAMPLE_ACTIONS[+act.dataset.i];
-      callTool(ex.tool, ex.args);
     } else if (a === "recent-open") {
       const r = S.pg.recent[+act.dataset.i];
       if (r) showResult(r.name, r.text, r.dt, null, r.status !== "ok");
@@ -5421,6 +5838,28 @@ document.addEventListener("click", (e) => {
     else if (a === "open-guide") openGuide();
     else if (a === "close-guide") closeGuide();
     else if (a === "db-search") dbSearch();
+    else if (a === "kb-search") kbDbSearch();
+    else if (a === "kb-section") {
+      const i = +act.dataset.i;
+      if (act.closest("#kbOut")) kbDbDrill(i);
+      else kbDrillIn(i);
+    } else if (a === "kb-back") {
+      if (act.closest("#kbOut")) kbDbBack();
+      else {
+        S.lastResult.kbDrill = null;
+        S.lastResult.kbDrillContent = null;
+        restoreResult();
+      }
+    } else if (a === "kb-copy") {
+      const m = act.closest("#kbOut")
+        ? S.kbdb.drillContent
+        : S.lastResult.kbDrillContent;
+      if (m && m.content)
+        navigator.clipboard
+          ?.writeText(m.content)
+          .then(() => toast("Section copied"))
+          .catch(() => toast("Copy blocked by browser", "warn"));
+    }
     else if (a === "ws-search") wsSearch();
     else if (a === "ws-details") {
       const v = $("#wsId").value.trim();
@@ -5834,11 +6273,15 @@ document.addEventListener("keydown", (e) => {
     chainFsClose();
     return;
   }
+  if (e.key === "Escape") hideToolTip();
   const inField = walkUp(e.target, "input,textarea,select,[contenteditable]");
   if (inField) {
     if (e.key === "Enter" && inField.id === "dbQuery") {
       e.preventDefault();
       dbSearch();
+    } else if (e.key === "Enter" && inField.id === "kbQuery") {
+      e.preventDefault();
+      kbDbSearch();
     } else if (e.key === "Enter" && inField.id === "wsQuery") {
       e.preventDefault();
       wsSearch();

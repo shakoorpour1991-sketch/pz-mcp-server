@@ -244,6 +244,13 @@ const SEVERITIES: Record<string, ZedDiagnosticSeverity> = {
   INVALID_COMMA: "warning",
 };
 
+// Catalog note — MISSING_ONEOF_PROPERTY is a faithful port of the upstream
+// DiagnosticType.ts entry but is deliberately NOT emitted: the dataset's
+// `oneOf` markers are JSON-schema style input-entry requirements (already
+// covered by the craftRecipe inputs/outputs port), not block-level "one of
+// these parameters" groups. It stays in the catalog so the port remains
+// traceable to the upstream file.
+
 function formatList(values: Array<string | number | boolean>): string {
   return values.map((v) => `'${String(v)}'`).join(", ");
 }
@@ -493,8 +500,17 @@ function validateBlockContext(block: ScanBlock, out: Collector): void {
 
 /** Does the block contain a `name { ... }` section (inputs/outputs/etc.)? */
 function blockHasSection(block: ScanBlock, sectionName: string): boolean {
+  // Block-comment state is threaded across lines (mirroring the shared
+  // scanner and validateBlockParameters) so a section header inside a
+  // multi-line /* ... */ comment can never satisfy the requirement.
+  let inBlockComment = false;
   for (const line of block.content.slice(1)) {
-    const stripped = stripLineComments(line, false).code.trim();
+    const { code, inBlockComment: newState } = stripLineComments(
+      line,
+      inBlockComment,
+    );
+    inBlockComment = newState;
+    const stripped = code.trim();
     if (stripped === sectionName || stripped.startsWith(`${sectionName} {`)) {
       return true;
     }
@@ -526,14 +542,14 @@ function validateBlockHeader(
 
   // `template vehicle <Name>` headers carry a type qualifier before the ID
   // (verified against the 42.20 vanilla vehicle scripts) — drop it so the ID
-  // rules apply to the actual name.
+  // rules apply to the actual name. Only the FIRST token is the qualifier;
+  // the rest is the (possibly multi-word) template name, kept whole — the
+  // old code kept only the last token, so `template vehicle My Van` was
+  // checked as `Van`.
   let id = block.name;
   if (block.rawType.toLowerCase() === "template" && id.includes(" ")) {
-    id =
-      id
-        .split(/\s+/)
-        .filter((t) => t !== "")
-        .pop() ?? id;
+    const tokens = id.split(/\s+/).filter((t) => t !== "");
+    id = tokens.length > 1 ? tokens.slice(1).join(" ") : id;
   }
   const parent = effectiveParent(block);
   const parentName = parent === undefined ? "" : String(parent);
@@ -566,7 +582,8 @@ function validateBlockHeader(
     } else {
       // Default is no spaces; only blocks that explicitly allow them
       // (fixing/evolvedrecipe/character_trait_definition) pass through.
-      if (!blockData.id.canHaveSpace && id.includes(" ")) {
+      const hasSpaceIssue = !blockData.id.canHaveSpace && id.includes(" ");
+      if (hasSpaceIssue) {
         out.add({
           code: "ID_CANNOT_CONTAIN_SPACES",
           severity: SEVERITIES.ID_CANNOT_CONTAIN_SPACES,
@@ -579,7 +596,11 @@ function validateBlockHeader(
           suggestion: "Remove spaces from the block ID (use a single token).",
         });
       }
-      if (blockData.id.values && !blockData.id.values.includes(id)) {
+      // A spaced ID already got its (more specific) diagnostic above — the
+      // values check would just double-report the same header with a less
+      // useful message ("not in valid IDs" instead of "cannot contain
+      // spaces"), so it short-circuits here.
+      if (!hasSpaceIssue && blockData.id.values && !blockData.id.values.includes(id)) {
         const suggestions = closestNames(id, blockData.id.values);
         out.add({
           code: "INVALID_ID",
@@ -709,6 +730,26 @@ function validateBlockParameters(block: ScanBlock, out: Collector): void {
           suggestion: `Provide a value for '${emptyMatch[1]}' (e.g. ${emptyMatch[1]} = <value>,).`,
         });
       }
+      continue;
+    }
+
+    // Double-comma property lines ("ItemType = base:weapon,,") can never
+    // match the property regex — they were silently dropped before. Flag
+    // them with the ported INVALID_COMMA instead (ZedScripts parity). Only
+    // TRAILING double commas are checked: list values legitimately contain
+    // single commas mid-value ("Base.A, Base.B,"), and a quoted string can
+    // contain ",," — a trailing ",," is the only unambiguous double comma.
+    if (/,,\s*$/.test(line)) {
+      const propName = line.split(/[:=]/)[0].trim();
+      out.add({
+        code: "INVALID_COMMA",
+        severity: SEVERITIES.INVALID_COMMA,
+        line: lineNumber,
+        column: line.indexOf(",,"),
+        message: fmt(MESSAGES.INVALID_COMMA, {}),
+        property: propName,
+        suggestion: `Double commas are invalid — use a single trailing comma: '${line.replace(/,+$/, ",")}'.`,
+      });
       continue;
     }
 
@@ -884,7 +925,7 @@ function validateParameter(
     });
   }
 
-  // Allowed values (ported getForbiddenValues + WRONG_VALUES).
+  // Allowed values (ported getForbiddenValues + WRONG_VALUE(S)).
   if (param.values && param.values.length > 0 && prop.rawValue.trim() !== "") {
     const forbidden = splitValueList(prop.rawValue, param).filter(
       (v) =>
@@ -893,16 +934,28 @@ function validateParameter(
         ),
     );
     if (forbidden.length > 0) {
+      // ZedScripts distinguishes a single wrong value (WRONG_VALUE) from
+      // several (WRONG_VALUES). Scalar parameters yield at most one
+      // forbidden value; array/object params are split into a list.
+      const isScalar =
+        param.type?.main !== VT.ARRAY && param.type?.main !== VT.OBJECT;
+      const code = isScalar ? "WRONG_VALUE" : "WRONG_VALUES";
       out.add({
-        code: "WRONG_VALUES",
-        severity: SEVERITIES.WRONG_VALUES,
+        code,
+        severity: SEVERITIES[code],
         line: prop.line,
         column: prop.column,
-        message: fmt(MESSAGES.WRONG_VALUES, {
-          parameter: prop.key,
-          invalidValues: formatList(forbidden),
-          validValues: formatList(param.values),
-        }),
+        message: isScalar
+          ? fmt(MESSAGES.WRONG_VALUE, {
+              value: forbidden[0],
+              parameter: prop.key,
+              validValues: formatList(param.values),
+            })
+          : fmt(MESSAGES.WRONG_VALUES, {
+              parameter: prop.key,
+              invalidValues: formatList(forbidden),
+              validValues: formatList(param.values),
+            }),
         property: prop.key,
         value: forbidden.join(", "),
         expected: param.values.join(" / "),
@@ -1092,8 +1145,18 @@ function blockParameterValue(
   name: string,
 ): string | undefined {
   const lower = name.toLowerCase();
+  // Block-comment state is threaded across lines (matching the threaded
+  // parse in validateBlockParameters) so a required parameter whose line
+  // sits inside a multi-line /* ... */ comment is NOT mistaken for a real
+  // definition — otherwise a commented-out `tags = …` would silently skip
+  // MISSING_PARAMETER.
+  let inBlockComment = false;
   for (const line of block.content.slice(1)) {
-    const { code } = stripLineComments(line, false);
+    const { code, inBlockComment: newState } = stripLineComments(
+      line,
+      inBlockComment,
+    );
+    inBlockComment = newState;
     const match = matchPropertyLine(code.trim(), separatorFor(block.rawType));
     if (match && match.key.toLowerCase() === lower) {
       return match.value.trim();
@@ -1130,6 +1193,20 @@ function validateCraftRecipeSections(block: ScanBlock, out: Collector): void {
     for (const entry of lines) {
       const stripped = stripLineComments(entry.line, false).code.trim();
       if (!stripped) continue;
+      // Double commas ("item 1 Base.X,,") — ported INVALID_COMMA. Without
+      // this, the input regex parses the extra comma into the item list and
+      // emits a confusing INVALID_VALUE ("item lists use ';'") instead.
+      if (stripped.includes(",,")) {
+        out.add({
+          code: "INVALID_COMMA",
+          severity: SEVERITIES.INVALID_COMMA,
+          line: entry.lineNumber,
+          column: stripped.indexOf(",,"),
+          message: fmt(MESSAGES.INVALID_COMMA, {}),
+          suggestion: `Double commas are invalid — use a single trailing comma: '${stripped.replace(/,+$/g, ",")}'.`,
+        });
+        continue;
+      }
       const match = stripped.match(INPUT_LINE_RE);
       const badAmountMatch = match
         ? null
