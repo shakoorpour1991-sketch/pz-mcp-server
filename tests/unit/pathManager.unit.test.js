@@ -260,3 +260,47 @@ describe('PathManager.isAncestorWritable (audit D6)', () => {
     fs.rmSync(parent, { recursive: true, force: true });
   });
 });
+
+describe('PathManager.isValidProjectZomboidInstallation — Linux executables', () => {
+  let pm;
+  let dirs;
+
+  before(() => {
+    pm = new PathManager();
+    dirs = [];
+  });
+
+  after(() => {
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  /** An install dir with media/scripts and a single executable name. */
+  const installWith = (exeName) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-linux-'));
+    dirs.push(dir);
+    fs.mkdirSync(path.join(dir, 'media', 'scripts'), { recursive: true });
+    if (exeName) fs.writeFileSync(path.join(dir, exeName), '');
+    return dir;
+  };
+
+  // The Steam Linux depot ships ProjectZomboid64, not a bare "ProjectZomboid",
+  // and projectzomboid.sh lives one level UP from the dir holding media/. On a
+  // case-sensitive filesystem neither of the original Linux entries matched, so
+  // a complete install was reported as "not found" even via PROJECTZOMBOID_PATH.
+  test('accepts ProjectZomboid64 (current Steam Linux layout)', () => {
+    assert.equal(pm.isValidProjectZomboidInstallation(installWith('ProjectZomboid64')), true);
+  });
+
+  test('accepts the lowercase projectzomboid launcher binary', () => {
+    assert.equal(pm.isValidProjectZomboidInstallation(installWith('projectzomboid')), true);
+  });
+
+  test('still accepts projectzomboid.sh and the bare ProjectZomboid binary', () => {
+    assert.equal(pm.isValidProjectZomboidInstallation(installWith('projectzomboid.sh')), true);
+    assert.equal(pm.isValidProjectZomboidInstallation(installWith('ProjectZomboid')), true);
+  });
+
+  test('media/scripts alone is not an install', () => {
+    assert.equal(pm.isValidProjectZomboidInstallation(installWith(null)), false);
+  });
+});
