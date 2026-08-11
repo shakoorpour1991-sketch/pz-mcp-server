@@ -1032,13 +1032,15 @@ export class DatabaseManager {
 
     // Sprite reference filter: items that reference a specific sprite name
     if (options.sprite) {
-      sql += " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sprite' AND r.reference_id = ?)";
+      sql +=
+        " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sprite' AND r.reference_id = ?)";
       params.push(options.sprite);
     }
 
     // Sound reference filter
     if (options.sound) {
-      sql += " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sound' AND r.reference_id = ?)";
+      sql +=
+        " AND EXISTS (SELECT 1 FROM \"references\" r WHERE r.item_id = items.id AND r.reference_type = 'sound' AND r.reference_id = ?)";
       params.push(options.sound);
     }
 
@@ -1887,9 +1889,7 @@ export class DatabaseManager {
    * or { item: null, match: null } when nothing resolves. This is the fast
    * exact path first (feature 5), then the fuzzy ladder (feature 2).
    */
-  async lookupItem(
-    raw: string,
-  ): Promise<{
+  async lookupItem(raw: string): Promise<{
     item: GameItem | null;
     match: FuzzyMatch | null;
   }> {
@@ -1908,9 +1908,8 @@ export class DatabaseManager {
     const { ids, names } = await this.getLookupIndex();
     const byId = bestFuzzyMatch(input, ids);
     const byName = bestFuzzyMatch(input, names);
-    const pick = byName && (!byId || byName.confidence > byId.confidence)
-      ? byName
-      : byId;
+    const pick =
+      byName && (!byId || byName.confidence > byId.confidence) ? byName : byId;
     if (pick) {
       const item = await this.getItemById(pick.id);
       if (item) return { item, match: pick };
@@ -1933,11 +1932,11 @@ export class DatabaseManager {
     relatedScripts: string[];
   }> {
     // References declared BY this item (what it points to): sounds/sprites/models.
-    const outgoing = await this.db
+    const outgoing = (await this.db
       .prepare(
         'SELECT reference_id, reference_type, context FROM "references" WHERE item_id = ?',
       )
-      .all(id) as unknown as Array<{
+      .all(id)) as unknown as Array<{
       reference_id: string;
       reference_type: string;
       context: string;
@@ -1981,24 +1980,27 @@ export class DatabaseManager {
       if (["result", "output"].includes(r.context)) producingIds.add(r.itemId);
     }
 
-    const nameFor = async (recIds: Set<string>): Promise<Array<{ id: string; name: string }>> => {
+    const nameFor = async (
+      recIds: Set<string>,
+    ): Promise<Array<{ id: string; name: string }>> => {
       if (recIds.size === 0) return [];
       const ph = [...recIds].map(() => "?").join(",");
       const rows = this.db
         .prepare(`SELECT id, name FROM items WHERE id IN (${ph})`)
         .all(...recIds) as unknown as Array<{ id: string; name: string }>;
-      return rows
-        .sort((a, b) => a.name.localeCompare(b.name));
+      return rows.sort((a, b) => a.name.localeCompare(b.name));
     };
 
     // Sibling scripts in the same file (related scripts).
-    const me = await this.db
+    const me = (await this.db
       .prepare("SELECT file_path FROM items WHERE id = ?")
-      .get(id) as unknown as { file_path: string | null } | undefined;
+      .get(id)) as unknown as { file_path: string | null } | undefined;
     const relatedScripts: string[] = [];
     if (me?.file_path) {
       const siblings = this.db
-        .prepare("SELECT id FROM items WHERE file_path = ? AND id != ? ORDER BY name LIMIT 50")
+        .prepare(
+          "SELECT id FROM items WHERE file_path = ? AND id != ? ORDER BY name LIMIT 50",
+        )
         .all(me.file_path, id) as unknown as Array<{ id: string }>;
       relatedScripts.push(...siblings.map((r) => r.id));
     }

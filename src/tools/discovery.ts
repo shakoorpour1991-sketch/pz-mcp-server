@@ -93,8 +93,9 @@ export const discoveryTools: McpTool<z.ZodTypeAny>[] = [
       if (limit !== undefined) searchOptions.limit = limit;
 
       // Feature 5: exact canonical lookup (id fast path with fuzzy fallback).
-      let exactItem: Awaited<ReturnType<typeof ctx.dbManager.lookupItem>> | null =
-        null;
+      let exactItem: Awaited<
+        ReturnType<typeof ctx.dbManager.lookupItem>
+      > | null = null;
       if (id !== undefined) {
         exactItem = await ctx.dbManager.lookupItem(id);
         if (!exactItem.item) {
@@ -211,7 +212,10 @@ export const discoveryTools: McpTool<z.ZodTypeAny>[] = [
         structured.relations = { item: results[0]!.id, ...relations };
         structured.kbDocs = kbDocs;
       }
-      return { content: [{ type: "text", text }], structuredContent: structured };
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: structured,
+      };
 
       // Confidence per result: exact lookup → verified; typo-resolved → the
       // fuzzy confidence; everything else → keyword match.

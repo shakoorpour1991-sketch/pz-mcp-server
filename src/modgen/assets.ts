@@ -101,7 +101,8 @@ export function makePosterPng(color: Rgb): Buffer {
     // dark frame
     if (x < 6 || y < 6 || x >= W - 6 || y >= H - 6) return shade(base, 0.45);
     // inner highlight line
-    if (x < 10 || y < 10 || x >= W - 10 || y >= H - 10) return shade(base, 1.15);
+    if (x < 10 || y < 10 || x >= W - 10 || y >= H - 10)
+      return shade(base, 1.15);
     return base;
   });
 }

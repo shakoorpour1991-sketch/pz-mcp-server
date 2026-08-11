@@ -21,11 +21,7 @@
  */
 
 export type ModgenTemplateId =
-  | "simple_item"
-  | "melee_weapon"
-  | "food"
-  | "tool"
-  | "clothing";
+  "simple_item" | "melee_weapon" | "food" | "tool" | "clothing";
 
 export type StatFieldKind = "number" | "bool" | "enum" | "string";
 
@@ -119,10 +115,18 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     displayCategory: "Junk",
     category: "Misc",
     defaultIcon: "Pen",
-    iconSuggestions: ["Pen", "IDcard", "CreditCard", "BusinessCard", "PopEmpty", "Flier"],
+    iconSuggestions: [
+      "Pen",
+      "IDcard",
+      "CreditCard",
+      "BusinessCard",
+      "PopEmpty",
+      "Flier",
+    ],
     requiredProps: ["Weight", "Icon"],
     maturity: "ready",
-    maturityNote: "Plain item with real Build 42 junk styling — no extra assets needed.",
+    maturityNote:
+      "Plain item with real Build 42 junk styling — no extra assets needed.",
     color: [96, 116, 148],
     baseline: {
       propertyKey: "ItemType",
@@ -130,8 +134,7 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       label: "collectible junk items",
       // base:normal is a huge bucket — keep only junk/memento collectibles so
       // auto-stats come from comparable items.
-      filter: (p) =>
-        ["Junk", "Memento"].includes(str(p, "DisplayCategory")),
+      filter: (p) => ["Junk", "Memento"].includes(str(p, "DisplayCategory")),
     },
     defaultStats: {
       Weight: 0.5,
@@ -212,11 +215,18 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     displayCategory: "Weapon",
     category: "Weapon",
     defaultIcon: "Axe",
-    iconSuggestions: ["Axe", "ClubHammer", "KnifeButter", "UmbrellaWhite", "Pen"],
+    iconSuggestions: [
+      "Axe",
+      "ClubHammer",
+      "KnifeButter",
+      "UmbrellaWhite",
+      "Pen",
+    ],
     requiredProps: ["MaxDamage", "MinDamage", "ConditionMax", "Icon"],
     emitWeaponSprite: true,
     maturity: "ready",
-    maturityNote: "Full melee weapon with the in-world weapon sprite tied to your icon.",
+    maturityNote:
+      "Full melee weapon with the in-world weapon sprite tied to your icon.",
     color: [166, 64, 56],
     baseline: {
       propertyKey: "ItemType",
@@ -224,8 +234,7 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       label: "melee weapons",
       // base:weapon is the melee bucket; exclude anything firearm-like
       // (AmmoType / Firearm subcategory) so the baseline stays melee-only.
-      filter: (p) =>
-        !str(p, "AmmoType") && str(p, "SubCategory") !== "Firearm",
+      filter: (p) => !str(p, "AmmoType") && str(p, "SubCategory") !== "Firearm",
     },
     defaultStats: {
       Weight: 1.5,
@@ -405,7 +414,13 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     displayCategory: "Food",
     category: "Food",
     defaultIcon: "BeefJerky",
-    iconSuggestions: ["BeefJerky", "BeerBottle", "WaterBottle", "JarBrown", "PotFull"],
+    iconSuggestions: [
+      "BeefJerky",
+      "BeerBottle",
+      "WaterBottle",
+      "JarBrown",
+      "PotFull",
+    ],
     requiredProps: ["Calories", "Weight", "Icon"],
     maturity: "ready",
     maturityNote: "Complete food item — no extra assets needed.",
@@ -554,7 +569,10 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       },
     ],
     kbRefs: [
-      { label: "KB — Cooking", path: "knowledge-base/Build42_Cooking_Research.md" },
+      {
+        label: "KB — Cooking",
+        path: "knowledge-base/Build42_Cooking_Research.md",
+      },
       { label: "Wiki — Food types", path: "knowledge-base/wiki/Food_types.md" },
     ],
   },
@@ -635,7 +653,10 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
       },
     ],
     kbRefs: [
-      { label: "KB — Crafting & Skills", path: "knowledge-base/Build42_Crafting_Skills_Research.md" },
+      {
+        label: "KB — Crafting & Skills",
+        path: "knowledge-base/Build42_Crafting_Skills_Research.md",
+      },
       { label: "Wiki — Item tags", path: "knowledge-base/wiki/Item_tag.md" },
     ],
   },
@@ -649,7 +670,12 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
     displayCategory: "Clothing",
     category: "Clothing",
     defaultIcon: "TshirtGeneric",
-    iconSuggestions: ["TshirtGeneric", "ShirtGeneric", "Bandeau_Burlap", "Bandeau_Denim"],
+    iconSuggestions: [
+      "TshirtGeneric",
+      "ShirtGeneric",
+      "Bandeau_Burlap",
+      "Bandeau_Denim",
+    ],
     requiredProps: ["BodyLocation", "ClothingItem", "Icon"],
     maturity: "beta",
     maturityNote:
@@ -688,10 +714,21 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         label: "Body location",
         kind: "enum",
         enumValues: [
-          "base:tshirt", "base:shirt", "base:sweater", "base:jacket",
-          "base:pants", "base:shorts", "base:shoes", "base:hat",
-          "base:skirt", "base:dress", "base:longskirt", "base:longdress",
-          "base:mask", "base:scarf", "base:fullsuit",
+          "base:tshirt",
+          "base:shirt",
+          "base:sweater",
+          "base:jacket",
+          "base:pants",
+          "base:shorts",
+          "base:shoes",
+          "base:hat",
+          "base:skirt",
+          "base:dress",
+          "base:longskirt",
+          "base:longdress",
+          "base:mask",
+          "base:scarf",
+          "base:fullsuit",
         ],
         hint: "Which body slot the item occupies (Build 42 registry values — e.g. base:tshirt, base:jacket, base:pants).",
         group: "Basics",
@@ -708,8 +745,17 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         label: "Blood location",
         kind: "enum",
         enumValues: [
-          "Shirt", "ShirtLongSleeves", "ShirtNoSleeves", "UpperBody",
-          "Jacket", "Trousers", "Head", "Shoes", "Groin", "Neck", "Hands",
+          "Shirt",
+          "ShirtLongSleeves",
+          "ShirtNoSleeves",
+          "UpperBody",
+          "Jacket",
+          "Trousers",
+          "Head",
+          "Shoes",
+          "Groin",
+          "Neck",
+          "Hands",
         ],
         hint: "Which body regions show blood on the garment (vanilla values like Shirt, UpperBody, Jacket).",
         group: "Basics",
@@ -751,20 +797,32 @@ export const MODGEN_TEMPLATES: ModgenTemplate[] = [
         key: "FabricType",
         label: "Fabric",
         kind: "enum",
-        enumValues: ["Cotton", "Denim", "Leather", "Wool", "Kevlar", "Polyester", "Nylon"],
+        enumValues: [
+          "Cotton",
+          "Denim",
+          "Leather",
+          "Wool",
+          "Kevlar",
+          "Polyester",
+          "Nylon",
+        ],
         hint: "The material — affects tailoring recipes and feel.",
         group: "Basics",
       },
     ],
     kbRefs: [
-      { label: "KB — Clothing & Armor", path: "knowledge-base/Build42_Clothing_Armor_Research.md" },
-      { label: "KB — Tailoring", path: "knowledge-base/Build42_Tailoring_Research.md" },
+      {
+        label: "KB — Clothing & Armor",
+        path: "knowledge-base/Build42_Clothing_Armor_Research.md",
+      },
+      {
+        label: "KB — Tailoring",
+        path: "knowledge-base/Build42_Tailoring_Research.md",
+      },
     ],
   },
 ];
 
-export function getModgenTemplate(
-  id: string,
-): ModgenTemplate | undefined {
+export function getModgenTemplate(id: string): ModgenTemplate | undefined {
   return MODGEN_TEMPLATES.find((t) => t.id === id);
 }

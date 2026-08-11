@@ -4,11 +4,7 @@ import { access } from "fs/promises";
 import { isAbsolute, join, parse, resolve } from "path";
 import { homedir } from "os";
 import logger from "./logger.js";
-import {
-  modsDirEnv,
-  pzInstallEnvPath,
-  workshopDirEnv,
-} from "./config.js";
+import { modsDirEnv, pzInstallEnvPath, workshopDirEnv } from "./config.js";
 
 /** A detected path with existence (and optional writability) flags. */
 export interface PzPathInfo {
@@ -182,7 +178,9 @@ export class PathManager {
     // Derive from the game install when it lives inside a Steam library.
     const game = await this.detectProjectZomboidPath();
     if (game) {
-      const m = game.match(/^(.*[\\/])steamapps[\\/]common[\\/]ProjectZomboid$/i);
+      const m = game.match(
+        /^(.*[\\/])steamapps[\\/]common[\\/]ProjectZomboid$/i,
+      );
       if (m) {
         return join(m[1], "steamapps", "workshop", "content", "108600");
       }
@@ -210,10 +208,7 @@ export class PathManager {
     if (process.platform === "win32") {
       const reg = await this.readSteamRegistryPath();
       if (reg) roots.push(reg);
-      roots.push(
-        "C:\\Program Files (x86)\\Steam",
-        "C:\\Program Files\\Steam",
-      );
+      roots.push("C:\\Program Files (x86)\\Steam", "C:\\Program Files\\Steam");
     } else if (process.platform === "linux") {
       const home = homedir();
       roots.push(
@@ -266,7 +261,9 @@ export class PathManager {
         path: modsDir,
         exists: existsSync(modsDir),
         writable: writable.writable,
-        ...(writable.error !== undefined ? { writableError: writable.error } : {}),
+        ...(writable.error !== undefined
+          ? { writableError: writable.error }
+          : {}),
       },
       workshopDir: {
         path: workshopDir,

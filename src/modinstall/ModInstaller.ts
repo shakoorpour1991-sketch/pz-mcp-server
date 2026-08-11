@@ -287,7 +287,9 @@ export class ModInstaller {
    * version dir, in which case the mod folder is one level up (so a B42
    * versioned mod installs as a single folder, not as "<target>/42").
    */
-  async findModRoots(root: string): Promise<Array<{ root: string; modInfoPath: string }>> {
+  async findModRoots(
+    root: string,
+  ): Promise<Array<{ root: string; modInfoPath: string }>> {
     const modInfoPaths: string[] = [];
 
     async function walk(dir: string, depth: number): Promise<void> {
@@ -306,7 +308,12 @@ export class ModInstaller {
         if (!entry.isDirectory()) continue;
         const name = entry.name;
         // Skip VCS / metadata / media dirs.
-        if (name === "media" || name === ".git" || name === ".svn" || name === "__MACOSX") {
+        if (
+          name === "media" ||
+          name === ".git" ||
+          name === ".svn" ||
+          name === "__MACOSX"
+        ) {
           continue;
         }
         if (name.startsWith(".")) continue;
@@ -349,9 +356,12 @@ export class ModInstaller {
       const hasModFolder = existsSync(join(root, "mod.info"));
       if (!hasModFolder) {
         for (const name of entries) {
-          if (/^readme/i.test(name) || /\.(png|jpg|jpeg|webp|gif|txt|md)$/i.test(name)) {
+          if (
+            /^readme/i.test(name) ||
+            /\.(png|jpg|jpeg|webp|gif|txt|md)$/i.test(name)
+          ) {
             const p = join(root, name);
-            const s = (await stat(p).catch(() => null));
+            const s = await stat(p).catch(() => null);
             if (s && s.isFile()) junk.push(name);
           }
         }
@@ -370,7 +380,8 @@ export class ModInstaller {
     const names = new Set<string>();
     if (!existsSync(targetDir)) return { byId, names };
 
-    const caseFold = process.platform === "win32" || process.platform === "darwin";
+    const caseFold =
+      process.platform === "win32" || process.platform === "darwin";
 
     async function walk(dir: string, depth: number): Promise<void> {
       if (depth > MAX_TARGET_SCAN_DEPTH) return;
@@ -405,8 +416,7 @@ export class ModInstaller {
     existing: { byId: Map<string, string>; names: Set<string> },
     fallbackName?: string,
   ): Promise<ModInstallEntry> {
-    const folderName =
-      fallbackName ?? sanitizeFolderName(basename(mod.root));
+    const folderName = fallbackName ?? sanitizeFolderName(basename(mod.root));
     const meta = await readModInfoMeta(mod.modInfoPath);
     const entry: ModInstallEntry = {
       name: folderName,
@@ -417,7 +427,8 @@ export class ModInstaller {
     if (meta.name !== undefined) entry.modName = meta.name;
     if (meta.version !== undefined) entry.version = meta.version;
 
-    const caseFold = process.platform === "win32" || process.platform === "darwin";
+    const caseFold =
+      process.platform === "win32" || process.platform === "darwin";
     const nameConflict =
       existing.names.has(caseFold ? folderName.toLowerCase() : folderName) ||
       existsSync(join(targetDir, folderName));
@@ -491,11 +502,15 @@ export class ModInstaller {
 
 /** Minimal mod.info metadata read (id/name/version) — same line format the
  * game and ProjectZomboidParser.parseModInfo use (`key = value`). */
-export async function readModInfoMeta(modInfoPath: string): Promise<ModInfoMeta> {
+export async function readModInfoMeta(
+  modInfoPath: string,
+): Promise<ModInfoMeta> {
   try {
     const content = await readFile(modInfoPath, "utf-8");
     const get = (key: string): string | undefined => {
-      const m = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "m"));
+      const m = content.match(
+        new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "m"),
+      );
       return m?.[1]?.trim();
     };
     const meta: ModInfoMeta = {};
@@ -526,13 +541,11 @@ async function readModInfoId(modInfoPath: string): Promise<string | undefined> {
 /** Replace characters Windows/macOS cannot handle in folder names, and guard
  * against Windows reserved device names (CON, NUL, COM1…). */
 export function sanitizeFolderName(name: string): string {
-  const invalid = new Set(['<', '>', ':', '"', '/', '\\', '|', '?', '*']);
+  const invalid = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
   const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
   let n = String(name)
     .split("")
-    .map((ch) =>
-      invalid.has(ch) || ch.charCodeAt(0) < 32 ? "_" : ch,
-    )
+    .map((ch) => (invalid.has(ch) || ch.charCodeAt(0) < 32 ? "_" : ch))
     .join("")
     .trim();
   n = n.replace(/[. ]+$/, "").replace(/^\.+/, "");

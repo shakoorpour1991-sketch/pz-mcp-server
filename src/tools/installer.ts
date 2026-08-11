@@ -15,10 +15,7 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 import { DetectPzPathsSchema, InstallModSchema } from "../schemas.js";
-import {
-  formatDetectPaths,
-  formatInstallResult,
-} from "../utils/formatters.js";
+import { formatDetectPaths, formatInstallResult } from "../utils/formatters.js";
 import { ModInstallError } from "../modinstall/ModInstaller.js";
 import type { McpTool } from "./registry.js";
 
@@ -77,7 +74,9 @@ export const installerTools: McpTool<z.ZodTypeAny>[] = [
       let result;
       try {
         result = await ctx.modInstaller.install(sourcePath, {
-          ...(args.targetDir !== undefined ? { targetDir: args.targetDir } : {}),
+          ...(args.targetDir !== undefined
+            ? { targetDir: args.targetDir }
+            : {}),
           overwrite: args.overwrite,
           dryRun: args.dryRun,
         });

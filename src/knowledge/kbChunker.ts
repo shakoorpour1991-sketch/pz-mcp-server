@@ -151,9 +151,11 @@ export function parseFrontmatter(content: string): {
  * their `package:`/`kind:` frontmatter keys even when indexed from a flat
  * directory.
  */
-export function inferDocType(docTopic: string, meta?: FrontmatterMeta): KbDocType {
-  const fmType =
-    meta && typeof meta.type === "string" ? meta.type.trim() : "";
+export function inferDocType(
+  docTopic: string,
+  meta?: FrontmatterMeta,
+): KbDocType {
+  const fmType = meta && typeof meta.type === "string" ? meta.type.trim() : "";
   if (
     fmType.length > 0 &&
     (KB_DOC_TYPES as readonly string[]).includes(fmType)
@@ -232,20 +234,21 @@ export function cleanMarkdown(body: string, docType: KbDocType): string {
     // Drop trailing footer/category lines, skipping trailing blank lines.
     while (out.length > 0) {
       const last = out[out.length - 1].trim();
-      if (last.length === 0 || /^(retrieved from|category\s*[: ])/i.test(last)) {
+      if (
+        last.length === 0 ||
+        /^(retrieved from|category\s*[: ])/i.test(last)
+      ) {
         out.pop();
       } else {
         break;
       }
     }
   }
-  return (
-    out
-      .join("\n")
-      .replace(/[ \t]+$/gm, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
+  return out
+    .join("\n")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Lowercase, dash-separated id slug (max ~60 chars), never empty. */
@@ -310,15 +313,17 @@ function memberSlug(heading: string): string {
  * (`> ⚠️ **Deprecated**` is a marker, not a body.)
  */
 export function isBodyless(content: string): boolean {
-  return content
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .filter((l) => !/^#{1,6}\s+/.test(l)) // heading line(s)
-    // Deprecation markers (`> ⚠️ **Deprecated**` — the ⚠ is followed by the
-    // U+FE0F variation selector, so skip any non-word glyphs after the `>`).
-    .filter((l) => !/^>\s*[^\w]*\*{0,2}Deprecated\*{0,2}/i.test(l))
-    .filter((l) => !/^[-*_\s]+$/.test(l)).length === 0;
+  return (
+    content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .filter((l) => !/^#{1,6}\s+/.test(l)) // heading line(s)
+      // Deprecation markers (`> ⚠️ **Deprecated**` — the ⚠ is followed by the
+      // U+FE0F variation selector, so skip any non-word glyphs after the `>`).
+      .filter((l) => !/^>\s*[^\w]*\*{0,2}Deprecated\*{0,2}/i.test(l))
+      .filter((l) => !/^[-*_\s]+$/.test(l)).length === 0
+  );
 }
 
 /** Split an over-long chunk deterministically at paragraph/line boundaries. */
@@ -363,7 +368,8 @@ export function chunkMarkdown(
   docType: KbDocType,
   docTitle: string,
 ): KbChunk[] {
-  const allowedLevels = docType === "javadocs" ? new Set([1, 2, 3]) : new Set([1, 2]);
+  const allowedLevels =
+    docType === "javadocs" ? new Set([1, 2, 3]) : new Set([1, 2]);
   const lines = body.split("\n");
 
   interface Section {
@@ -400,9 +406,8 @@ export function chunkMarkdown(
   ): void => {
     const trimmed = content.trim();
     if (trimmed.length === 0) return;
-    const bodyOnly = heading !== null
-      ? trimmed.replace(/^#{1,6}\s+[^\n]+\n?/, "")
-      : trimmed;
+    const bodyOnly =
+      heading !== null ? trimmed.replace(/^#{1,6}\s+[^\n]+\n?/, "") : trimmed;
     // Empty level-2 sections (a bare `## Heading` with no body) are noise —
     // except javadocs member-section markers (## Methods/Fields/…), which
     // carry no body of their own but keep the assembled class page readable.

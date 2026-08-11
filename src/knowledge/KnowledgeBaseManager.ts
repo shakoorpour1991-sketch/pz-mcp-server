@@ -72,11 +72,13 @@ export class KnowledgeBaseManager {
   private ensureSchema(): void {
     const version = this.schemaVersion();
     const hasLegacy =
-      (this.db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('knowledge_docs','knowledge_fts')",
-        )
-        .all() as unknown as Array<{ name: string }>).length > 0;
+      (
+        this.db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('knowledge_docs','knowledge_fts')",
+          )
+          .all() as unknown as Array<{ name: string }>
+      ).length > 0;
     // v1, or an unversioned DB that already carries legacy v1 tables (the
     // legacy test fixture never sets user_version), → clean drop + recreate:
     // the KB is a disposable cache and the chunk representation is
@@ -259,15 +261,12 @@ export class KnowledgeBaseManager {
           const relPath = relative(dirPath, filePath).split(sep).join("/");
           const bareTopic = relPath.replace(/\.md$/i, "");
           const docTopic =
-            topicPrefix.length > 0
-              ? `${topicPrefix}/${bareTopic}`
-              : bareTopic;
+            topicPrefix.length > 0 ? `${topicPrefix}/${bareTopic}` : bareTopic;
 
           if (!overwrite) {
             // Incremental: skip only when the stored mtime matches the file's.
             const existing = selectDocStmt.get(docTopic) as unknown as
-              | { topic: string; mtime: string | null }
-              | undefined;
+              { topic: string; mtime: string | null } | undefined;
             if (existing && existing.mtime === mtime) {
               skipped++;
               continue;
@@ -281,9 +280,7 @@ export class KnowledgeBaseManager {
           // reads content — the assembled chunk text is the stored body.
           const content = parsed.chunks.map((c) => c.content).join("\n\n");
           const lines = content.split("\n").length;
-          const words = content.trim()
-            ? content.trim().split(/\s+/).length
-            : 0;
+          const words = content.trim() ? content.trim().split(/\s+/).length : 0;
           const chars = content.length;
 
           this.db.exec("SAVEPOINT idx_file");
@@ -471,8 +468,7 @@ export class KnowledgeBaseManager {
     // Finding 6 — bm25 column weights: chunk_topic (member id slugs), title
     // (signatures/headings) and tags carry the identifier signal and should
     // outweigh the long content body (content 1.0 vs topic 5.0).
-    const B =
-      "bm25(knowledge_chunks_fts, 5.0, 1.0, 3.0, 1.0, 1.0, 2.0, 1.0)";
+    const B = "bm25(knowledge_chunks_fts, 5.0, 1.0, 3.0, 1.0, 1.0, 2.0, 1.0)";
     // Finding 9 — bodyless downweight: in natural-language mixed searches a
     // bare-signature chunk gets a rank penalty so prose with the same term
     // density outranks it (identifier searches and explicit filters keep pure
@@ -731,7 +727,9 @@ export class KnowledgeBaseManager {
     }
 
     const doc = this.db
-      .prepare("SELECT topic, title, lines, words, chars FROM knowledge_docs WHERE topic = ?")
+      .prepare(
+        "SELECT topic, title, lines, words, chars FROM knowledge_docs WHERE topic = ?",
+      )
       .get(docTopic) as unknown as
       | {
           topic: string;
@@ -744,7 +742,9 @@ export class KnowledgeBaseManager {
     if (!doc) return null;
 
     const chunks = this.db
-      .prepare("SELECT content FROM knowledge_chunks WHERE doc_topic = ? ORDER BY seq ASC")
+      .prepare(
+        "SELECT content FROM knowledge_chunks WHERE doc_topic = ? ORDER BY seq ASC",
+      )
       .all(docTopic) as unknown as Array<{ content: string }>;
     return {
       topic: doc.topic,
@@ -830,18 +830,16 @@ export class KnowledgeBaseManager {
       best = this.pickSection(rows, want);
     }
 
-    let match:
-      | {
-          topic: string;
-          docTopic: string;
-          title: string;
-          section?: string;
-          content: string;
-          lines: number;
-          words: number;
-          chars: number;
-        }
-      | null = null;
+    let match: {
+      topic: string;
+      docTopic: string;
+      title: string;
+      section?: string;
+      content: string;
+      lines: number;
+      words: number;
+      chars: number;
+    } | null = null;
     if (best) {
       const lines = best.content.split("\n").length;
       const words = best.content.trim()
@@ -900,7 +898,10 @@ export class KnowledgeBaseManager {
       let score = -1;
       if (headingLower === wantLower || slug === wantLower) {
         score = 0; // exact heading or slug
-      } else if (slug.startsWith(wantLower) || headingLower.startsWith(wantLower)) {
+      } else if (
+        slug.startsWith(wantLower) ||
+        headingLower.startsWith(wantLower)
+      ) {
         // Slug prefix precisely targets javadocs members: the member slug
         // encodes the name (`getPlayer(int)` → `getplayer-int`), so
         // `getPlayer` outranks any body/description line that merely

@@ -107,7 +107,13 @@ export class ScriptGenerator {
         ProjectileCount: 1,
         ShareDamage: false,
       },
-      requiredProperties: ["DisplayName", "Icon", "ItemType", "Weight", "AmmoType"],
+      requiredProperties: [
+        "DisplayName",
+        "Icon",
+        "ItemType",
+        "Weight",
+        "AmmoType",
+      ],
       optionalProperties: [
         "WeaponSprite",
         "SwingSound",
@@ -319,7 +325,8 @@ export class ScriptGenerator {
       // can never leak `Type = ...` into a generated script; an explicit
       // ItemType always wins.
       if (propSpecs.Type !== undefined && propSpecs.ItemType === undefined) {
-        const mapped = LEGACY_TYPE_TO_ITEMTYPE[String(propSpecs.Type).toLowerCase()];
+        const mapped =
+          LEGACY_TYPE_TO_ITEMTYPE[String(propSpecs.Type).toLowerCase()];
         if (mapped) {
           propSpecs.ItemType = mapped;
         }

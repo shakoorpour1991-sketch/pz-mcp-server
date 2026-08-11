@@ -59,14 +59,8 @@ export const SearchVanillaSchema = z.object({
           .union([z.string(), z.number(), z.boolean()])
           .optional()
           .describe("Exact property value (e.g. base:weapon for ItemType)"),
-        min: z
-          .number()
-          .optional()
-          .describe("Numeric lower bound (inclusive)"),
-        max: z
-          .number()
-          .optional()
-          .describe("Numeric upper bound (inclusive)"),
+        min: z.number().optional().describe("Numeric lower bound (inclusive)"),
+        max: z.number().optional().describe("Numeric upper bound (inclusive)"),
       }),
     )
     .max(20)
@@ -399,10 +393,10 @@ export const IndexJavadocsSchema = z.object({
     .optional()
     .describe(
       "Path to JavaDocs to index. Two modes:\n" +
-      "1. A directory of .md files (the distilled markdown format, one file per API type) — defaults to the repo-shipped knowledge-base/javadocs/\n" +
-      "2. A raw generated JavaDoc HTML tree (package folders + *.html class pages) — the pipeline re-ingests from HTML, generates markdown, then indexes\n" +
-      "\nWhen omitted, the repo-shipped distilled JavaDocs (knowledge-base/javadocs/, ~4,700 types from the Unofficial PZ JavaDocs 42.20.0) are indexed directly, so index_javadocs works on any machine with zero arguments.\n" +
-      "Override with PZ_MCP_JAVADOCS_PATH env var (for the shipped markdown dir) or pass an explicit path here.",
+        "1. A directory of .md files (the distilled markdown format, one file per API type) — defaults to the repo-shipped knowledge-base/javadocs/\n" +
+        "2. A raw generated JavaDoc HTML tree (package folders + *.html class pages) — the pipeline re-ingests from HTML, generates markdown, then indexes\n" +
+        "\nWhen omitted, the repo-shipped distilled JavaDocs (knowledge-base/javadocs/, ~4,700 types from the Unofficial PZ JavaDocs 42.20.0) are indexed directly, so index_javadocs works on any machine with zero arguments.\n" +
+        "Override with PZ_MCP_JAVADOCS_PATH env var (for the shipped markdown dir) or pass an explicit path here.",
     ),
   source: z
     .string()
@@ -432,7 +426,7 @@ export const SearchKnowledgeBaseSchema = z.object({
     .string()
     .max(1000)
     .describe(
-      "Search query for knowledge base content. Stemmed + prefix-matched (\"reload\" finds reloads/reloading; \"getPlay\" finds getPlayer/getPlayers). Natural-language queries rank prose docs (wiki/research/api-docs) first; javadocs are ranked first for identifier-like queries (camelCase, dotted names).",
+      'Search query for knowledge base content. Stemmed + prefix-matched ("reload" finds reloads/reloading; "getPlay" finds getPlayer/getPlayers). Natural-language queries rank prose docs (wiki/research/api-docs) first; javadocs are ranked first for identifier-like queries (camelCase, dotted names).',
     ),
   topic: z
     .string()

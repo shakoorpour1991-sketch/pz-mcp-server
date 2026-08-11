@@ -600,7 +600,11 @@ function validateBlockHeader(
       // values check would just double-report the same header with a less
       // useful message ("not in valid IDs" instead of "cannot contain
       // spaces"), so it short-circuits here.
-      if (!hasSpaceIssue && blockData.id.values && !blockData.id.values.includes(id)) {
+      if (
+        !hasSpaceIssue &&
+        blockData.id.values &&
+        !blockData.id.values.includes(id)
+      ) {
         const suggestions = closestNames(id, blockData.id.values);
         out.add({
           code: "INVALID_ID",

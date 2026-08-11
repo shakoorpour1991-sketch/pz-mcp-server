@@ -166,7 +166,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
           throw new McpError(
             ErrorCode.InvalidParams,
             `Shipped JavaDocs not found at ${defaultPath}. The knowledge-base/javadocs/ directory ships with the repository. ` +
-            `If it's missing, run 'git checkout knowledge-base/javadocs/' from the repo root, or set PZ_MCP_JAVADOCS_PATH to point to your distilled JavaDocs markdown directory.`,
+              `If it's missing, run 'git checkout knowledge-base/javadocs/' from the repo root, or set PZ_MCP_JAVADOCS_PATH to point to your distilled JavaDocs markdown directory.`,
           );
         }
         throw new McpError(
@@ -331,7 +331,8 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         // Report the effective requested section (from the section param or
         // the #fragment in the topic) so inline misses aren't shown as "".
         const hashIdx = topic.indexOf("#");
-        const want = hashIdx === -1 ? section ?? "" : topic.slice(hashIdx + 1);
+        const want =
+          hashIdx === -1 ? (section ?? "") : topic.slice(hashIdx + 1);
         const list = res.sections.slice(0, 20).join("; ");
         throw new McpError(
           ErrorCode.InvalidParams,

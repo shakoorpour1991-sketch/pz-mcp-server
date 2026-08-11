@@ -96,7 +96,8 @@ export function bestFuzzyMatch(
 
   // 1. Exact — the canonical stored id may carry a module prefix.
   for (const id of candidates) {
-    if (id === input) return { id, method: "exact", confidence: EXACT_CONFIDENCE };
+    if (id === input)
+      return { id, method: "exact", confidence: EXACT_CONFIDENCE };
   }
 
   // 2. Case-insensitive exact on the id itself.

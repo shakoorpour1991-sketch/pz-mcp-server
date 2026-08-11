@@ -15,12 +15,41 @@ import type { ModgenTemplate } from "./templates.js";
 
 /** BloodLocation values documented for Build 42 clothing (API docs 42.20). */
 export const BLOOD_LOCATIONS = new Set([
-  "Apron", "Bag", "Foot_L", "Foot_R", "ForeArm_L", "ForeArm_R", "FullHelmet",
-  "Groin", "Hand_L", "Hand_R", "Hands", "Head", "Jacket", "JumperNoSleeves",
-  "Jumper", "LongJacket", "LowerArms", "LowerBody", "LowerLeg_L", "LowerLeg_R",
-  "LowerLegs", "Neck", "ShirtLongSleeves", "ShirtNoSleeves", "Shirt", "Shoes",
-  "ShortsShort", "Trousers", "UpperArm_L", "UpperArm_R", "UpperArms",
-  "UpperBody", "UpperLeg_L", "UpperLeg_R", "UpperLegs",
+  "Apron",
+  "Bag",
+  "Foot_L",
+  "Foot_R",
+  "ForeArm_L",
+  "ForeArm_R",
+  "FullHelmet",
+  "Groin",
+  "Hand_L",
+  "Hand_R",
+  "Hands",
+  "Head",
+  "Jacket",
+  "JumperNoSleeves",
+  "Jumper",
+  "LongJacket",
+  "LowerArms",
+  "LowerBody",
+  "LowerLeg_L",
+  "LowerLeg_R",
+  "LowerLegs",
+  "Neck",
+  "ShirtLongSleeves",
+  "ShirtNoSleeves",
+  "Shirt",
+  "Shoes",
+  "ShortsShort",
+  "Trousers",
+  "UpperArm_L",
+  "UpperArm_R",
+  "UpperArms",
+  "UpperBody",
+  "UpperLeg_L",
+  "UpperLeg_R",
+  "UpperLegs",
 ]);
 
 export interface B42Result {
@@ -125,7 +154,10 @@ export class B42Validator {
           "ClothingItem is required — it binds the item to an outfit definition.",
         );
       }
-      if (stats.BloodLocation && !BLOOD_LOCATIONS.has(String(stats.BloodLocation))) {
+      if (
+        stats.BloodLocation &&
+        !BLOOD_LOCATIONS.has(String(stats.BloodLocation))
+      ) {
         warnings.push(
           `BloodLocation "${stats.BloodLocation}" is not a known Build 42 value (e.g. Shirt, UpperBody, Jacket, Trousers).`,
         );
@@ -147,15 +179,15 @@ export class B42Validator {
           2000,
           tpl.baseline.propertyKey,
         )
-          .catch(() => []);
-        for (const row of batch) {
-          if (seen.has(row.id)) continue;
-          seen.add(row.id);
-          if (tpl.baseline.filter && !tpl.baseline.filter(row.properties)) {
-            continue;
-          }
-          rows.push(row);
+        .catch(() => []);
+      for (const row of batch) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        if (tpl.baseline.filter && !tpl.baseline.filter(row.properties)) {
+          continue;
         }
+        rows.push(row);
+      }
       if (rows.length > 0) {
         dataChecked = true;
         this.dataChecks(tpl, stats, mod, rows, errors, warnings, info);
@@ -209,7 +241,10 @@ export class B42Validator {
         );
       }
     }
-    if (typeof stats.FabricType === "string" && !FABRICS.has(stats.FabricType)) {
+    if (
+      typeof stats.FabricType === "string" &&
+      !FABRICS.has(stats.FabricType)
+    ) {
       warnings.push(`FabricType "${stats.FabricType}" is not a known fabric.`);
     }
 
@@ -240,7 +275,20 @@ export class B42Validator {
 
 /** FabricType values seen on vanilla Build 42 clothing + common extras. */
 const FABRICS = new Set([
-  "Cotton", "Denim", "Leather", "Wool", "Kevlar", "Polyester", "Nylon",
-  "Silk", "Spandex", "Fur", "Burlap", "GarbageBag", "Canvas", "Lace",
-  "Ripstop", "Vinyl",
+  "Cotton",
+  "Denim",
+  "Leather",
+  "Wool",
+  "Kevlar",
+  "Polyester",
+  "Nylon",
+  "Silk",
+  "Spandex",
+  "Fur",
+  "Burlap",
+  "GarbageBag",
+  "Canvas",
+  "Lace",
+  "Ripstop",
+  "Vinyl",
 ]);

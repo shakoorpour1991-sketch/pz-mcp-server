@@ -76,8 +76,7 @@ export function formatAiContext(results: any[], build: string): string {
 /** Render a property value in AI context (arrays as semicolon lists). */
 function formatAiValue(value: any): string {
   if (Array.isArray(value)) return value.map(String).join(";");
-  if (typeof value === "object" && value !== null)
-    return JSON.stringify(value);
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
   return String(value);
 }
 
@@ -103,23 +102,27 @@ export function formatItemRelations(
   out.push(`### ⚒️ Recipes producing ${itemId}`);
   out.push(
     rel.recipesProducing.length > 0
-      ? rel.recipesProducing
-          .map((r: any) => `- ${r.name} (${r.id})`)
-          .join("\n")
+      ? rel.recipesProducing.map((r: any) => `- ${r.name} (${r.id})`).join("\n")
       : "- none",
   );
 
   if (rel.sounds.length > 0) {
     out.push(`### 🔊 Sounds`);
-    out.push(rel.sounds.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+    out.push(
+      rel.sounds.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"),
+    );
   }
   if (rel.sprites.length > 0) {
     out.push(`### 🖼️ Sprites`);
-    out.push(rel.sprites.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+    out.push(
+      rel.sprites.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"),
+    );
   }
   if (rel.models.length > 0) {
     out.push(`### 🚗 Models`);
-    out.push(rel.models.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"));
+    out.push(
+      rel.models.map((s: any) => `- ${s.ref} (${s.context})`).join("\n"),
+    );
   }
   if (rel.relatedScripts.length > 0) {
     out.push(`### 📄 Related scripts (same file)`);
