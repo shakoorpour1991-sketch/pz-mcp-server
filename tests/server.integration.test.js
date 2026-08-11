@@ -1277,6 +1277,49 @@ describe("pz-mcp-server integration", () => {
       assert.ok(result.contents[0].text.includes("Water is essential"));
       assert.ok(!result.contents[0].text.includes("forge"));
     });
+
+    test("resources/list paginates with a cursor and is prose-first (audit finding 4)", async () => {
+      // The shipped javadocs index (>4,000 types) ran earlier, so the first
+      // page (200) must be exhausted and carry a nextCursor.
+      const page1 = await client.call("resources/list");
+      assert.equal(page1.resources.length, 200);
+      assert.equal(typeof page1.nextCursor, "string");
+      // Prose-first ordering: no javadocs topic may precede a prose topic
+      // within the page (the prose docs are few, so javadocs fill the tail).
+      const isJd = page1.resources.map((r) => r.name.startsWith("javadocs/"));
+      const firstJd = isJd.indexOf(true);
+      const lastProse = isJd.lastIndexOf(false);
+      assert.ok(
+        firstJd === -1 || firstJd > lastProse,
+        "prose docs must precede javadocs on the first page",
+      );
+      // The second page is a different slice.
+      const page2 = await client.call("resources/list", {
+        cursor: page1.nextCursor,
+      });
+      assert.ok(page2.resources.length > 0);
+      assert.ok(
+        page2.resources.every(
+          (r) => page1.resources.every((p) => p.name !== r.name),
+        ),
+        "pages must not overlap",
+      );
+    });
+
+    test("resources/read caps giant whole-doc reads with a section pointer (audit finding 5)", async () => {
+      // ModelKey is a ~200KB javadocs class page — reading it whole would be
+      // ~50k tokens. The resource must come back truncated with a pointer.
+      const result = await client.call("resources/read", {
+        uri: "knowledge://javadocs%2Fzombie.scripting.objects.ModelKey",
+      });
+      const text = result.contents[0].text;
+      assert.ok(text.includes("[truncated"), "giant doc must be truncated");
+      assert.ok(text.includes("get_knowledge_section"), "section pointer present");
+      assert.ok(
+        text.length < 30_000,
+        `capped payload, got ${text.length}`,
+      );
+    });
   });
 
   describe("MCP prompts", () => {

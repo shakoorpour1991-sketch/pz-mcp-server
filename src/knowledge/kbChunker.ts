@@ -69,6 +69,12 @@ interface KbParsedDoc {
   /** Cleaned body (== concatenation of chunk contents). */
   body: string;
   chunks: KbChunk[];
+  /**
+   * True when the doc's RAW (pre-clean) body is mostly markdown table rows
+   * (loot tables, procedural-distribution dumps). Table-heavy docs are
+   * low-value prose for retrieval — mixed searches downweight them.
+   */
+  tabley: boolean;
 }
 
 /** Frontmatter values: scalars and inline arrays. */
@@ -244,6 +250,20 @@ export function cleanMarkdown(body: string, docType: KbDocType): string {
       }
     }
   }
+  if (docType === "javadocs") {
+    // The ingestion footer carries provenance ("*Source: Unofficial PZ
+    // JavaDocs 42.12.0 (42.12.0) · parsed from `C:\…html`*"). Keep the
+    // source label but drop the machine-specific parse path — a Windows
+    // absolute path is privacy + index noise, and it made the final member
+    // chunk look like it had a body.
+    for (let i = 0; i < out.length; i++) {
+      const line = out[i].trim();
+      const m = line.match(/^\*Source: (.*?) · parsed from .+\*?$/);
+      if (m) {
+        out[i] = `*Source: ${m[1].trim()}*`;
+      }
+    }
+  }
   return out
     .join("\n")
     .replace(/[ \t]+$/gm, "")
@@ -311,19 +331,34 @@ function memberSlug(heading: string): string {
  * heading line(s): strip headings, deprecation markers and empty lines — if
  * nothing is left, the chunk is a bare signature / empty section marker.
  * (`> ⚠️ **Deprecated**` is a marker, not a body.)
+ *
+ * Audit tuning: a body that is only 1–2 STRUCTURAL lines — a bare
+ * `**Returns:** `int``, a parameter-list item, a bold definition label —
+ * carries no prose that answers a question either, so it is tagged bodyless
+ * too (this is exactly the "1-2 short lines" stubby-member case the corpus
+ * audit called out: most javadocs fields have nothing beyond their signature).
  */
 export function isBodyless(content: string): boolean {
-  return (
-    content
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-      .filter((l) => !/^#{1,6}\s+/.test(l)) // heading line(s)
-      // Deprecation markers (`> ⚠️ **Deprecated**` — the ⚠ is followed by the
-      // U+FE0F variation selector, so skip any non-word glyphs after the `>`).
-      .filter((l) => !/^>\s*[^\w]*\*{0,2}Deprecated\*{0,2}/i.test(l))
-      .filter((l) => !/^[-*_\s]+$/.test(l)).length === 0
-  );
+  const lines = content
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !/^#{1,6}\s+/.test(l)) // heading line(s)
+    // Deprecation markers (`> ⚠️ **Deprecated**` — the ⚠ is followed by the
+    // U+FE0F variation selector, so skip any non-word glyphs after the `>`).
+    .filter((l) => !/^>\s*[^\w]*\*{0,2}Deprecated\*{0,2}/i.test(l))
+    .filter((l) => !/^[-*_\s]+$/.test(l));
+  if (lines.length === 0) return true;
+  if (lines.length <= 2) {
+    return lines.every(
+      (l) =>
+        /^\*\*[^*]+\*\*/.test(l) || // **Returns:** `int` / **Parameters:**
+        /^-\s+\S/.test(l) || // - `ISearchNode` `iSearchNode0`
+        /^`[^`]+`$/.test(l) || // a bare code-token line
+        /^[^a-zA-Z]*$/.test(l), // separators / non-letter noise
+    );
+  }
+  return false;
 }
 
 /** Split an over-long chunk deterministically at paragraph/line boundaries. */
@@ -534,6 +569,16 @@ export function parseKbDoc(raw: string, relPath: string): KbParsedDoc {
     extra.version = build;
   }
 
+  // Table density is measured on the RAW body (pre-clean): api-docs tables
+  // are collapsed by cleanMarkdown, so the signal only survives on the input.
+  // A doc that is mostly markdown table rows (loot tables, procedural
+  // distributions) is low-value prose for retrieval — mixed searches
+  // downweight it so one giant table dump can't flood a top-10.
+  const rawLines = body.split("\n").filter((l) => l.trim().length > 0);
+  const tableLines = rawLines.filter((l) => l.trim().startsWith("|")).length;
+  const tabley =
+    rawLines.length > 0 && tableLines / rawLines.length >= 0.4;
+
   const chunks = chunkMarkdown(cleaned, docTopic, docType, title);
 
   return {
@@ -545,5 +590,6 @@ export function parseKbDoc(raw: string, relPath: string): KbParsedDoc {
     meta: extra,
     body: cleaned,
     chunks,
+    tabley,
   };
 }

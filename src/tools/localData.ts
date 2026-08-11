@@ -236,7 +236,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "search_knowledge_base",
     description:
-      'Search knowledge base docs with relevance ranking (bm25 with column weights, stemmed, prefix as a no-hit fallback). Returns section-level chunks — each result is a precise unit (a wiki section or a single javadocs method/field) with read-cost metadata (chars/words). Type-aware defaults: natural-language queries rank prose docs (wiki/research/api-docs) first so javadocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank javadocs first. Set includeContent: true to get the chunk bodies inline (search + read in one call, capped by maxContent). Filters: topic (exact doc topic), type / types (single or multi-select doc types), package (Java package, javadocs only). JavaDocs must be indexed with index_javadocs first — index_knowledge_base skips javadocs/. Examples: {query: "blacksmithing recipe"}, {query: "getSquare", type: "javadocs", package: "zombie.iso"}, {query: "blacksmithing", includeContent: true}',
+      'Search knowledge base docs with relevance ranking (bm25 with column weights, unicode61 exact terms first, prefix + inflection re-run as a no-hit fallback). Returns section-level chunks — each result is a precise unit (a wiki section or a single javadocs method/field) with read-cost metadata (chars/words). Type-aware defaults: natural-language queries rank prose docs (wiki/research/api-docs) first so javadocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank javadocs first; bodyless signatures and table-heavy docs are downweighted, and maxResultsPerDoc (default 3) stops one giant doc from monopolizing the top-N. Set includeContent: true to get the chunk bodies inline (search + read in one call, capped by maxContent). Filters: topic (exact doc topic), type / types (single or multi-select doc types), package (Java package, javadocs only). JavaDocs must be indexed with index_javadocs first — index_knowledge_base skips javadocs/. Examples: {query: "blacksmithing recipe"}, {query: "getSquare", type: "javadocs", package: "zombie.iso"}, {query: "blacksmithing", includeContent: true}',
     inputSchema: SearchKnowledgeBaseSchema,
     handler: async (args, ctx) => {
       const {
@@ -248,6 +248,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         package: pkg,
         includeContent,
         maxContent,
+        maxResultsPerDoc,
       } = args;
       const opts: {
         topic?: string;
@@ -257,7 +258,8 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         package?: string;
         includeContent?: boolean;
         maxContent?: number;
-      } = { limit, includeContent, maxContent };
+        maxResultsPerDoc?: number;
+      } = { limit, includeContent, maxContent, maxResultsPerDoc };
       if (topic) opts.topic = topic;
       if (type) opts.type = type;
       if (types?.length) opts.types = types;
@@ -279,10 +281,27 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   },
   {
     name: "list_knowledge_topics",
-    description: "List all indexed knowledge base topics with stats",
+    description:
+      "List indexed knowledge base topics with stats (lines/words/chars) — stored columns, instant even at ~5,000 topics. Optional filters keep the reply lean: types (multi-select doc types, e.g. [\"research\", \"wiki\"]), prefix (path-prefixed topic id start, e.g. \"wiki\" or \"javadocs/zombie.iso\"), and limit/offset for pagination. Example: {types: [\"research\", \"wiki\"], limit: 50}. With no filters the full list is returned.",
     inputSchema: ListKnowledgeTopicsSchema,
-    handler: async (_args, ctx) => {
-      const topics = await ctx.knowledgeBaseManager.listTopics();
+    handler: async (args, ctx) => {
+      const { type, types, prefix, limit, offset } = args;
+      const opts: {
+        types?: KbDocType[];
+        prefix?: string;
+        limit?: number;
+        offset?: number;
+      } = {};
+      if (types?.length) opts.types = types;
+      else if (type) opts.types = [type];
+      if (prefix) opts.prefix = prefix;
+      if (limit !== undefined) opts.limit = limit;
+      if (offset !== undefined) opts.offset = offset;
+      const topics = await ctx.knowledgeBaseManager.listTopics(opts);
+      const countOpts: { types?: KbDocType[]; prefix?: string } = {};
+      if (opts.types !== undefined) countOpts.types = opts.types;
+      if (opts.prefix !== undefined) countOpts.prefix = opts.prefix;
+      const total = await ctx.knowledgeBaseManager.countTopics(countOpts);
       return {
         content: [
           {
@@ -290,7 +309,11 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
             text: formatKbTopics(topics),
           },
         ],
-        structuredContent: { topics: structuredClone(topics) },
+        structuredContent: {
+          topics: structuredClone(topics),
+          total,
+          filtered: opts.limit !== undefined || opts.types !== undefined || opts.prefix !== undefined,
+        },
       };
     },
   },

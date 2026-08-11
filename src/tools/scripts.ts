@@ -24,7 +24,7 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "generate_script",
     description:
-      "Generate balanced Project Zomboid scripts using templates and game data patterns",
+      "Generate a complete Project Zomboid script block (item, recipe, fixing, sound, evolvedrecipe, vehicle) from structured properties. Pass type, name, properties, and an optional module (default Base); balance: vanilla/powerful/weak scales the stats from vanilla game data, includeComments adds guidance. The reply carries the ready-to-paste script plus a structured copy. Example: {type: item, name: IronAxe, properties: {DisplayName: Iron Axe, Weight: 2, MaxDamage: 5}}. Pair with validate_script to check the result and export_mod_script to write it into a mod.",
     inputSchema: GenerateScriptSchema,
     handler: async (args, ctx) => {
       const { type, name, properties, module, balance, includeComments } = args;
@@ -96,7 +96,7 @@ export const scriptTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "check_references",
     description:
-      "Validate item, sound, and sprite references against game database",
+      "Check a list of Project Zomboid references (item, sound, or sprite ids) against the parsed game database. Each reference is classified defined / referenced-only / missing, with Did-you-mean suggestions for typos. Use it after generate_script or export_mod_script to catch references that don't resolve — the exact anti-hallucination gate for AI-generated scripts. Example: {references: [Base.Nails, Base.Nailz], type: item}.",
     inputSchema: CheckReferencesSchema,
     handler: async (args, ctx) => {
       const { references, type } = args;

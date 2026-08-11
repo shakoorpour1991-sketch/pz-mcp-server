@@ -156,7 +156,7 @@ export const workspaceTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "workspace_list",
     description:
-      "List mod projects in the workspace (PZ_MCP_WORKSPACE_DIR, default <data>/workspaces) with their mod.info presence",
+      "List the mod projects in the configured workspace (PZ_MCP_WORKSPACE_DIR, default <data>/workspaces). Each entry shows the project folder, whether it has a valid mod.info, and its absolute path — the cheap first call before workspace_inspect. No arguments. Example: {} → workspace_create scaffolds a new Build-42 project, workspace_inspect gives the full structured report.",
     inputSchema: WorkspaceListSchema,
     handler: async (_args, ctx) => {
       const projects = await ctx.workspaceManager.listProjects();

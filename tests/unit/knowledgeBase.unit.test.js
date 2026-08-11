@@ -91,8 +91,9 @@ describe('KnowledgeBaseManager', () => {
       assert.equal(results[0].docTopic, 'Cooking');
     });
 
-    test('porter stemming: base-form query matches inflected content', async () => {
-      // 'grow' must match 'grows' (porter stems both to grow).
+    test('inflections: base-form query matches inflected content (query-time expansion)', async () => {
+      // 'grow' must match 'grows' — the plain query misses (unicode61 does not
+      // stem), so the suffix-expansion fallback (grow*) finds it.
       const results = await kb.search('grow');
       assert.ok(results.some((r) => r.docTopic === 'Farming'));
     });
@@ -260,8 +261,9 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
     assert.ok(doc.chars > 0);
   });
 
-  test('search is stemmed and prefix-matched (porter unicode61)', async () => {
-    // 'fish' matches 'Fishing' (porter stem), 'forg' prefix-matches 'forge'.
+  test('search is inflected + prefix-matched (unicode61 + expansion fallback)', async () => {
+    // 'fish' matches 'Fishing' via the fish* fallback; 'forg' prefix-matches
+    // 'forge' the same way.
     const fish = await kb.search('fish');
     assert.ok(fish.some((r) => r.topic === 'Guide#section-one'));
     const forg = await kb.search('forg');
@@ -366,8 +368,8 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
     });
   });
 
-  test('a v2 database migrates to v3 additively (bodyless column, data kept)', async () => {
-    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-v2to3-'));
+  test('a v2 database migrates to v4 (bodyless + tabley columns, FTS rebuilt, data kept)', async () => {
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-v2to4-'));
     try {
       const docsDir = path.join(tmp2, 'docs');
       fs.mkdirSync(docsDir, { recursive: true });
@@ -375,7 +377,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
         path.join(docsDir, 'Farming.md'),
         '# Farming\n\nCabbage grows in spring.\n'
       );
-      // Build a v2 database with the same manager, then force the schema
+      // Build a database with the same manager, then force the schema
       // version back to 2 (as a pre-upgrade v2 DB would be) and re-open.
       const kb2 = new KnowledgeBaseManager(path.join(tmp2, 'data'));
       await kb2.initialize();
@@ -385,11 +387,12 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
       const dbPath = path.join(tmp2, 'data', 'pz_knowledge.db');
       const raw = new DatabaseSync(dbPath);
       try {
-        // The manager builds v3 tables (bodyless already present); drop the
-        // column + downgrade the version so the fixture truly simulates a
-        // pre-upgrade v2 DB — otherwise the re-open's additive ALTER would
-        // hit a duplicate-column error and leave the handle unclosed.
+        // The manager builds v4 tables (bodyless/tabley already present);
+        // drop the columns + downgrade the version so the fixture truly
+        // simulates a pre-upgrade v2 DB — otherwise the re-open's additive
+        // ALTERs would hit duplicate-column errors.
         raw.exec('ALTER TABLE knowledge_chunks DROP COLUMN bodyless');
+        raw.exec('ALTER TABLE knowledge_docs DROP COLUMN tabley');
         raw.exec('PRAGMA user_version = 2');
       } finally {
         raw.close();
@@ -402,13 +405,26 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
         try {
           assert.equal(
             check.prepare('PRAGMA user_version').get().user_version,
-            3
+            4
           );
-          const cols = check
+          const chunkCols = check
             .prepare('PRAGMA table_info(knowledge_chunks)')
             .all()
             .map((c) => c.name);
-          assert.ok(cols.includes('bodyless'));
+          assert.ok(chunkCols.includes('bodyless'));
+          const docCols = check
+            .prepare('PRAGMA table_info(knowledge_docs)')
+            .all()
+            .map((c) => c.name);
+          assert.ok(docCols.includes('tabley'));
+          // The FTS table was recreated with the unicode61 tokenizer.
+          const ftsSql = check
+            .prepare(
+              "SELECT sql FROM sqlite_master WHERE name = 'knowledge_chunks_fts'"
+            )
+            .get();
+          assert.ok(ftsSql.sql.includes("tokenize='unicode61'"), ftsSql.sql);
+          assert.ok(!ftsSql.sql.includes('porter'), ftsSql.sql);
         } finally {
           check.close();
         }
@@ -424,7 +440,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
     }
   });
 
-  test('migrates a legacy v1 database to v2 (clean drop + recreate)', async () => {
+  test('migrates a legacy v1 database to v4 (clean drop + recreate)', async () => {
     const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-migrate-'));
     try {
       const { DatabaseSync } = await import('node:sqlite');
@@ -457,12 +473,12 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
             .map((c) => c.name);
           assert.ok(docCols.includes('doc_type'), 'v2 columns present');
           assert.ok(!docCols.includes('content'), 'no full-copy content column');
-          // bodyless lives on knowledge_chunks (v3 additive migration).
+          assert.ok(docCols.includes('tabley'), 'v4 tabley column present');
           const chunkCols = check
             .prepare('PRAGMA table_info(knowledge_chunks)')
             .all()
             .map((c) => c.name);
-          assert.ok(chunkCols.includes('bodyless'), 'v3 bodyless column present');
+          assert.ok(chunkCols.includes('bodyless'), 'v4 bodyless column present');
           assert.equal(
             check
               .prepare("SELECT name FROM sqlite_master WHERE name = 'knowledge_fts'")
@@ -472,12 +488,12 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
           );
           assert.equal(
             check.prepare('PRAGMA user_version').get().user_version,
-            3
+            4
           );
         } finally {
           check.close();
         }
-        // Legacy rows are gone; re-indexing repopulates the v2 schema.
+        // Legacy rows are gone; re-indexing repopulates the v4 schema.
         assert.deepEqual(await migrated.listTopics(), []);
       } finally {
         migrated.close();
@@ -684,5 +700,123 @@ describe('KnowledgeBaseManager search ranking (review fixes)', () => {
     } finally {
       fs.rmSync(tmp2, { recursive: true, force: true });
     }
+  });
+});
+
+describe('KnowledgeBaseManager v4 audit fixes', () => {
+  let tmpDir;
+  let docsDir;
+  let kb;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-v4-'));
+    docsDir = path.join(tmpDir, 'docs');
+    fs.mkdirSync(path.join(docsDir, 'javadocs'), { recursive: true });
+    // Prose research doc (also carries 'hammer' so the tabley ranking test
+    // has a prose contender).
+    fs.writeFileSync(
+      path.join(docsDir, 'Research.md'),
+      '# Research\n\n## Delivery\n\nThe delivery van brings the shipment.\n\n## Tools\n\nA hammer is used for smithing.\n'
+    );
+    // Javadocs class with a trailing-y member (the porter regression shape).
+    fs.writeFileSync(
+      path.join(docsDir, 'javadocs', 'zombie.Fixture.md'),
+      '# zombie.Fixture\n\n## Methods\n\n### public static IsoPlayer getPlayer(int playerNum)\n\nGets the local player.\n\n### public static int getDayCount()\n'
+    );
+    // A table-heavy doc (loot-table dump) that also carries the query token.
+    fs.writeFileSync(
+      path.join(docsDir, 'TableDoc.md'),
+      '# Loot\n\n| hammer | weight |\n| --- | --- |\n| 1 | 2.0 |\n| 2 | 3.0 |\n| 3 | 4.0 |\n| 4 | 5.0 |\n'
+    );
+    kb = new KnowledgeBaseManager(path.join(tmpDir, 'data'), { skipDirs: [] });
+    await kb.initialize();
+    await kb.indexDirectory(docsDir);
+  });
+
+  after(() => {
+    kb.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('trailing-y prefix fallback: "getPlay" finds the getPlayer member (audit finding 2)', async () => {
+    const results = await kb.search('getPlay', { limit: 5 });
+    assert.ok(results.length > 0, 'fallback must return results');
+    assert.ok(
+      results.some(
+        (r) =>
+          r.docTopic === 'javadocs/zombie.Fixture' &&
+          /getplayer/i.test(r.topic),
+      ),
+      results.map((r) => r.topic).join(', '),
+    );
+    // An inflected prose hit via the same fallback (delivery*).
+    const delivery = await kb.search('deliver', { limit: 5 });
+    assert.ok(
+      delivery.some((r) => r.docTopic === 'Research'),
+      delivery.map((r) => r.docTopic).join(', '),
+    );
+  });
+
+  test('per-doc cap: maxResultsPerDoc limits one doc to N rows (audit finding 3)', async () => {
+    // The javadocs fixture has two members; force a tight cap of 1 and ask
+    // for 5 — only one row per doc may come back.
+    const capped = await kb.search('get', { maxResultsPerDoc: 1, limit: 5 });
+    const perDoc = new Map();
+    for (const r of capped) perDoc.set(r.docTopic, (perDoc.get(r.docTopic) || 0) + 1);
+    assert.ok(capped.length > 0);
+    for (const [doc, n] of perDoc) {
+      assert.ok(n <= 1, `doc ${doc} exceeded the cap (${n})`);
+    }
+    // maxResultsPerDoc: 0 disables the cap entirely.
+    const uncapped = await kb.search('get', {
+      maxResultsPerDoc: 0,
+      limit: 5,
+    });
+    const uncappedPerDoc = new Map();
+    for (const r of uncapped)
+      uncappedPerDoc.set(r.docTopic, (uncappedPerDoc.get(r.docTopic) || 0) + 1);
+    assert.ok(uncappedPerDoc.get('javadocs/zombie.Fixture') >= 2, 'no cap');
+    // Default caps at 3 (the fixture javadocs doc only has 2 members).
+    const def = await kb.search('get', { limit: 5 });
+    assert.ok(def.some((r) => r.docTopic === 'javadocs/zombie.Fixture'));
+  });
+
+  test('table-heavy docs are downweighted in natural-language mixed search', async () => {
+    // 'hammer' matches BOTH the prose Research doc and the tabley TableDoc —
+    // the prose hit must rank first (tabley penalty keeps the dump out of the
+    // top slot), even though the table doc repeats the token more often.
+    const results = await kb.search('hammer', { limit: 5 });
+    assert.ok(results.length >= 1);
+    assert.equal(results[0].docTopic, 'Research', results.map((r) => `${r.docTopic}:${r.score}`).join(', '));
+  });
+
+  test('listTopics filters: types, prefix, limit + countTopics (audit finding 7)', async () => {
+    const prose = await kb.listTopics({ types: ['research'] });
+    assert.ok(prose.length >= 2);
+    assert.ok(prose.every((t) => t.docType === 'research'));
+
+    const prefixed = await kb.listTopics({ prefix: 'javadocs/zombie' });
+    assert.ok(prefixed.length >= 1);
+    assert.ok(
+      prefixed.every((t) => t.topic.startsWith('javadocs/zombie')),
+    );
+
+    const limited = await kb.listTopics({ limit: 2, offset: 0 });
+    assert.equal(limited.length, 2);
+    const page2 = await kb.listTopics({ limit: 2, offset: 2 });
+    assert.ok(
+      page2.length >= 0 && !limited.some((a) => page2.some((b) => b.topic === a.topic)),
+    );
+
+    assert.equal(await kb.countTopics({ types: ['javadocs'] }), 1);
+    assert.ok((await kb.countTopics()) >= 3);
+  });
+
+  test('listTopics proseFirst orders non-javadocs docs first (resources/list)', async () => {
+    const topics = await kb.listTopics({ proseFirst: true });
+    const javadocsIdx = topics.findIndex((t) => t.docType === 'javadocs');
+    const first = topics[0];
+    assert.notEqual(first.docType, 'javadocs');
+    assert.ok(javadocsIdx > 0, 'javadocs must not lead the list');
   });
 });

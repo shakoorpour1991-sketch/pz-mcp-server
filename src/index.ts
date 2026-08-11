@@ -165,8 +165,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  const topics = await knowledgeBaseManager.listTopics();
+// One page of knowledge:// resources. 200 keeps the handshake payload small
+// (the full 4,895-topic list was ~805KB JSON, 96% javadocs class pages).
+const RESOURCE_PAGE_SIZE = 200;
+// Whole-doc resource reads above this many chars are truncated with a section
+// pointer — a 190KB javadocs class page (~47k tokens) must never land in an
+// agent's context unannounced (KB audit finding 5).
+const MAX_RESOURCE_READ_CHARS = 25_000;
+
+server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
+  const cursorRaw = request.params?.cursor;
+  const offset = cursorRaw ? Math.max(0, parseInt(cursorRaw, 10) || 0) : 0;
+  const topics = await knowledgeBaseManager.listTopics({
+    limit: RESOURCE_PAGE_SIZE,
+    offset,
+    // Prose docs first so a client resource-browser shows the modder-relevant
+    // docs before the 4,600 javadocs class pages (audit finding 4).
+    proseFirst: true,
+  });
+  const total = await knowledgeBaseManager.countTopics();
+  const nextCursor =
+    offset + topics.length < total
+      ? String(offset + RESOURCE_PAGE_SIZE)
+      : undefined;
   return {
     resources: topics.map((t) => ({
       uri: `knowledge://${encodeURIComponent(t.topic)}`,
@@ -175,6 +196,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
       mimeType: "text/markdown",
       size: t.chars,
     })),
+    nextCursor,
   };
 });
 
@@ -204,12 +226,29 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   if (!doc) {
     throw new McpError(ErrorCode.InvalidRequest, `Topic not found: ${topic}`);
   }
+  // Finding 5 — size cap: a giant doc (some javadocs class pages are ~190KB)
+  // is truncated to the head plus a pointer to its real sections, so the
+  // resource surface can never blow an agent's context. get_knowledge_section
+  // and knowledge://topic#section remain the exact-read escape hatches.
+  let text = doc.content;
+  if (doc.chars > MAX_RESOURCE_READ_CHARS) {
+    const sections = await knowledgeBaseManager.sectionNames(doc.docTopic, 12);
+    const sectionList = sections.length
+      ? sections.slice(0, 8).join("; ")
+      : "(none listed)";
+    text =
+      `${doc.content.slice(0, MAX_RESOURCE_READ_CHARS).trimEnd()}…\n\n` +
+      `[truncated: this doc is ${doc.chars} chars (~${Math.round(doc.chars / 4)} tokens). ` +
+      `Read a section instead — get_knowledge_section(topic: "${doc.docTopic}", section: "<name>") ` +
+      `or knowledge://${encodeURIComponent(doc.docTopic)}#<section>. ` +
+      `Available sections: ${sectionList}]`;
+  }
   return {
     contents: [
       {
         uri: `knowledge://${encodeURIComponent(topic)}`,
         mimeType: "text/markdown",
-        text: doc.content,
+        text,
       },
     ],
   };

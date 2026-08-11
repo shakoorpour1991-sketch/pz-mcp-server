@@ -104,6 +104,14 @@ describe("tool registry (audit P2)", () => {
       ["index_javadocs", { output: "C:/x" }, false],
       ["index_javadocs", { source: "/some/javadocs", output: "C:/x" }, false],
       ["list_knowledge_topics", {}, false],
+      // list filters + pagination (KB audit finding 7)
+      ["list_knowledge_topics", { types: ["wiki"] }, false],
+      ["list_knowledge_topics", { types: ["bogus"] }, true],
+      ["list_knowledge_topics", { prefix: "wiki", limit: 10 }, false],
+      ["list_knowledge_topics", { prefix: 42 }, true],
+      ["list_knowledge_topics", { limit: 0 }, true],
+      ["list_knowledge_topics", { limit: 5000 }, true],
+      ["list_knowledge_topics", { type: "javadocs", offset: 5 }, false],
       ["get_knowledge_section", { topic: "" }, true],
       ["get_knowledge_section", { topic: "wiki/Java" }, false],
       ["get_knowledge_section", { topic: "wiki/Java#section-one" }, false],
@@ -134,6 +142,11 @@ describe("tool registry (audit P2)", () => {
         { query: "x", includeContent: true, maxContent: 12000 },
         false,
       ],
+      // per-doc cap (KB audit finding 3)
+      ["search_knowledge_base", { query: "x", maxResultsPerDoc: 0 }, false],
+      ["search_knowledge_base", { query: "x", maxResultsPerDoc: 5 }, false],
+      ["search_knowledge_base", { query: "x", maxResultsPerDoc: -1 }, true],
+      ["search_knowledge_base", { query: "x", maxResultsPerDoc: 21 }, true],
       // get_knowledge_section batch mode (sections[])
       [
         "get_knowledge_section",

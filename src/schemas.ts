@@ -426,7 +426,7 @@ export const SearchKnowledgeBaseSchema = z.object({
     .string()
     .max(1000)
     .describe(
-      'Search query for knowledge base content. Stemmed + prefix-matched ("reload" finds reloads/reloading; "getPlay" finds getPlayer/getPlayers). Natural-language queries rank prose docs (wiki/research/api-docs) first; javadocs are ranked first for identifier-like queries (camelCase, dotted names).',
+      'Search query for knowledge base content. Exact terms are matched first; only when nothing matches does the query re-run with prefix + inflection expansion ("getPlay" finds getPlayer/getPlayers; "reload" finds reloads/reloading). Natural-language queries rank prose docs (wiki/research/api-docs) first; javadocs are ranked first for identifier-like queries (camelCase, dotted names).',
     ),
   topic: z
     .string()
@@ -470,6 +470,15 @@ export const SearchKnowledgeBaseSchema = z.object({
     .optional()
     .describe(
       "Total character budget for inline chunk bodies across all results (default 8000, max 20000). Results are filled in rank order until the budget is spent.",
+    ),
+  maxResultsPerDoc: z
+    .number()
+    .int()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe(
+      "Cap results per doc (default 3; 0 disables) so one giant doc can't flood the top-N — a top-10 that samples several docs beats ten hits from a single loot table.",
     ),
   limit: z
     .number()
@@ -557,8 +566,46 @@ export const WorkshopAnalyzeSchema = z.object({
     ),
 });
 
-// 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env or default)
-export const ListKnowledgeTopicsSchema = z.object({});
+// 'path' param removed — the KB path is fixed at startup (PZ_MCP_KB_PATH env
+// or default). Filtering + pagination keep an agent from paying for the whole
+// 5,000-topic list when it only needs a slice (audit finding 7).
+export const ListKnowledgeTopicsSchema = z.object({
+  type: z
+    .enum(KB_DOC_TYPES)
+    .optional()
+    .describe(
+      "Filter by a single doc type: wiki, api-docs, javadocs, mods-analysis, or research. Alias for a one-element types array.",
+    ),
+  types: z
+    .array(z.enum(KB_DOC_TYPES))
+    .max(KB_DOC_TYPES.length)
+    .optional()
+    .describe(
+      'Filter by one or more doc types (multi-select), e.g. types: ["research", "wiki"] for prose docs only.',
+    ),
+  prefix: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      "Only topics whose path-prefixed id starts with this prefix (e.g. 'wiki', 'javadocs/zombie.iso').",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .optional()
+    .describe(
+      "Maximum number of topics to return (default: all). Pair with offset for pagination.",
+    ),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Skip this many topics — pairs with limit for pagination."),
+});
 
 // ---------------------------------------------------------------------------
 // Mod Generator (beginner-friendly mod creation)

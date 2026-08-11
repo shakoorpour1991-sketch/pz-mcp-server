@@ -11,13 +11,17 @@ import { parseKbDoc, type KbDocType } from "./kbChunker.js";
  * KB schema version. v1 (legacy) stored one full-copy row per file in
  * knowledge_docs + a full-copy knowledge_fts; v2 stores file metadata only in
  * knowledge_docs, per-section chunks in knowledge_chunks, and an external-
- * content FTS index over the chunks (porter-stemmed, prefix-matched). v3 adds
- * an additive `bodyless` column to knowledge_chunks (tagged bare-signature /
- * empty-section chunks so ranking can downweight them) — no re-index needed
- * for existing v2 databases. The KB DB is a disposable cache, so the v1 → v2
- * migration is a clean drop + recreate: index tools repopulate.
+ * content FTS index over the chunks. v3 added the `bodyless` column to
+ * knowledge_chunks (bare-signature / stubby-member chunks downweighted in
+ * mixed ranking). v4 switches the FTS tokenizer from `porter unicode61` to
+ * plain `unicode61` — porter's step-1c y→i stemming silently broke trailing-y
+ * prefix fallbacks ("getPlay" → getPlayer) — and adds the per-doc `tabley`
+ * flag (table-heavy docs downweighted in mixed searches). The tokenizer is a
+ * table attribute, so v4 drops + recreates the FTS virtual table and REQUIRES
+ * re-running the index tools once (the KB is a disposable cache — the v1 → v2
+ * migration was already a clean drop + recreate on the same principle).
  */
-const KB_SCHEMA_VERSION = 3;
+const KB_SCHEMA_VERSION = 4;
 
 export class KnowledgeBaseManager {
   private db!: DatabaseSync;
@@ -62,12 +66,13 @@ export class KnowledgeBaseManager {
   }
 
   /**
-   * Create the v3 schema (docs metadata + chunks + external-content FTS +
-   * bodyless flag). Legacy v1 tables (full-copy knowledge_docs/knowledge_fts)
-   * are dropped on migration — the KB is a disposable cache and the chunk
-   * representation is incompatible with the old rows. v2 → v3 is additive
-   * (ALTER TABLE ADD COLUMN), so existing v2 indexes survive without a
-   * re-index.
+   * Create the v4 schema (docs metadata + chunks + external-content FTS +
+   * bodyless + tabley flags). Legacy v1 tables (full-copy
+   * knowledge_docs/knowledge_fts) are dropped on migration — the KB is a
+   * disposable cache and the chunk representation is incompatible with the
+   * old rows. v2 → v4 / v3 → v4 are additive column ALTERs plus an FTS
+   * recreation (the tokenizer is a table attribute and changed in v4), so a
+   * migrated v2/v3 DB must re-run the index tools once to rebuild the index.
    */
   private ensureSchema(): void {
     const version = this.schemaVersion();
@@ -102,6 +107,8 @@ export class KnowledgeBaseManager {
     // lives in knowledge_chunks). Column order matters: the first seven
     // columns must mirror the FTS column order positionally (external-content
     // alignment), so title/source/doc_type/tags come before heading/seq.
+    // `tabley` flags docs whose raw body is mostly table rows (downweighted
+    // in mixed searches, KB audit finding).
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS knowledge_docs (
         topic TEXT PRIMARY KEY,
@@ -113,6 +120,7 @@ export class KnowledgeBaseManager {
         lines INTEGER NOT NULL DEFAULT 0,
         words INTEGER NOT NULL DEFAULT 0,
         chars INTEGER NOT NULL DEFAULT 0,
+        tabley INTEGER NOT NULL DEFAULT 0,
         mtime TEXT,
         file_path TEXT
       )
@@ -140,9 +148,49 @@ export class KnowledgeBaseManager {
         ON knowledge_chunks (doc_topic)
     `);
 
-    // External-content FTS over the chunks: the index stores only the term →
-    // rowid map (no text copy), roughly halving DB size vs the v1 full-copy
-    // table. `porter unicode61` stems ("reload" matches "reloads").
+    this.createFts();
+
+    // v2 → v4 / v3 → v4: additive columns + FTS recreation (tokenizer
+    // change). Fresh (v0) and legacy-v1 DBs already recreated the tables
+    // with every column above, so only true v2/v3 DBs enter this branch.
+    if (version >= 2 && version < 4) {
+      if (
+        version < 3 &&
+        !this.hasColumn("knowledge_chunks", "bodyless")
+      ) {
+        this.db.exec(
+          "ALTER TABLE knowledge_chunks ADD COLUMN bodyless INTEGER NOT NULL DEFAULT 0",
+        );
+      }
+      if (!this.hasColumn("knowledge_docs", "tabley")) {
+        this.db.exec(
+          "ALTER TABLE knowledge_docs ADD COLUMN tabley INTEGER NOT NULL DEFAULT 0",
+        );
+      }
+      // v4: the tokenizer is a table attribute — drop + recreate so the new
+      // unicode61 index applies. Existing chunk rows survive; the FTS index
+      // is empty until the index tools re-run (same disposable-cache pattern
+      // as the v1 → v2 migration).
+      this.db.exec("DROP TABLE IF EXISTS knowledge_chunks_fts");
+      this.createFts();
+      logger.info(
+        "Knowledge base schema migrated to v%d (unicode61 tokenizer + tabley flag) — re-run index_knowledge_base / index_javadocs to rebuild the search index",
+        KB_SCHEMA_VERSION,
+      );
+    }
+
+    this.db.exec(`PRAGMA user_version = ${KB_SCHEMA_VERSION}`);
+  }
+
+  /**
+   * External-content FTS over the chunks: the index stores only the term →
+   * rowid map (no text copy), roughly halving DB size vs the v1 full-copy
+   * table. `unicode61` (case-folding + diacritics, NO porter) — stemming is
+   * done at QUERY time via the suffix-expansion fallback in search(), because
+   * porter's step-1c y→i stem silently broke trailing-y prefix fallbacks
+   * ("getPlay" → getPlayer) while the docs promised them.
+   */
+  private createFts(): void {
     this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(
         chunk_topic,
@@ -154,7 +202,7 @@ export class KnowledgeBaseManager {
         content,
         content='knowledge_chunks',
         content_rowid='rowid',
-        tokenize='porter unicode61'
+        tokenize='unicode61'
       )
     `);
 
@@ -182,21 +230,13 @@ export class KnowledgeBaseManager {
         VALUES (new.rowid, new.chunk_topic, new.doc_topic, new.title, new.source, new.doc_type, new.tags, new.content);
       END
     `);
+  }
 
-    // v2 → v3: additive bodyless column. Only a true v2 DB needs the ALTER —
-    // fresh (v0) and legacy-v1 DBs already recreated the table with the
-    // column above. Existing v2 rows default to 0 (not bodyless) until
-    // re-indexed, which is a safe conservative default.
-    if (version === 2) {
-      this.db.exec(
-        "ALTER TABLE knowledge_chunks ADD COLUMN bodyless INTEGER NOT NULL DEFAULT 0",
-      );
-      logger.info(
-        "Knowledge base schema migrated to v3 (bodyless chunk flag) — bodyless javadocs signatures are downweighted in mixed search",
-      );
-    }
-
-    this.db.exec(`PRAGMA user_version = ${KB_SCHEMA_VERSION}`);
+  private hasColumn(table: string, column: string): boolean {
+    const cols = this.db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all() as unknown as Array<{ name: string }>;
+    return cols.some((c) => c.name === column);
   }
 
   async indexDirectory(
@@ -238,8 +278,8 @@ export class KnowledgeBaseManager {
     );
     const insertDocStmt = this.db.prepare(`
       INSERT OR REPLACE INTO knowledge_docs
-        (topic, title, source, doc_type, tags, meta, lines, words, chars, mtime, file_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (topic, title, source, doc_type, tags, meta, lines, words, chars, tabley, mtime, file_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertChunkStmt = this.db.prepare(`
       INSERT INTO knowledge_chunks
@@ -298,6 +338,7 @@ export class KnowledgeBaseManager {
               lines,
               words,
               chars,
+              parsed.tabley ? 1 : 0,
               mtime,
               filePath,
             );
@@ -398,6 +439,12 @@ export class KnowledgeBaseManager {
       includeContent?: boolean;
       /** Total char budget for includeContent bodies across results. */
       maxContent?: number;
+      /**
+       * Cap results per doc (default 3; 0 disables) so one giant doc can't
+       * flood the top-N. Ignored when a single `topic` is filtered — there is
+       * only one doc by construction.
+       */
+      maxResultsPerDoc?: number;
     },
   ): Promise<
     Array<{
@@ -436,18 +483,18 @@ export class KnowledgeBaseManager {
     const maxContent = Math.min(Math.max(opts?.maxContent ?? 8_000, 1), 20_000);
 
     // Finding 4 — prefix overmatch: the last term used to always become a
-    // prefix, so "cooking" matched "cookie"/"cookwareLoot". Porter stemming
-    // already makes exact tokens match every inflection (cooking/cooked/… all
-    // stem to "cook"), so prefix expansion is now a *fallback*: run the plain
-    // query first and only re-run with the last term prefix-expanded when it
-    // returns nothing (preserving search-as-you-type for partial identifiers
-    // like "getPlay" → getPlayer). Short last terms (< 3 chars) never expand.
-    const lastTerm = sanitized[sanitized.length - 1];
+    // prefix, so "cooking" matched "cookie"/"cookwareLoot". Prefix expansion
+    // is therefore a *fallback*: run the plain exact query first and only
+    // re-run when it returns nothing.
+    //
+    // Finding 2 — the porter tokenizer silently broke trailing-y prefix
+    // fallbacks ("getPlay" → 0 results while the docs promised getPlayer). The
+    // index now uses plain unicode61 (no porter), and inflection coverage is
+    // restored at QUERY time: the fallback re-run OR-expands each term to its
+    // prefix + common inflections (reload* catches reloads/reloading;
+    // plays/played/playing explicit; y-ending terms get ies/ied variants).
     const plainFts = sanitized.map((t) => `"${t}"`).join(" ");
-    const prefixFts =
-      lastTerm.length >= 3
-        ? `${plainFts.slice(0, -(lastTerm.length + 2))}"${lastTerm}"*`
-        : plainFts;
+    const expandedFts = this.buildExpandedFts(sanitized);
 
     // Finding 1 — type-aware defaults: 96.8% of chunks are javadocs and 73%
     // of those are bodyless constants, so a flat bm25 ranking floods natural-
@@ -473,9 +520,15 @@ export class KnowledgeBaseManager {
     // bare-signature chunk gets a rank penalty so prose with the same term
     // density outranks it (identifier searches and explicit filters keep pure
     // rank — a bodyless constant IS the answer for "BLACKSMITH_ANVIL").
+    // Finding 9 — bodyless downweight: in natural-language mixed searches a
+    // bare-signature chunk gets a rank penalty so prose with the same term
+    // density outranks it (identifier searches and explicit filters keep pure
+    // rank — a bodyless constant IS the answer for "BLACKSMITH_ANVIL").
+    // Table-heavy docs (loot-table dumps, procedural distributions) get a
+    // smaller penalty so one giant table doc can't monopolize a top-N either.
     const rankExpr =
       !explicitTypeFilter && !identifierLike
-        ? `${B} + CASE WHEN c.bodyless = 1 THEN 8.0 ELSE 0 END`
+        ? `${B} + CASE WHEN c.bodyless = 1 THEN 8.0 ELSE 0 END + CASE WHEN d.tabley = 1 THEN 6.0 ELSE 0 END`
         : B;
     const typeOrd = explicitTypeFilter
       ? null
@@ -492,21 +545,46 @@ export class KnowledgeBaseManager {
       heading: string | null;
       content: string;
       bodyless: number;
+      tabley: number;
       doc_title: string;
       meta: string | null;
       file_path: string | null;
       rank: number;
     }
     const run = (ftsQuery: string): SearchRow[] => {
+      // Finding 3 — per-doc cap: one giant doc can no longer flood the top-N.
+      // ROW_NUMBER() partitions by doc and keeps only the best maxPerDoc rows
+      // per doc under the final ordering; the outer query re-sorts and takes
+      // the limit. Disabled (huge rn cap) when a single topic is filtered.
+      const maxPerDoc = opts?.topic
+        ? 0
+        : Math.min(Math.max(opts?.maxResultsPerDoc ?? 3, 0), 20);
+      const rnCap = maxPerDoc > 0 ? maxPerDoc : 1_000_000;
+      // The window ORDER BY runs outside the FTS FROM clause, so bm25() (which
+      // needs the FTS table in scope) cannot be used inside it — the rank is
+      // therefore materialized as a plain column in the innermost subquery and
+      // the window only orders by that column. The outer query re-sorts and
+      // applies the limit.
+      const outerOrdExpr = typeOrd
+        ? typeOrd.replace(/f\.doc_type/g, "doc_type")
+        : null;
+      const winOrdExpr = outerOrdExpr ?? "0";
       let sql = `
-        SELECT f.chunk_topic, f.doc_topic, f.title AS chunk_title, f.source,
-               f.doc_type, c.heading, c.content, c.bodyless,
-               d.title AS doc_title, d.meta, d.file_path,
-               ${rankExpr} AS rank
-        FROM knowledge_chunks_fts f
-        JOIN knowledge_chunks c ON c.rowid = f.rowid
-        JOIN knowledge_docs d ON d.topic = f.doc_topic
-        WHERE knowledge_chunks_fts MATCH ?
+        SELECT * FROM (
+          SELECT *,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY doc_topic
+                   ORDER BY ${winOrdExpr} ASC, rank ASC
+                 ) AS rn
+          FROM (
+            SELECT f.chunk_topic, f.doc_topic, f.title AS chunk_title, f.source,
+                   f.doc_type, c.heading, c.content, c.bodyless,
+                   d.title AS doc_title, d.meta, d.file_path, d.tabley,
+                   ${rankExpr} AS rank
+            FROM knowledge_chunks_fts f
+            JOIN knowledge_chunks c ON c.rowid = f.rowid
+            JOIN knowledge_docs d ON d.topic = f.doc_topic
+            WHERE knowledge_chunks_fts MATCH ?
       `;
       const params: any[] = [ftsQuery];
 
@@ -523,16 +601,22 @@ export class KnowledgeBaseManager {
         params.push(opts.package);
       }
 
-      sql += typeOrd
-        ? ` ORDER BY ${typeOrd} ASC, rank ASC LIMIT ?`
+      sql += `
+          )
+        )
+        WHERE rn <= ?
+      `;
+      params.push(rnCap);
+      sql += outerOrdExpr
+        ? ` ORDER BY ${outerOrdExpr} ASC, rank ASC LIMIT ?`
         : " ORDER BY rank ASC LIMIT ?";
       params.push(limit);
       return this.db.prepare(sql).all(...params) as unknown as SearchRow[];
     };
 
     let rows = run(plainFts);
-    if (rows.length === 0 && prefixFts !== plainFts) {
-      rows = run(prefixFts);
+    if (rows.length === 0 && expandedFts !== plainFts) {
+      rows = run(expandedFts);
     }
 
     // Finding 2 — inline content: fill results in order until the total
@@ -629,7 +713,17 @@ export class KnowledgeBaseManager {
     );
   }
 
-  async listTopics(): Promise<
+  async listTopics(opts?: {
+    types?: KbDocType[];
+    /** Topic path-prefix filter (e.g. "wiki" or "javadocs/zombie.iso"). */
+    prefix?: string;
+    /** Max rows (0 / undefined = no limit). */
+    limit?: number;
+    /** Rows to skip — pairs with limit for pagination. */
+    offset?: number;
+    /** Order non-javadocs first (resources/list) instead of topic ASC. */
+    proseFirst?: boolean;
+  }): Promise<
     Array<{
       topic: string;
       title: string;
@@ -639,12 +733,34 @@ export class KnowledgeBaseManager {
       chars: number;
     }>
   > {
-    // Stats are stored columns now — no content is read (KB v2 #9).
-    const rows = this.db
-      .prepare(
-        "SELECT topic, title, doc_type, lines, words, chars FROM knowledge_docs ORDER BY topic ASC",
-      )
-      .all() as unknown as Array<{
+    // Stats are stored columns now — no content is read (KB v2 #9). Filters
+    // stay SQL-side so a 5,000-topic list is never materialized just to be
+    // filtered in JS.
+    const where: string[] = [];
+    const params: any[] = [];
+    if (opts?.types?.length) {
+      where.push(`doc_type IN (${opts.types.map(() => "?").join(",")})`);
+      params.push(...opts.types);
+    }
+    if (opts?.prefix) {
+      where.push("topic LIKE ?");
+      params.push(`${opts.prefix}%`);
+    }
+    const order = opts?.proseFirst
+      ? "ORDER BY (doc_type = 'javadocs') ASC, topic ASC"
+      : "ORDER BY topic ASC";
+    let sql = "SELECT topic, title, doc_type, lines, words, chars FROM knowledge_docs";
+    if (where.length > 0) sql += ` WHERE ${where.join(" AND ")}`;
+    sql += ` ${order}`;
+    if (opts?.limit && opts.limit > 0) {
+      sql += " LIMIT ?";
+      params.push(opts.limit);
+      if (opts.offset && opts.offset > 0) {
+        sql += " OFFSET ?";
+        params.push(opts.offset);
+      }
+    }
+    const rows = this.db.prepare(sql).all(...params) as unknown as Array<{
       topic: string;
       title: string;
       doc_type: string;
@@ -661,6 +777,84 @@ export class KnowledgeBaseManager {
       words: row.words,
       chars: row.chars,
     }));
+  }
+
+  /**
+   * Total number of docs matching the listTopics filters — resources/list
+   * uses it to compute the nextCursor without loading any rows.
+   */
+  async countTopics(opts?: {
+    types?: KbDocType[];
+    prefix?: string;
+  }): Promise<number> {
+    const where: string[] = [];
+    const params: any[] = [];
+    if (opts?.types?.length) {
+      where.push(`doc_type IN (${opts.types.map(() => "?").join(",")})`);
+      params.push(...opts.types);
+    }
+    if (opts?.prefix) {
+      where.push("topic LIKE ?");
+      params.push(`${opts.prefix}%`);
+    }
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM knowledge_docs${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""}`,
+      )
+      .get(...params) as unknown as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Distinct section headings of a doc, in document order (used by the
+   * resources/read size cap to point the caller at real sections).
+   */
+  async sectionNames(docTopic: string, max = 20): Promise<string[]> {
+    const rows = this.db
+      .prepare(
+        "SELECT heading FROM knowledge_chunks WHERE doc_topic = ? AND heading IS NOT NULL ORDER BY seq ASC",
+      )
+      .all(docTopic) as unknown as Array<{ heading: string }>;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const r of rows) {
+      const h = r.heading.trim();
+      if (h.length > 0 && !seen.has(h)) {
+        seen.add(h);
+        out.push(h);
+        if (out.length >= max) break;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Suffix-expansion fallback query (KB audit finding 2). The FTS index is
+   * plain unicode61 (no porter — porter's y→i stem broke trailing-y prefix
+   * fallbacks), so inflection coverage lives here: each term becomes an OR
+   * group of the exact token, its prefix, and common inflections. Only used
+   * when the plain exact query returns nothing, so common queries never pay
+   * the "cooking" → "cookie" noise tax. Short terms (< 3 chars) stay exact.
+   */
+  private buildExpandedFts(terms: string[]): string {
+    const groups = terms.map((t) => {
+      const variants = [`"${t}"`];
+      if (t.length >= 3) {
+        variants.push(
+          `${t}*`,
+          `${t}s`,
+          `${t}es`,
+          `${t}ed`,
+          `${t}ing`,
+        );
+        if (t.endsWith("y")) {
+          const base = t.slice(0, -1);
+          variants.push(`${base}ies`, `${base}ied`);
+        }
+      }
+      return `(${variants.join(" OR ")})`;
+    });
+    return groups.join(" ");
   }
 
   /**

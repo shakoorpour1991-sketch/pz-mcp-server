@@ -105,6 +105,19 @@ describe("cleanMarkdown", () => {
     assert.ok(cleaned.includes("Content."));
   });
 
+  test("javadocs ingestion footer keeps provenance but drops the machine path", () => {
+    const cleaned = cleanMarkdown(
+      "# astar.AStar\n\n## Methods\n\n### public int numSearchSteps()\n\n**Returns:** `int`\n\n---\n*Source: Unofficial PZ JavaDocs 42.12.0 (42.12.0) · parsed from `C:\\Users\\x\\AStar.html`*\n",
+      "javadocs",
+    );
+    assert.ok(cleaned.includes("numSearchSteps"));
+    // The source label survives (portable provenance)…
+    assert.ok(cleaned.includes("Unofficial PZ JavaDocs 42.12.0"));
+    // …but the machine-specific parse path is gone.
+    assert.ok(!cleaned.includes("AStar.html"));
+    assert.ok(!cleaned.includes("parsed from"));
+  });
+
   test("normalizes newlines and trims", () => {
     const cleaned = cleanMarkdown("# T\r\n\r\n\r\n\r\nBody   \r\n", "research");
     assert.equal(cleaned, "# T\n\nBody");
@@ -286,9 +299,38 @@ describe("isBodyless", () => {
       isBodyless("### public static void Old()\n\n> ⚠️ **Deprecated**\n"),
       true,
     );
-    // Multi-line prose (parameters list etc.) is a real body.
+  });
+
+  test("stubby <=2-line structural bodies are bodyless (audit tuning)", () => {
+    // A bare "**Returns:** `int`" carries no prose — tagged bodyless.
     assert.equal(
-      isBodyless("### public static void Load(String path)\n\n- `String` `path` — the file\n"),
+      isBodyless("### public int numSearchSteps()\n\n**Returns:** `int`\n"),
+      true,
+    );
+    // A lone parameter-list item is structural metadata, not prose.
+    assert.equal(
+      isBodyless(
+        "### public static void Load(String path)\n\n- `String` `path` — the file\n",
+      ),
+      true,
+    );
+    // Two structural lines (label + list item) are still bodyless.
+    assert.equal(
+      isBodyless(
+        "### public static IsoPlayer getPlayer(int playerNum)\n\n**Parameters:**\n- `int` `playerNum`\n",
+      ),
+      true,
+    );
+    // Short prose (a real description sentence) is NOT bodyless.
+    assert.equal(
+      isBodyless("### public static int x()\n\nReturns the player's square.\n"),
+      false,
+    );
+    // 3+ structural lines (full Parameters + Returns) count as a real body.
+    assert.equal(
+      isBodyless(
+        "### public static void Load(String path)\n\n**Parameters:**\n- `String` `path`\n\n**Returns:** `void`\n",
+      ),
       false,
     );
   });
@@ -354,5 +396,19 @@ Loads the globals.
     assert.equal(parsed.title, "Farming Guide");
     assert.equal(parsed.source, "v42.20");
     assert.equal(parsed.docType, "research");
+    assert.equal(parsed.tabley, false);
+  });
+
+  test("tabley flag: mostly-table docs are tagged, prose docs are not", () => {
+    const tableDoc = parseKbDoc(
+      "# Loot\n\n| Item | Weight |\n| --- | --- |\n| Nails | 2.0 |\n| Hammer | 3.0 |\n| Axe | 4.0 |\n\nA prose line.\n",
+      "api-docs/mapping/loot.md",
+    );
+    assert.equal(tableDoc.tabley, true);
+    const proseDoc = parseKbDoc(
+      "# Blacksmithing\n\nAnvils are used to shape metal.\n\n## Recipes\n\nHammer + ingot = tool.\n",
+      "Build42_Blacksmithing_Research.md",
+    );
+    assert.equal(proseDoc.tabley, false);
   });
 });

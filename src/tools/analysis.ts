@@ -19,7 +19,7 @@ export const analysisTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "analyze_mod",
     description:
-      "Comprehensive analysis of mod directory including balance, compatibility, and structure validation",
+      "Full analysis of a mod directory: structure validation (mod.info present, scripts/lua/assets counted), balance analysis of its items against vanilla ranges, and compatibility checks (missing dependencies, conflicting items). Pass the mod's absolute path; every issue carries file + severity + a fix suggestion. Example: {modPath: C:/mods/MyMod, checkBalance: true}. For workspace-rooted projects, workspace_inspect reuses the same engine with a lighter report.",
     inputSchema: AnalyzeModSchema,
     handler: async (args, ctx) => {
       const { modPath, checkBalance, checkCompatibility } = args;
@@ -80,7 +80,7 @@ export const analysisTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "detect_recipe_conflicts",
     description:
-      "Find items produced by more than one recipe (duplicate crafting paths that can break recipe resolution)",
+      "Scan the parsed recipe database for items produced by more than one recipe — duplicate crafting paths that can break recipe resolution. Each conflict lists the competing recipes with their context and a severity rating (high/low); tag multi-path conflicts the game tolerates are marked as low. No arguments required beyond an optional limit. Example: {limit: 50}. Run after parse_game_files to vet a new recipe pack.",
     inputSchema: DetectRecipeConflictsSchema,
     handler: async (args, ctx) => {
       const { limit } = args;

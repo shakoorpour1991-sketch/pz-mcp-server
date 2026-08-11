@@ -237,7 +237,7 @@ export const discoveryTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "search_recipes",
     description:
-      "Search structured craft recipes by ingredient, tool, skill requirement, category, or result",
+      "Find craft recipes by structured criteria — ingredient, tool, skill requirement, category, or result. Combine filters for precise lookups: which recipes need Woodwork 3 and nails, which produce a given item. Accepts Base.Nails, Nails, or base:nails forms. Example: {ingredient: Nails, skill: Woodwork, minSkillLevel: 3}. Use search_vanilla for items, analyze_recipe_chain to walk the full dependency graph, and detect_recipe_conflicts to find duplicate crafting paths.",
     inputSchema: SearchRecipesSchema,
     handler: async (args, ctx) => {
       const {

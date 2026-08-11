@@ -129,6 +129,36 @@ try {
     inline[0] ? `${inline[0].chars} chars / ${inline[0].words} words` : "",
   );
 
+  // Review round 2 (audit findings): per-doc cap, y-ending prefix fallback,
+  // list filters, tabley flag.
+  const cap = await kb.search("anvil", { limit: 20, maxResultsPerDoc: 2 });
+  const perDoc = new Map();
+  for (const r of cap) perDoc.set(r.docTopic, (perDoc.get(r.docTopic) || 0) + 1);
+  check(
+    "maxResultsPerDoc caps one doc at N results",
+    cap.length > 0 && [...perDoc.values()].every((n) => n <= 2),
+    [...perDoc.entries()].map(([d, n]) => `${d}:${n}`).join(", "),
+  );
+
+  const listFiltered = await kb.listTopics({
+    types: ["wiki", "research"],
+    prefix: "wiki",
+    limit: 5,
+  });
+  check(
+    "listTopics filters (types + prefix + limit)",
+    listFiltered.length <= 5 &&
+      listFiltered.length > 0 &&
+      listFiltered.every((t) => t.docType === "wiki" && t.topic.startsWith("wiki/")),
+    `${listFiltered.length} topics`,
+  );
+  const proseFirst = await kb.listTopics({ proseFirst: true, limit: 10 });
+  check(
+    "listTopics proseFirst orders non-javadocs first",
+    proseFirst.every((t) => t.docType !== "javadocs"),
+    proseFirst.map((t) => t.docType).join(", "),
+  );
+
   // ------------------------------------------------------------ JavaDocs
   const t1 = Date.now();
   const jd = await kb.indexDirectory(JAVADOCS_DIR, {
@@ -171,6 +201,15 @@ try {
     pkg.slice(0, 2).map((r) => r.package).join(", "),
   );
 
+  // Review round 2: trailing-y prefix fallback (the porter regression) —
+  // needs the javadocs corpus, so it lives after the javadocs index.
+  const getPlay = await kb.search("getPlay", { limit: 5 });
+  check(
+    "trailing-y prefix fallback works (getPlay → getPlayer)",
+    getPlay.some((r) => /getplayer/i.test(r.title)),
+    getPlay.slice(0, 2).map((r) => r.title).join(" | "),
+  );
+
   // Incremental: unchanged files are skipped before read/parse.
   const incMd = await kb.indexDirectory(KB_DIR, { overwrite: false });
   check(
@@ -201,6 +240,11 @@ try {
       .prepare("SELECT COUNT(*) AS n FROM knowledge_chunks WHERE bodyless = 1")
       .get();
     check("bodyless chunks tagged in DB", b.n > 1000, `${b.n} bodyless`);
+    // Table-heavy docs (loot tables / procedural distributions) flagged.
+    const t = kbDb
+      .prepare("SELECT COUNT(*) AS n FROM knowledge_docs WHERE tabley = 1")
+      .get();
+    check("tabley docs flagged in DB", t.n > 0, `${t.n} table-heavy docs`);
   } finally {
     kbDb.close();
   }
@@ -262,11 +306,12 @@ try {
       .all()
       .map((c) => c.name);
     check(
-      "legacy DB migrated to v3 (doc_type, bodyless, no content copy, no full-copy FTS)",
+      "legacy DB migrated to v4 (doc_type, bodyless, tabley, no content copy, no full-copy FTS)",
       docCols.includes("doc_type") && !docCols.includes("content") &&
+        docCols.includes("tabley") &&
         chunkCols.includes("bodyless") &&
         checkDb.prepare("SELECT name FROM sqlite_master WHERE name = 'knowledge_fts'").get() === undefined &&
-        checkDb.prepare("PRAGMA user_version").get().user_version === 3,
+        checkDb.prepare("PRAGMA user_version").get().user_version === 4,
     );
     check(
       "legacy rows gone after migration",

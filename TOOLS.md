@@ -183,20 +183,21 @@ Optionally re-ingest from a raw generated JavaDoc HTML tree (the tree with packa
 
 ### `search_knowledge_base`
 
-Full-text search of knowledge base docs with relevance ranking. **Stemmed** (`"reload"` finds `reloads`/`reloading`); the last term is **prefix-matched only as a fallback** when a plain match returns nothing (so `"cooking"` no longer floods results with `cookie`/`cookwareLoot`, while partial identifiers like `"getPlay"` still resolve to `getPlayer`). **Results are section-level chunks** — each hit is a precise unit (a wiki section or a single javadocs method/field) with its own `topic` id, readable directly via `knowledge://<topic>` (or `knowledge://<topic>#<section>` for one section).
+Full-text search of knowledge base docs with relevance ranking. Exact terms are matched **first**; only when a plain match returns nothing does the query re-run with **prefix + inflection expansion** (a suffix-expansion fallback: `"getPlay"` resolves to `getPlayer`/`getPlayers`, `"reload"` to `reloads`/`reloading` — the index itself is plain `unicode61`, because porter stemming silently broke trailing-y prefix fallbacks). Common queries never pay the `"cooking"` → `cookie` noise tax since expansion only fires on a no-hit. **Results are section-level chunks** — each hit is a precise unit (a wiki section or a single javadocs method/field) with its own `topic` id, readable directly via `knowledge://<topic>` (or `knowledge://<topic>#<section>` for one section).
 
-**Type-aware defaults** (the biggest retrieval fix): 96.8% of the corpus is javadocs and most of those are bodyless bare signatures (decompiled PZ fields have no javadoc comments), so a flat ranking used to flood natural-language queries with constants. Now a mixed search (no `type`/`types`/`package` filter) ranks **prose docs (wiki/research/api-docs/mods-analysis) first when the query reads like natural language** ("anvil", "blacksmithing") and **javadocs first when it looks like an identifier** (`getPlayer`, `ANVIL_WEIGHT`, `Base.Hammer`) — with bodyless signature chunks downweighted in the prose case. An explicit filter always uses pure bm25 rank. **bm25 column weights** favor the chunk topic/title/tags over the long content body, so identifier searches surface the exact member first.
+**Type-aware defaults**: 96.8% of the corpus is javadocs and most of those are bodyless bare signatures (decompiled PZ fields have no javadoc comments), so a flat ranking used to flood natural-language queries with constants. A mixed search (no `type`/`types`/`package` filter) ranks **prose docs (wiki/research/api-docs/mods-analysis) first when the query reads like natural language** ("anvil", "blacksmithing") and **javadocs first when it looks like an identifier** (`getPlayer`, `ANVIL_WEIGHT`, `Base.Hammer`) — with bodyless signature chunks and table-heavy docs downweighted in the prose case, and a **per-doc cap** so one giant doc can't flood the top-N. An explicit filter always uses pure bm25 rank. **bm25 column weights** favor the chunk topic/title/tags over the long content body, so identifier searches surface the exact member first.
 
-| Param            | Type      | Required | Description                                                                                                                                        |
-| ---------------- | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query`          | string    | Yes      | Search query                                                                                                                                       |
-| `topic`          | string    | No       | Filter by exact doc topic — the path-prefixed id (e.g. `wiki/Java`, `javadocs/zombie.iso.IsoObject`)                                                |
-| `type`           | enum      | No       | Single doc type filter: `wiki`, `api-docs`, `javadocs`, `mods-analysis`, `research` (alias for a one-element `types`)                               |
-| `types`          | enum[]    | No       | **Multi-select** doc types, e.g. `["research", "wiki"]` (prose only, no javadocs) — express intent precisely in one call                           |
-| `package`        | string    | No       | Filter by Java package (javadocs only, e.g. `zombie.iso`)                                                                                           |
-| `includeContent` | boolean   | No       | Return full chunk bodies inline (search + read in one call — no `get_knowledge_section` round trips); bodies are filled in rank order up to the budget |
-| `maxContent`     | number    | No       | Total char budget for inline bodies (default 8,000, max 20,000; the first overflow is truncated, later results omit content)                        |
-| `limit`          | number    | No       | Max results, 1–100 (default: 10)                                                                                                                    |
+| Param              | Type      | Required | Description                                                                                                                                        |
+| ------------------ | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`            | string    | Yes      | Search query                                                                                                                                       |
+| `topic`            | string    | No       | Filter by exact doc topic — the path-prefixed id (e.g. `wiki/Java`, `javadocs/zombie.iso.IsoObject`)                                                |
+| `type`             | enum      | No       | Single doc type filter: `wiki`, `api-docs`, `javadocs`, `mods-analysis`, `research` (alias for a one-element `types`)                               |
+| `types`            | enum[]    | No       | **Multi-select** doc types, e.g. `["research", "wiki"]` (prose only, no javadocs) — express intent precisely in one call                           |
+| `package`          | string    | No       | Filter by Java package (javadocs only, e.g. `zombie.iso`)                                                                                           |
+| `includeContent`   | boolean   | No       | Return full chunk bodies inline (search + read in one call — no `get_knowledge_section` round trips); bodies are filled in rank order up to the budget |
+| `maxContent`       | number    | No       | Total char budget for inline bodies (default 8,000, max 20,000; the first overflow is truncated, later results omit content)                        |
+| `maxResultsPerDoc` | number    | No       | Cap results per doc (default 3; 0 disables) — a top-10 that samples several docs beats ten hits from a single loot table                            |
+| `limit`            | number    | No       | Max results, 1–100 (default: 10)                                                                                                                    |
 
 **Output:** Chunks ranked by relevance (bm25), each with `topic` (chunk id), `docTopic` (file-level topic), title, section, score, portable `type`, `source`, a line-window snippet, **read-cost `chars`/`words` metadata** (agents can budget context before reading), and — when `includeContent` was requested — the capped `content` body. JavaDocs must be indexed with `index_javadocs` first.
 
@@ -218,9 +219,17 @@ Read **exactly one section** (or a batch of them) of a knowledge base doc by nam
 
 ### `list_knowledge_topics`
 
-List all indexed knowledge base topics with stats. No parameters.
+List indexed knowledge base topics with stats (line/word/char counts — precomputed at index time, instant even with ~5,000 topics). Optional filters keep the reply lean instead of forcing an agent to pay for the whole corpus.
 
-**Output:** Each indexed topic with title, doc type, and line/word/char counts (precomputed at index time — instant even with ~5,000 topics).
+| Param    | Type    | Required | Description                                                                                                    |
+| -------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `type`   | enum    | No       | Single doc type filter (alias for a one-element `types`)                                                       |
+| `types`  | enum[]  | No       | **Multi-select** doc types, e.g. `["research", "wiki"]` (prose docs only)                                     |
+| `prefix` | string  | No       | Only topics whose path-prefixed id starts with this prefix (e.g. `wiki`, `javadocs/zombie.iso`)                |
+| `limit`  | number  | No       | Max topics (1–1000) — pairs with `offset` for pagination                                                       |
+| `offset` | number  | No       | Skip this many topics — pairs with `limit` for pagination                                                      |
+
+**Output:** Each matching topic with title, doc type, and line/word/char counts, plus a `total` (matching count) and `filtered` flag so agents can paginate without a second call.
 
 ---
 
