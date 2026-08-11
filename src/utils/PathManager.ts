@@ -558,6 +558,8 @@ export class PathManager {
       join(path, "ProjectZomboid.exe"), // Windows generic
       join(path, "projectzomboid.sh"), // Linux
       join(path, "ProjectZomboid"), // Linux binary
+      join(path, "ProjectZomboid64"), // Linux 64-bit binary (current Steam layout)
+      join(path, "projectzomboid"), // Linux launcher binary (lowercase)
       join(path, "Contents", "MacOS", "ProjectZomboid"), // macOS
     ];
 
