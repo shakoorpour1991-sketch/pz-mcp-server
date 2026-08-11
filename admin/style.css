@@ -4255,6 +4255,86 @@ a.link:hover {
   height: 15px;
   cursor: pointer;
 }
+/* Knowledge Base panel: filter bar, type chips, browse rows (KB audit
+   round-2 deck wiring: multi-select types, prefix, per-doc cap). */
+.kb-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.kb-f-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-family: var(--font-mono);
+}
+.kb-chips {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.kb-chip {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  border: 1px solid var(--stroke-soft);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition:
+    color 0.15s var(--easeout),
+    border-color 0.15s var(--easeout),
+    background 0.15s var(--easeout);
+}
+.kb-chip:hover {
+  color: var(--text);
+  border-color: var(--stroke);
+}
+.kb-chip[aria-pressed="true"] {
+  color: var(--text);
+  border-color: rgb(var(--accent-rgb));
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.35) inset;
+}
+.kb-browse-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--stroke-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  transition:
+    border-color 0.15s var(--easeout),
+    background 0.15s var(--easeout);
+}
+.kb-browse-row:hover {
+  border-color: var(--stroke);
+  background: rgba(255, 255, 255, 0.05);
+}
+.kb-browse-main {
+  flex: 1;
+  min-width: 0;
+}
+.kb-browse-topic {
+  font-weight: 600;
+  font-size: 13px;
+  word-break: break-all;
+  color: var(--text);
+}
+.kb-browse-sub {
+  font-size: 12px;
+  color: var(--faint);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kb-foot {
   margin-top: 8px;
   display: flex;

@@ -179,7 +179,19 @@ const S = {
   },
   wsDir: null,
   // Knowledge-base search state for the Database tab (section drill-down).
-  kbdb: { results: null, drill: null, drillContent: null },
+  kbdb: {
+    results: null,
+    drill: null,
+    drillContent: null,
+    // "search" (chunk results) | "browse" (list_knowledge_topics topic list).
+    mode: "search",
+    // Browse mode: the loaded topic page (list_knowledge_topics result).
+    browse: null, // { topics, total, offset, limit }
+    // Full-doc view (resources/read) opened from a browse row.
+    viewDoc: null, // { topic, title, text }
+    // Filter controls, persisted across tab switches (re-applied on render).
+    filters: { types: [], prefix: "", perDoc: 3, include: false },
+  },
   // Index state shown on the Status page (refreshed from list_knowledge_topics).
   kbStatus: { state: "idle", docs: 0, javadocs: 0, byType: {}, total: 0 },
   // Collapse state for Status-tab cards, keyed by data-card id (persisted).
@@ -2049,11 +2061,59 @@ async function kbSectionFetch(topic) {
   });
 }
 
-/* ---------- knowledge-base search (Database tab) ---------- */
+/* ---------- knowledge-base search + browse (Database tab) ---------- */
+// Reads the live filter controls (type chips, prefix, per-doc cap, include)
+// into S.kbdb.filters — the DOM controls are re-created on every render, so
+// their values live in state and are re-applied by kbRestoreFilterDom.
+function kbApplyFilters() {
+  const chips = Array.from(document.querySelectorAll("#kbChips .kb-chip"));
+  S.kbdb.filters.types = chips
+    .filter((c) => c.getAttribute("aria-pressed") === "true")
+    .map((c) => c.dataset.type);
+  const pre = $("#kbPrefix");
+  S.kbdb.filters.prefix = pre ? pre.value.trim() : "";
+  const perDoc = $("#kbPerDoc");
+  const raw = perDoc ? perDoc.value.trim() : "";
+  // Empty field = server default 3; only an explicit 0 disables the cap
+  // (Number("") is 0, which would silently turn the cap off).
+  S.kbdb.filters.perDoc =
+    raw === "" ? 3 : Math.max(0, Math.min(20, Math.round(Number(raw) || 3)));
+  const inc = $("#kbInclude");
+  S.kbdb.filters.include = !!(inc && inc.checked);
+}
+// Re-apply the persisted filter state to freshly-rendered controls.
+function kbRestoreFilterDom() {
+  const chips = Array.from(document.querySelectorAll("#kbChips .kb-chip"));
+  for (const c of chips)
+    c.setAttribute(
+      "aria-pressed",
+      String(S.kbdb.filters.types.includes(c.dataset.type)),
+    );
+  const pre = $("#kbPrefix");
+  if (pre) pre.value = S.kbdb.filters.prefix;
+  const perDoc = $("#kbPerDoc");
+  if (perDoc) perDoc.value = String(S.kbdb.filters.perDoc);
+  const inc = $("#kbInclude");
+  if (inc) inc.checked = S.kbdb.filters.include;
+  const btn = $("#kbBrowseBtn");
+  if (btn) btn.classList.toggle("primary", S.kbdb.mode === "browse");
+}
 function restoreKbDb() {
   const out = $("#kbOut");
+  kbRestoreFilterDom();
+  if (!out) return;
+  // Highest-level view first: a full-doc read (browse mode), then the browse
+  // list, then search drill-down / chunk results.
+  if (S.kbdb.viewDoc) {
+    out.innerHTML = kbViewDocHTML(S.kbdb.viewDoc);
+    return;
+  }
+  if (S.kbdb.mode === "browse" && S.kbdb.browse) {
+    out.innerHTML = renderKbBrowse();
+    return;
+  }
   // No results yet (or a zero-hit search): keep the placeholder guidance.
-  if (!out || !S.kbdb.results || !S.kbdb.results.length) return;
+  if (!S.kbdb.results || !S.kbdb.results.length) return;
   if (S.kbdb.drill != null && S.kbdb.drillContent)
     out.innerHTML = kbSectionHTML(
       S.kbdb.drillContent,
@@ -2062,10 +2122,9 @@ function restoreKbDb() {
   else out.innerHTML = renderKbResultsBody(S.kbdb.results);
 }
 async function kbDbSearch() {
+  kbApplyFilters();
   const q = $("#kbQuery").value.trim();
-  const type = $("#kbType").value;
-  const inc = $("#kbInclude");
-  const includeContent = !!(inc && inc.checked);
+  const { types, perDoc, include } = S.kbdb.filters;
   const out = $("#kbOut");
   if (!q) {
     toast("Type a KB query first", "warn");
@@ -2075,16 +2134,24 @@ async function kbDbSearch() {
     '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> querying knowledge base…</div>';
   try {
     const args = { query: q, limit: 15 };
-    if (type) args.type = type;
-    if (includeContent) args.includeContent = true;
+    // Multi-select types (KB audit finding 5) — e.g. research + wiki but no
+    // javadocs — instead of the old single-select type.
+    if (types.length) args.types = types;
+    // maxResultsPerDoc: 3 = server default, 0 disables the per-doc cap.
+    if (perDoc !== 3) args.maxResultsPerDoc = perDoc;
+    if (include) args.includeContent = true;
     const reply = await rpc("tools/call", {
       name: "search_knowledge_base",
       arguments: args,
     });
     const results = reply.result?.structuredContent?.results || [];
+    S.kbdb.mode = "search";
+    S.kbdb.browse = null;
+    S.kbdb.viewDoc = null;
     S.kbdb.results = results;
     S.kbdb.drill = null;
     S.kbdb.drillContent = null;
+    kbRestoreFilterDom(); // un-highlight the Browse button now in search mode
     out.innerHTML = results.length
       ? renderKbResultsBody(results)
       : '<div class="md-out" style="color:var(--faint)">No knowledge-base results for “' +
@@ -2094,6 +2161,162 @@ async function kbDbSearch() {
     out.innerHTML =
       '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
   }
+}
+// Browse mode: list whole docs via list_knowledge_topics with the same
+// type/prefix filters (paged). Each row's Read button opens resources/read.
+const KB_BROWSE_PAGE = 40;
+async function kbDbBrowse(offset = 0) {
+  kbApplyFilters();
+  const { types, prefix } = S.kbdb.filters;
+  const out = $("#kbOut");
+  if (!out) return;
+  out.innerHTML =
+    '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> listing knowledge base docs…</div>';
+  try {
+    const args = { limit: KB_BROWSE_PAGE, offset };
+    if (types.length) args.types = types;
+    if (prefix) args.prefix = prefix;
+    const reply = await rpc("tools/call", {
+      name: "list_knowledge_topics",
+      arguments: args,
+    });
+    const sc = reply.result?.structuredContent || {};
+    S.kbdb.mode = "browse";
+    S.kbdb.browse = {
+      topics: sc.topics || [],
+      total: sc.total ?? (sc.topics || []).length,
+      offset,
+      limit: KB_BROWSE_PAGE,
+    };
+    S.kbdb.viewDoc = null;
+    kbRestoreFilterDom(); // highlight the Browse button while in browse mode
+    out.innerHTML = renderKbBrowse();
+  } catch (e) {
+    out.innerHTML =
+      '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
+  }
+}
+function renderKbBrowse() {
+  const b = S.kbdb.browse;
+  if (!b || !b.topics.length)
+    // Empty state must stay navigable — the filters (e.g. a prefix with no
+    // matching docs) are the likely cause, so a back button is mandatory.
+    // A paged browse that landed on an empty page (offset > 0) can also step
+    // back with Prev instead of abandoning the browse session.
+    return (
+      '<div class="md-out" style="color:var(--faint)">No docs match the current filters' +
+      (S.kbdb.filters.prefix
+        ? " (prefix: " + esc(S.kbdb.filters.prefix) + ")"
+        : "") +
+      '.</div>' +
+      '<div class="kb-foot">' +
+      (b.offset > 0
+        ? '<button class="btn sm ghost" data-act="kb-browse-prev">← Prev</button>'
+        : "") +
+      '<button class="btn sm ghost" data-act="kb-back">' +
+      ICONS.back +
+      " Back to search</button></div>"
+    );
+  const chips = S.kbdb.filters.types.length
+    ? "types: " + S.kbdb.filters.types.join(" + ")
+    : "all types";
+  const prefix = S.kbdb.filters.prefix
+    ? " · prefix: " + S.kbdb.filters.prefix
+    : "";
+  const rows = b.topics
+    .map(
+      (t, i) =>
+        '<div class="kb-browse-row">' +
+        kbTypeBadge(t.docType) +
+        '<div class="kb-browse-main">' +
+        '<div class="kb-browse-topic mono">' +
+        esc(t.topic) +
+        "</div>" +
+        '<div class="kb-browse-sub">' +
+        esc(t.title || "") +
+        " · " +
+        (typeof t.chars === "number" ? t.chars.toLocaleString() + " chars · " : "") +
+        (typeof t.words === "number" ? t.words.toLocaleString() + " words" : "") +
+        "</div></div>" +
+        '<button class="btn sm" data-act="kb-view-doc" data-i="' +
+        i +
+        '" title="Read this doc via resources/read">' +
+        ICONS.book +
+        " Read</button>" +
+        "</div>",
+    )
+    .join("");
+  const nav =
+    '<div class="kb-foot">' +
+    '<span class="badge b-dim num" style="margin-right:auto">' +
+    (b.total ? (b.offset + 1) + "–" + (b.offset + b.topics.length) + " of " + b.total.toLocaleString() : b.topics.length) +
+    " docs</span>" +
+    (b.offset > 0
+      ? '<button class="btn sm ghost" data-act="kb-browse-prev">← Prev</button>'
+      : "") +
+    (b.offset + b.topics.length < (b.total ?? 0)
+      ? '<button class="btn sm ghost" data-act="kb-browse-next">Next →</button>'
+      : "") +
+    '<button class="btn sm ghost" data-act="kb-back">' +
+    ICONS.back +
+    " Back to search</button>" +
+    "</div>";
+  return (
+    '<div class="sec-title" style="margin:0 2px 10px">' +
+    b.topics.length +
+    " doc(s) · " +
+    esc(chips + prefix) +
+    " — click <b>Read</b> for a whole doc</div>" +
+    '<div class="kb-res">' +
+    rows +
+    "</div>" +
+    nav
+  );
+}
+// Read a whole doc via resources/read (the MCP resource surface — huge
+// javadocs pages are truncated server-side with a section pointer).
+async function kbDbViewDoc(i) {
+  const b = S.kbdb.browse;
+  const t = b && b.topics[i];
+  const out = $("#kbOut");
+  if (!t || !out) return;
+  out.innerHTML =
+    '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> reading doc…</div>';
+  try {
+    const reply = await rpc("resources/read", {
+      uri: "knowledge://" + encodeURIComponent(t.topic),
+    });
+    const text = reply?.contents?.[0]?.text ?? "";
+    if (!text) throw new Error("empty doc response");
+    S.kbdb.viewDoc = { topic: t.topic, title: t.title, text };
+    out.innerHTML = kbViewDocHTML(S.kbdb.viewDoc);
+  } catch (e) {
+    out.innerHTML =
+      '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
+  }
+}
+function kbViewDocHTML(v) {
+  return (
+    '<div class="kb-drill">' +
+    '<div class="kb-drill-head">' +
+    '<button class="btn sm ghost" data-act="kb-back">' +
+    ICONS.back +
+    " Back to docs</button>" +
+    '<span class="kb-doc mono" style="min-width:0;word-break:break-all">' +
+    esc(v.topic) +
+    "</span>" +
+    '<span style="flex:1"></span>' +
+    (v.text.length >= 25000
+      ? '<span class="badge b-warn">truncated &gt;25k chars — use View section for exact chunks</span>'
+      : "") +
+    "</div>" +
+    '<div class="kb-drill-title">' +
+    esc(v.title || v.topic) +
+    "</div>" +
+    '<div class="md-p">' +
+    renderMD(v.text) +
+    "</div></div>"
+  );
 }
 async function kbDbDrill(i) {
   const r = S.kbdb.results && S.kbdb.results[i];
@@ -2116,6 +2339,20 @@ async function kbDbDrill(i) {
 function kbDbBack() {
   const out = $("#kbOut");
   if (!out) return;
+  // From a full-doc view → back to the browse list.
+  if (S.kbdb.viewDoc) {
+    S.kbdb.viewDoc = null;
+    out.innerHTML =
+      S.kbdb.mode === "browse" && S.kbdb.browse
+        ? renderKbBrowse()
+        : renderKbResultsBody(S.kbdb.results || []);
+    return;
+  }
+  // From the browse list → back to search results.
+  if (S.kbdb.mode === "browse") {
+    S.kbdb.mode = "search";
+    S.kbdb.browse = null;
+  }
   S.kbdb.drill = null;
   S.kbdb.drillContent = null;
   out.innerHTML =
@@ -2206,24 +2443,44 @@ function databaseHTML() {
     "<h3>" +
     ICONS.book +
     ' Knowledge Base <span class="badge b-dim" style="margin-left:auto">via search_knowledge_base · section chunks</span></h3>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    '<div class="kb-bar">' +
     '<input class="field" id="kbQuery" style="flex:1;min-width:200px" placeholder="Search wiki docs, research notes & Java API… e.g. getSquare, blacksmithing, loot" aria-label="Knowledge base query">' +
-    '<select class="field" id="kbType" style="width:150px" aria-label="Doc type filter">' +
-    '<option value="">all types</option><option value="wiki">wiki</option><option value="api-docs">api-docs</option><option value="javadocs">javadocs</option><option value="mods-analysis">mods-analysis</option><option value="research">research</option>' +
-    "</select>" +
-    '<label class="kb-inc" title="Return each chunk full body inline (search + read in one call — no extra get_knowledge_section round trips)"><input type="checkbox" id="kbInclude"> include content</label>' +
     '<button class="btn primary" data-act="kb-search">' +
     ICONS.search +
     " Search KB</button>" +
+    '<button class="btn" data-act="kb-browse" id="kbBrowseBtn" title="List knowledge base docs (list_knowledge_topics) filtered by the same type/prefix controls — pick a doc to read it">' +
+    ICONS.book +
+    " Browse docs</button>" +
+    "</div>" +
+    '<div class="kb-bar kb-filters" style="margin-top:10px">' +
+    '<span class="kb-f-label">types</span>' +
+    '<div class="kb-chips" id="kbChips" role="group" aria-label="Doc type filter (multi-select)">' +
+    ["wiki", "api-docs", "javadocs", "mods-analysis", "research"]
+      .map(
+        (t) =>
+          '<button class="kb-chip" data-act="kb-type" data-type="' +
+          t +
+          '" aria-pressed="false">' +
+          t +
+          "</button>",
+      )
+      .join("") +
+    "</div>" +
+    '<input class="field" id="kbPrefix" style="width:200px;min-height:36px" placeholder="topic prefix… e.g. wiki or javadocs/zombie.iso" aria-label="Topic prefix filter" title="list_knowledge_topics / browse: only docs whose topic starts with this (e.g. wiki, research, javadocs/zombie.iso)">' +
+    '<input class="field num" id="kbPerDoc" type="number" min="0" max="20" value="3" style="width:84px;min-height:36px" aria-label="Max results per doc" title="search_knowledge_base maxResultsPerDoc: cap how many chunks one doc may occupy in the top-N (0 disables the cap)">' +
+    '<label class="kb-inc" title="Return each chunk full body inline (search + read in one call — no extra get_knowledge_section round trips)"><input type="checkbox" id="kbInclude"> include content</label>' +
+    "</div>" +
+    '<div class="kb-bar" style="margin-top:10px">' +
     '<button class="btn sm" data-act="go-tool" data-tool="index_knowledge_base">' +
     ICONS.book +
     " index_knowledge_base</button>" +
     '<button class="btn sm" data-act="go-tool" data-tool="index_javadocs">' +
     ICONS.code +
     " index_javadocs</button>" +
+    '<span class="badge b-dim" style="margin-left:auto">browse = list_knowledge_topics · prose first</span>' +
     "</div>" +
-    '<div class="f-hint" style="margin:8px 2px 0">Indexed markdown docs + the repo-shipped JavaDocs reference are split into <b>section chunks</b> — search returns precise units with <b>chars/words</b> so you can budget reads, and <b>View section</b> reads exactly one (wiki section or a single method/field). Tick <b>Include content</b> to get chunk bodies inline. Natural-language queries rank wiki/research/api-docs first; identifiers (getSquare) rank JavaDocs first.</div>' +
-    '<div id="kbOut" style="margin-top:14px"><div class="md-out" style="color:var(--faint)">Search results will appear here — each result is one section; click <b>View section</b> to read it.</div></div>' +
+    '<div class="f-hint" style="margin:10px 2px 0">Indexed markdown docs + the repo-shipped JavaDocs reference are split into <b>section chunks</b> — search returns precise units with <b>chars/words</b> so you can budget reads, and <b>View section</b> reads exactly one (wiki section or a single method/field). Tick <b>Include content</b> to get chunk bodies inline. Type chips are <b>multi-select</b> (e.g. research + wiki, no javadocs); <b>per doc</b> caps how many chunks one doc can take in the top-N; <b>Browse docs</b> lists docs (not chunks) with the same filters. Natural-language queries rank wiki/research/api-docs first; identifiers (getSquare) rank JavaDocs first.</div>' +
+    '<div id="kbOut" style="margin-top:14px"><div class="md-out" style="color:var(--faint)">Search results will appear here — each result is one section; click <b>View section</b> to read it, or <b>Browse docs</b> to list whole docs.</div></div>' +
     "</section>"
   );
 }
@@ -5895,7 +6152,17 @@ document.addEventListener("click", (e) => {
     else if (a === "card-collapse") toggleCardState(act.dataset.card);
     else if (a === "db-search") dbSearch();
     else if (a === "kb-search") kbDbSearch();
-    else if (a === "kb-section") {
+    else if (a === "kb-browse") kbDbBrowse();
+    else if (a === "kb-browse-next")
+      kbDbBrowse((S.kbdb.browse?.offset ?? 0) + (S.kbdb.browse?.limit ?? 40));
+    else if (a === "kb-browse-prev")
+      kbDbBrowse(Math.max(0, (S.kbdb.browse?.offset ?? 0) - (S.kbdb.browse?.limit ?? 40)));
+    else if (a === "kb-view-doc") kbDbViewDoc(+act.dataset.i);
+    else if (a === "kb-type") {
+      const pressed = act.getAttribute("aria-pressed") === "true";
+      act.setAttribute("aria-pressed", String(!pressed));
+      kbApplyFilters();
+    } else if (a === "kb-section") {
       const i = +act.dataset.i;
       if (act.closest("#kbOut")) kbDbDrill(i);
       else kbDrillIn(i);

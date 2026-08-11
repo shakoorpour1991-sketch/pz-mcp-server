@@ -200,13 +200,13 @@ export const TOOL_GUIDES = {
   },
   search_knowledge_base: {
     what: "Search the indexed knowledge base with relevance ranking (bm25 with column weights, stemmed + prefix-matched). Results are <b>section-level chunks</b> — a wiki section or a single javadocs method/field — not whole pages, so every hit is precise. Click <b>View section</b> on a result to read exactly that chunk.",
-    how: '<b>query</b> is required, e.g. "blacksmithing recipe". Natural-language queries rank prose docs (wiki/research/api-docs) first so JavaDocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank JavaDocs first. Optional: <b>topic</b> (exact doc topic, e.g. wiki/Farming), <b>type</b> or <b>types</b> (single / multi-select doc types — e.g. types: research + wiki for prose only), <b>package</b> (Java package — javadocs only, e.g. zombie.iso), <b>includeContent</b> (return full chunk bodies inline — search + read in one call, capped by <b>maxContent</b>, default 8000 chars), and <b>limit</b> (default 10). JavaDocs must be indexed first via index_javadocs.',
+    how: '<b>query</b> is required, e.g. "blacksmithing recipe". Natural-language queries rank prose docs (wiki/research/api-docs) first so JavaDocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank JavaDocs first. Optional: <b>topic</b> (exact doc topic, e.g. wiki/Farming), <b>type</b> or <b>types</b> (single / multi-select doc types — e.g. types: research + wiki for prose only), <b>package</b> (Java package — javadocs only, e.g. zombie.iso), <b>includeContent</b> (return full chunk bodies inline — search + read in one call, capped by <b>maxContent</b>, default 8000 chars), <b>maxResultsPerDoc</b> (cap how many chunks one doc may take in the top-N — default 3, 0 disables), and <b>limit</b> (default 10). JavaDocs must be indexed first via index_javadocs.',
     ex: 'query: "getSquare" · type: "javadocs" · package: "zombie.iso"',
   },
   list_knowledge_topics: {
-    what: "List every indexed knowledge-base doc with stats (chunks, lines, words). Topics are path-prefixed — wiki/…, javadocs/…, api-docs/… — so they're self-describing and never collide.",
-    how: "No arguments needed — just press Run.",
-    ex: "—",
+    what: "List indexed knowledge-base docs with stats (chunks, lines, words). Topics are path-prefixed — wiki/…, javadocs/…, api-docs/… — so they're self-describing and never collide.",
+    how: "No arguments needed — just press Run for the full list. Optional filters keep the reply lean: <b>types</b> (multi-select doc types, one per line — e.g. research + wiki), <b>prefix</b> (topic id start, e.g. wiki or javadocs/zombie.iso), and <b>limit</b> + <b>offset</b> for pagination (the reply carries the filtered <b>total</b>).",
+    ex: 'types: ["research", "wiki"] · limit: 50',
   },
   get_knowledge_section: {
     what: "Read exactly one section of a knowledge-base doc — a single wiki section or one javadocs method/field — without loading the whole page. Batch mode: <b>sections</b> (one per line) reads several members of one doc in a single call.",
