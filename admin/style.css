@@ -918,6 +918,61 @@ main {
   height: 15px;
   color: rgb(var(--accent-rgb));
 }
+/* Collapse/expand toggle on Status-tab cards */
+.card-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 1px solid var(--stroke);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--faint);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.35s var(--spring);
+}
+.card-collapse:hover {
+  color: var(--text);
+  border-color: rgb(var(--accent-rgb));
+  background: rgba(255, 255, 255, 0.09);
+}
+.card-collapse:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 1px;
+}
+.card-collapse svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.metric .card-collapse {
+  margin-left: auto;
+}
+.panel-card.collapsed > :not(h3) {
+  display: none;
+}
+.panel-card.collapsed h3 {
+  margin-bottom: 0;
+}
+.metric.collapsed .ring-wrap,
+.metric.collapsed .spark {
+  display: none;
+}
+.metric.collapsed {
+  min-height: 0;
+  justify-content: center;
+}
+.panel-card.collapsed .card-collapse svg,
+.metric.collapsed .card-collapse svg {
+  transform: rotate(180deg);
+}
 .krow {
   display: flex;
   justify-content: space-between;

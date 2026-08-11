@@ -182,6 +182,8 @@ const S = {
   kbdb: { results: null, drill: null, drillContent: null },
   // Index state shown on the Status page (refreshed from list_knowledge_topics).
   kbStatus: { state: "idle", docs: 0, javadocs: 0, byType: {}, total: 0 },
+  // Collapse state for Status-tab cards, keyed by data-card id (persisted).
+  cardsCollapsed: {},
   inst: {
     detected: null,
     busy: false,
@@ -571,6 +573,7 @@ function renderView() {
   if (S.view === "status") {
     updateStatusDom();
     renderEvents();
+    applyCardStates();
   }
   if (S.view === "playground") {
     renderToolStack();
@@ -622,6 +625,8 @@ function metricCard(id, label, rc, sub) {
   return (
     '<article class="glass card metric" style="--rc:' +
     rc +
+    '" data-card="metric-' +
+    id +
     '"><div class="m-top">' +
     ringSVG(id, rc) +
     '<div style="min-width:0"><div class="m-label">' +
@@ -631,7 +636,9 @@ function metricCard(id, label, rc, sub) {
     '">—</div>' +
     '<div class="m-sub">' +
     sub +
-    "</div></div></div>" +
+    "</div></div>" +
+    cardCollapseBtn("metric-" + id) +
+    "</div>" +
     '<svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="a" id="sa-' +
     id +
     '"></path><path class="l" id="sl-' +
@@ -676,22 +683,30 @@ function statusHTML() {
       '<span class="badge b-dim" id="refBadge">— refs</span>',
     ) +
     "</div>" +
-    '<section class="glass card panel-card kb-idx-card">' +
+    '<section class="glass card panel-card kb-idx-card" data-card="kb-idx">' +
     "<h3>" +
     ICONS.book +
-    ' Knowledge Base Index <span class="badge b-dim" style="margin-left:auto">persists across restarts — index once, it stays</span></h3>' +
+    " Knowledge Base Index" +
+    cardCollapseBtn("kb-idx") +
+    '<span class="badge b-dim" style="margin-left:auto">persists across restarts — index once, it stays</span></h3>' +
     '<div class="kb-idx-grid" id="kbIdxGrid"></div>' +
     "</section>" +
     '<div class="status-grid">' +
-    '<section class="glass card panel-card"><h3>' +
+    '<section class="glass card panel-card" data-card="transport"><h3>' +
     ICONS.link +
-    ' Transports & State</h3><div id="transportRows"></div></section>' +
-    '<section class="glass card panel-card"><h3>' +
+    " Transports & State" +
+    cardCollapseBtn("transport") +
+    '</h3><div id="transportRows"></div></section>' +
+    '<section class="glass card panel-card" data-card="srvlog"><h3>' +
     ICONS.doc +
-    ' Server Log <span class="badge b-dim" style="margin-left:auto">pino · stderr</span></h3><div class="srvlog" id="srvLog"></div></section>' +
-    '<section class="glass card panel-card"><h3>' +
+    " Server Log" +
+    cardCollapseBtn("srvlog") +
+    '<span class="badge b-dim" style="margin-left:auto">pino · stderr</span></h3><div class="srvlog" id="srvLog"></div></section>' +
+    '<section class="glass card panel-card" data-card="info"><h3>' +
     ICONS.spark +
-    ' Server Info</h3><div id="infoRows"></div>' +
+    " Server Info" +
+    cardCollapseBtn("info") +
+    '</h3><div id="infoRows"></div>' +
     '<div class="sec-title" style="margin:14px 0 6px">Recent Activity</div><div id="evList"></div></section>' +
     "</div>"
   );
@@ -1023,12 +1038,61 @@ function updateKbStatusDom() {
       s.javadocs > 0,
       jdBtn,
     );
-  // The status view re-renders on every 2s telemetry tick — skip the DOM
-  // write when nothing changed so hovered buttons are never rebuilt under
-  // the cursor.
-  if (html === _kbIdxHtml) return;
+  // Skip the DOM write only when the grid ALREADY holds this content — the
+  // guard exists so the 2s telemetry tick never rebuilds hovered buttons, but
+  // a fresh status render (tab switch) creates an empty grid that must be
+  // repopulated even if the html is unchanged.
+  if (grid.innerHTML !== "" && html === _kbIdxHtml) return;
   _kbIdxHtml = html;
   grid.innerHTML = html;
+}
+
+/* ---------- Status-card collapse / expand ---------- */
+function cardCollapseBtn(id) {
+  return (
+    '<button class="card-collapse" data-act="card-collapse" data-card="' +
+    id +
+    '" aria-expanded="true" aria-label="Collapse card" title="Collapse / expand">' +
+    ICONS.chev +
+    "</button>"
+  );
+}
+function saveCardStates() {
+  try {
+    localStorage.setItem("pzdeck.cards", JSON.stringify(S.cardsCollapsed));
+  } catch {}
+}
+function loadCardStates() {
+  try {
+    Object.assign(
+      S.cardsCollapsed,
+      JSON.parse(localStorage.getItem("pzdeck.cards") || "{}"),
+    );
+  } catch {}
+}
+// Re-apply persisted collapse state after the Status tab is re-rendered.
+// Only the card containers carry the collapsed class; their buttons (which
+// also carry data-card) just mirror aria-expanded.
+function applyCardStates() {
+  for (const el of $$(".panel-card[data-card], .metric[data-card]")) {
+    const id = el.dataset.card;
+    el.classList.toggle("collapsed", !!S.cardsCollapsed[id]);
+    const btn = el.querySelector(".card-collapse");
+    if (btn) btn.setAttribute("aria-expanded", String(!S.cardsCollapsed[id]));
+  }
+}
+function toggleCardState(id) {
+  S.cardsCollapsed[id] = !S.cardsCollapsed[id];
+  saveCardStates();
+  const card = document.querySelector(
+    '.panel-card[data-card="' + id + '"], .metric[data-card="' + id + '"]',
+  );
+  if (card) {
+    card.classList.toggle("collapsed", S.cardsCollapsed[id]);
+    const btn = card.querySelector(".card-collapse");
+    if (btn)
+      btn.setAttribute("aria-expanded", String(!S.cardsCollapsed[id]));
+  }
 }
 let _srvLogRaf = 0;
 function renderServerLog() {
@@ -5822,10 +5886,11 @@ document.addEventListener("click", (e) => {
       if (!body) return;
       const open = body.classList.toggle("show-all");
       act.textContent = open ? "Show less" : "Show more";
-    } else if (a === "open-help") openHelp();
+    }    else if (a === "open-help") openHelp();
     else if (a === "close-help") closeHelp();
     else if (a === "open-guide") openGuide();
     else if (a === "close-guide") closeGuide();
+    else if (a === "card-collapse") toggleCardState(act.dataset.card);
     else if (a === "db-search") dbSearch();
     else if (a === "kb-search") kbDbSearch();
     else if (a === "kb-section") {
@@ -6409,6 +6474,7 @@ $("#tabbar").addEventListener("keydown", (e) => {
 /* ==================== BOOT ==================== */
 function boot() {
   loadSettings();
+  loadCardStates();
   try {
     Object.assign(
       S.pg.cats,
