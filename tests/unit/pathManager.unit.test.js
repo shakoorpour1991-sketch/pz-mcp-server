@@ -224,7 +224,10 @@ describe('PathManager mods/workshop detection (mod installer M1)', () => {
     fs.writeFileSync(path.join(pzDir, 'ProjectZomboid64.exe'), '');
     fs.mkdirSync(path.join(lib, 'steamapps', 'workshop', 'content', '108600'), { recursive: true });
     const pm2 = new PathManager();
-    pm2.queryRegistryValue = async () => lib; // registry points at this library root
+    // Stub the platform detection seam (registry on Windows, libraryfolders.vdf
+    // under $HOME on Linux/macOS) so the workshop-dir derivation below is
+    // exercised identically on every CI platform.
+    pm2.detectSteamInstallation = async () => pzDir;
     const ws = await pm2.detectWorkshopDir();
     assert.equal(ws, path.join(lib, 'steamapps', 'workshop', 'content', '108600'));
     fs.rmSync(lib, { recursive: true, force: true });
