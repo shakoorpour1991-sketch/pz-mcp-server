@@ -502,9 +502,7 @@ export class ModInstaller {
 
 /** Minimal mod.info metadata read (id/name/version) — same line format the
  * game and ProjectZomboidParser.parseModInfo use (`key = value`). */
-async function readModInfoMeta(
-  modInfoPath: string,
-): Promise<ModInfoMeta> {
+async function readModInfoMeta(modInfoPath: string): Promise<ModInfoMeta> {
   try {
     const content = await readFile(modInfoPath, "utf-8");
     const get = (key: string): string | undefined => {

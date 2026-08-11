@@ -121,4 +121,3 @@ export function makeIconPng(color: Rgb): Buffer {
     return base;
   });
 }
-

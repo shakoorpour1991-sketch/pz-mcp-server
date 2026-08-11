@@ -154,10 +154,7 @@ export class KnowledgeBaseManager {
     // change). Fresh (v0) and legacy-v1 DBs already recreated the tables
     // with every column above, so only true v2/v3 DBs enter this branch.
     if (version >= 2 && version < 4) {
-      if (
-        version < 3 &&
-        !this.hasColumn("knowledge_chunks", "bodyless")
-      ) {
+      if (version < 3 && !this.hasColumn("knowledge_chunks", "bodyless")) {
         this.db.exec(
           "ALTER TABLE knowledge_chunks ADD COLUMN bodyless INTEGER NOT NULL DEFAULT 0",
         );
@@ -749,7 +746,8 @@ export class KnowledgeBaseManager {
     const order = opts?.proseFirst
       ? "ORDER BY (doc_type = 'javadocs') ASC, topic ASC"
       : "ORDER BY topic ASC";
-    let sql = "SELECT topic, title, doc_type, lines, words, chars FROM knowledge_docs";
+    let sql =
+      "SELECT topic, title, doc_type, lines, words, chars FROM knowledge_docs";
     if (where.length > 0) sql += ` WHERE ${where.join(" AND ")}`;
     sql += ` ${order}`;
     if (opts?.limit && opts.limit > 0) {
@@ -840,13 +838,7 @@ export class KnowledgeBaseManager {
     const groups = terms.map((t) => {
       const variants = [`"${t}"`];
       if (t.length >= 3) {
-        variants.push(
-          `${t}*`,
-          `${t}s`,
-          `${t}es`,
-          `${t}ed`,
-          `${t}ing`,
-        );
+        variants.push(`${t}*`, `${t}s`, `${t}es`, `${t}ed`, `${t}ing`);
         if (t.endsWith("y")) {
           const base = t.slice(0, -1);
           variants.push(`${base}ies`, `${base}ied`);

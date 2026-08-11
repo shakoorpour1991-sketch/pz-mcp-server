@@ -282,7 +282,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
   {
     name: "list_knowledge_topics",
     description:
-      "List indexed knowledge base topics with stats (lines/words/chars) — stored columns, instant even at ~5,000 topics. Optional filters keep the reply lean: types (multi-select doc types, e.g. [\"research\", \"wiki\"]), prefix (path-prefixed topic id start, e.g. \"wiki\" or \"javadocs/zombie.iso\"), and limit/offset for pagination. Example: {types: [\"research\", \"wiki\"], limit: 50}. With no filters the full list is returned.",
+      'List indexed knowledge base topics with stats (lines/words/chars) — stored columns, instant even at ~5,000 topics. Optional filters keep the reply lean: types (multi-select doc types, e.g. ["research", "wiki"]), prefix (path-prefixed topic id start, e.g. "wiki" or "javadocs/zombie.iso"), and limit/offset for pagination. Example: {types: ["research", "wiki"], limit: 50}. With no filters the full list is returned.',
     inputSchema: ListKnowledgeTopicsSchema,
     handler: async (args, ctx) => {
       const { type, types, prefix, limit, offset } = args;
@@ -312,7 +312,10 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         structuredContent: {
           topics: structuredClone(topics),
           total,
-          filtered: opts.limit !== undefined || opts.types !== undefined || opts.prefix !== undefined,
+          filtered:
+            opts.limit !== undefined ||
+            opts.types !== undefined ||
+            opts.prefix !== undefined,
         },
       };
     },

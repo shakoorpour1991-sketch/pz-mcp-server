@@ -576,8 +576,7 @@ export function parseKbDoc(raw: string, relPath: string): KbParsedDoc {
   // downweight it so one giant table dump can't flood a top-10.
   const rawLines = body.split("\n").filter((l) => l.trim().length > 0);
   const tableLines = rawLines.filter((l) => l.trim().startsWith("|")).length;
-  const tabley =
-    rawLines.length > 0 && tableLines / rawLines.length >= 0.4;
+  const tabley = rawLines.length > 0 && tableLines / rawLines.length >= 0.4;
 
   const chunks = chunkMarkdown(cleaned, docTopic, docType, title);
 
