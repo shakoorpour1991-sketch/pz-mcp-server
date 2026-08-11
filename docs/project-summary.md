@@ -23,7 +23,7 @@ searchable knowledge base.
 - **ZERO native dependencies**: runtime deps are only `@modelcontextprotocol/sdk` 1.30,
   `pino`, `zod`, `adm-zip` (pure-JS zip). Database is the **built-in `node:sqlite`** module.
 - Tests: **Node's built-in test runner** (`node --test "tests/**/*.test.js"`) — no Jest.
-  **559 tests, 111 suites** — must stay green.
+  **598 tests, 118 suites** — must stay green.
 - Lint: ESLint (src + tests + admin + scripts); format: prettier (`npm run format`).
 - Perf: `npm run benchmark` (hermetic scripts/_benchmark.mjs).
 - Verification scripts (hermetic unless noted): `npm run verify:kb` (real-corpus KB
@@ -80,7 +80,7 @@ Resources: `knowledge://<topic>` and `knowledge://<topic>#<section>` URIs (perce
 ## Data model (data/pz_database.db + data/pz_knowledge.db)
 
 - **Game DB:** `items` table (type: item/sound/recipe/vehicle/fixing/evolvedrecipe) + FTS5 `items_fts` (external content) + `"references"` + `mods` + `recipe_ingredients` mirror (authoritative for B42 bracket alternatives and `tags[...]` inputs). Parsed 42.20: ~9,383 items rows, 8,133 references.
-- **Knowledge DB:** `knowledge_docs` (file metadata: doc_type, tags, meta, stored `lines`/`words`/`chars`), `knowledge_chunks` (one row per section/member chunk, UNIQUE `chunk_topic`), `knowledge_chunks_fts` (external-content FTS5, `porter unicode61`, ai/ad/au triggers). Schema version **v3** (additive `bodyless` column — v1/v2 DBs migrate in place, no re-index needed). Chunk cap 6,000 chars; bodyless signature chunks are tagged and downweighted in mixed searches.
+- **Knowledge DB:** `knowledge_docs` (file metadata: doc_type, tags, meta, stored `lines`/`words`/`chars`), `knowledge_chunks` (one row per section/member chunk, UNIQUE `chunk_topic`), `knowledge_chunks_fts` (external-content FTS5, `unicode61`, ai/ad/au triggers), `knowledge_chunk_vectors` (Phase 5 semantic vectors: Float32Array BLOB, model/dims, `idx_kcv_doc` — opt-in, backfilled by `embed_knowledge`, model cached under `<data>/models/`). Schema version **v5** (additive `bodyless` column, `tabley` flag, FTS tokenizer swap, vector table — v1/v2/v3/v4 DBs migrate in place, no re-index needed). Chunk cap 6,000 chars; bodyless signature chunks are tagged and downweighted in mixed searches; `semantic: true` runs hybrid `0.7·bm25 + 0.3·cosine` retrieval.
 
 ## Critical conventions (violating these breaks the build/contract)
 
@@ -96,7 +96,7 @@ Resources: `knowledge://<topic>` and `knowledge://<topic>#<section>` URIs (perce
 ```
 npm run build      # tsc strict
 npm run lint       # eslint src/**/*.ts + tests + admin + scripts
-npm test           # build + node:test (559 tests, 111 suites)
+npm test           # build + node:test (598 tests, 118 suites)
 npm run verify:kb  # hermetic real-corpus KB checks (27/27)
 npm run benchmark  # hermetic perf baselines
 npm run format     # prettier

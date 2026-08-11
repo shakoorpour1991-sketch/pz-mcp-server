@@ -30,6 +30,14 @@ const SHIPPED_JAVADOCS_PATH = join(SHIPPED_KB_PATH, "javadocs");
 export const DEFAULT_MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GiB
 
 /**
+ * Default local embedding model (Phase 5 semantic search) — ONNX, 384 dims.
+ * Override with PZ_MCP_EMBEDDING_MODEL (e.g. Xenova/bge-small-en-v1.5).
+ */
+export const DEFAULT_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+/** Default chunks-per-batch for embed_knowledge (PZ_MCP_EMBEDDING_BATCH_SIZE). */
+export const DEFAULT_EMBEDDING_BATCH_SIZE = 32;
+
+/**
  * The single environment schema. Every PZ_ and STEAMCMD_ prefixed variable
  * the server reads is validated here; unknown variables are ignored for
  * forward compatibility.
@@ -55,6 +63,15 @@ export const EnvSchema = z.object({
   STEAMCMD_PASS: z.string().min(1).optional(),
   STEAMCMD_USE_CREDENTIALS: z.enum(["0", "1", "false", "true"]).optional(),
   PZ_MCP_MAX_DOWNLOAD_BYTES: z.coerce.number().int().positive().optional(),
+  /** Local embedding model id for Phase 5 semantic search (embed_knowledge). */
+  PZ_MCP_EMBEDDING_MODEL: z.string().min(1).optional(),
+  /** Chunks embedded per batch by embed_knowledge. */
+  PZ_MCP_EMBEDDING_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(512)
+    .optional(),
 });
 
 type EnvConfig = z.infer<typeof EnvSchema>;
@@ -190,4 +207,31 @@ export function maxDownloadBytes(): number {
   return (
     validateEnvConfig().PZ_MCP_MAX_DOWNLOAD_BYTES ?? DEFAULT_MAX_DOWNLOAD_BYTES
   );
+}
+
+/**
+ * Local embedding model for Phase 5 semantic search (embed_knowledge /
+ * search_knowledge_base semantic: true). Override with PZ_MCP_EMBEDDING_MODEL;
+ * default Xenova/all-MiniLM-L6-v2 (ONNX, 384 dims). The model downloads at
+ * most once, into <data>/models/, when embed_knowledge first runs.
+ */
+export function embeddingModel(): string {
+  return validateEnvConfig().PZ_MCP_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
+}
+
+/** Chunks embedded per batch by embed_knowledge (PZ_MCP_EMBEDDING_BATCH_SIZE). */
+export function embeddingBatchSize(): number {
+  return (
+    validateEnvConfig().PZ_MCP_EMBEDDING_BATCH_SIZE ||
+    DEFAULT_EMBEDDING_BATCH_SIZE
+  );
+}
+
+/**
+ * One-time embedding model cache: <data>/models/ (PZ_MCP_DATA_DIR).
+ * transformers.js stores cached files at <cacheDir>/<org>/<repo>/, so the
+ * model lands at <data>/models/<org>/<repo>/ and persists across restarts.
+ */
+export function embeddingModelsDir(): string {
+  return join(dataDir(), "models");
 }

@@ -21,6 +21,7 @@ const EXPECTED_TOOLS = [
   "parse_game_files",
   "index_knowledge_base",
   "index_javadocs",
+  "embed_knowledge",
   "search_knowledge_base",
   "get_knowledge_section",
   "list_knowledge_topics",
@@ -147,6 +148,21 @@ describe("tool registry (audit P2)", () => {
       ["search_knowledge_base", { query: "x", maxResultsPerDoc: 5 }, false],
       ["search_knowledge_base", { query: "x", maxResultsPerDoc: -1 }, true],
       ["search_knowledge_base", { query: "x", maxResultsPerDoc: 21 }, true],
+      // Phase 5 semantic: opt-in boolean, defaults to false
+      ["search_knowledge_base", { query: "x", semantic: true }, false],
+      ["search_knowledge_base", { query: "x", semantic: "yes" }, true],
+      ["search_knowledge_base", { query: "x", semantic: 1 }, true],
+      // embed_knowledge (Phase 5): model/batchSize/limit/dryRun, all optional
+      ["embed_knowledge", {}, false],
+      ["embed_knowledge", { dryRun: true }, false],
+      ["embed_knowledge", { model: "Xenova/all-MiniLM-L6-v2" }, false],
+      ["embed_knowledge", { model: "" }, true],
+      ["embed_knowledge", { batchSize: 5, limit: 100 }, false],
+      ["embed_knowledge", { batchSize: 0 }, true],
+      ["embed_knowledge", { batchSize: 9999 }, true],
+      ["embed_knowledge", { limit: 0 }, true],
+      ["embed_knowledge", { limit: 999999 }, true],
+      ["embed_knowledge", { dryRun: "yes" }, true],
       // get_knowledge_section batch mode (sections[])
       [
         "get_knowledge_section",

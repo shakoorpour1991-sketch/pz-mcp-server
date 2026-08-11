@@ -14,6 +14,7 @@ import type { RecipeAnalyzer } from "../analyzers/RecipeAnalyzer.js";
 import type { ScriptGenerator } from "../generators/ScriptGenerator.js";
 import type { ValidationEngine } from "../validation/ValidationEngine.js";
 import type { KnowledgeBaseManager } from "../knowledge/KnowledgeBaseManager.js";
+import type { EmbeddingManager } from "../knowledge/EmbeddingManager.js";
 import type { PathManager } from "../utils/PathManager.js";
 import type { SteamWorkshopClient } from "../workshop/SteamWorkshopClient.js";
 import type { SteamCmdDownloader } from "../workshop/SteamCmdDownloader.js";
@@ -45,6 +46,8 @@ export interface ToolContext {
   modInstaller: ModInstaller;
   /** Beginner-friendly mod generator (modgen_*). */
   modGenManager: ModGenManager;
+  /** Phase 5 semantic search engine (embed_knowledge / semantic: true). */
+  embeddingManager: EmbeddingManager;
 }
 
 /**

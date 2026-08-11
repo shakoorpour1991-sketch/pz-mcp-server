@@ -6,12 +6,14 @@ import {
   ParseGameFilesSchema,
   IndexKnowledgeBaseSchema,
   IndexJavadocsSchema,
+  EmbedKnowledgeSchema,
   SearchKnowledgeBaseSchema,
   ListKnowledgeTopicsSchema,
   GetKnowledgeSectionSchema,
 } from "../schemas.js";
 import type { McpTool } from "./registry.js";
 import {
+  formatEmbedKnowledgeResults,
   formatJavadocsIndexResults,
   formatKbIndexResults,
   formatKbSearchResults,
@@ -27,6 +29,7 @@ import {
   knowledgeBasePath,
   shippedJavadocsPath,
 } from "../utils/config.js";
+import { SemanticNotIndexedError } from "../knowledge/EmbeddingManager.js";
 import {
   JavaDocIndexer,
   type JavadocsIngestResult,
@@ -234,9 +237,32 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
     },
   },
   {
+    name: "embed_knowledge",
+    description:
+      "Embed the knowledge base for semantic search (Phase 5, opt-in). Embeds every chunk that does not yet have a vector (incremental — re-running is cheap), using a local model (default Xenova/all-MiniLM-L6-v2, 384 dims; PZ_MCP_EMBEDDING_MODEL override). The model downloads ONCE into <data>/models/ on the first non-dry run and persists across restarts — nothing is downloaded at install, boot, or index time. After embedding, search_knowledge_base supports semantic: true (hybrid 0.7·bm25 + 0.3·cosine). Chunk text embedded = title + content. Use dryRun: true to preview what would be embedded without downloading or writing anything. Example: {dryRun: true} → then {} to embed everything.",
+    inputSchema: EmbedKnowledgeSchema,
+    handler: async (args, ctx) => {
+      const result = await ctx.knowledgeBaseManager.embedKnowledge({
+        model: args.model,
+        batchSize: args.batchSize,
+        limit: args.limit,
+        dryRun: args.dryRun,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatEmbedKnowledgeResults(result),
+          },
+        ],
+        structuredContent: structuredClone(result),
+      };
+    },
+  },
+  {
     name: "search_knowledge_base",
     description:
-      'Search knowledge base docs with relevance ranking (bm25 with column weights, unicode61 exact terms first, prefix + inflection re-run as a no-hit fallback). Returns section-level chunks — each result is a precise unit (a wiki section or a single javadocs method/field) with read-cost metadata (chars/words). Type-aware defaults: natural-language queries rank prose docs (wiki/research/api-docs) first so javadocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank javadocs first; bodyless signatures and table-heavy docs are downweighted, and maxResultsPerDoc (default 3) stops one giant doc from monopolizing the top-N. Set includeContent: true to get the chunk bodies inline (search + read in one call, capped by maxContent). Filters: topic (exact doc topic), type / types (single or multi-select doc types), package (Java package, javadocs only). JavaDocs must be indexed with index_javadocs first — index_knowledge_base skips javadocs/. Examples: {query: "blacksmithing recipe"}, {query: "getSquare", type: "javadocs", package: "zombie.iso"}, {query: "blacksmithing", includeContent: true}',
+      'Search knowledge base docs with relevance ranking (bm25 with column weights, unicode61 exact terms first, prefix + inflection re-run as a no-hit fallback). Returns section-level chunks — each result is a precise unit (a wiki section or a single javadocs method/field) with read-cost metadata (chars/words). Type-aware defaults: natural-language queries rank prose docs (wiki/research/api-docs) first so javadocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank javadocs first; bodyless signatures and table-heavy docs are downweighted, and maxResultsPerDoc (default 3) stops one giant doc from monopolizing the top-N. Set includeContent: true to get the chunk bodies inline (search + read in one call, capped by maxContent). Filters: topic (exact doc topic), type / types (single or multi-select doc types), package (Java package, javadocs only). Phase 5: set semantic: true for hybrid search (embeds the query, blends 0.7·bm25 + 0.3·cosine) — requires embed_knowledge to have run first. JavaDocs must be indexed with index_javadocs first — index_knowledge_base skips javadocs/. Examples: {query: "blacksmithing recipe"}, {query: "getSquare", type: "javadocs", package: "zombie.iso"}, {query: "blacksmithing", includeContent: true}, {query: "what do I need for blacksmithing", semantic: true}',
     inputSchema: SearchKnowledgeBaseSchema,
     handler: async (args, ctx) => {
       const {
@@ -249,6 +275,7 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         includeContent,
         maxContent,
         maxResultsPerDoc,
+        semantic,
       } = args;
       const opts: {
         topic?: string;
@@ -259,12 +286,23 @@ export const localDataTools: McpTool<z.ZodTypeAny>[] = [
         includeContent?: boolean;
         maxContent?: number;
         maxResultsPerDoc?: number;
-      } = { limit, includeContent, maxContent, maxResultsPerDoc };
+        semantic?: boolean;
+      } = { limit, includeContent, maxContent, maxResultsPerDoc, semantic };
       if (topic) opts.topic = topic;
       if (type) opts.type = type;
       if (types?.length) opts.types = types;
       if (pkg) opts.package = pkg;
-      const results = await ctx.knowledgeBaseManager.search(query, opts);
+      let results;
+      try {
+        results = await ctx.knowledgeBaseManager.search(query, opts);
+      } catch (err) {
+        // Phase 5 friendly error: semantic search requested before the vectors
+        // exist (or with a mismatched model) — guide, never crash.
+        if (err instanceof SemanticNotIndexedError) {
+          throw new McpError(ErrorCode.InvalidRequest, err.message);
+        }
+        throw err;
+      }
       return {
         content: [
           {

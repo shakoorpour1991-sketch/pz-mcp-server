@@ -153,6 +153,7 @@ const TOOLS = [
   "parse_game_files",
   "index_knowledge_base",
   "index_javadocs",
+  "embed_knowledge",
   "search_knowledge_base",
   "get_knowledge_section",
   "list_knowledge_topics",
@@ -400,6 +401,43 @@ describe("pz-mcp-server integration", () => {
     assert.ok(list.content[0].text.includes("Knowledge Base Topics (2)"));
     assert.ok(list.content[0].text.includes("Farming"));
     assert.ok(list.content[0].text.includes("Cooking"));
+  });
+
+  test("embed_knowledge dry-run previews without downloading the model (opt-in)", async () => {
+    // The kb fixture (Farming.md + Cooking.md) is indexed but never embedded.
+    // A dry run must report pending work WITHOUT downloading the model or
+    // writing any vector rows.
+    const res = await client.call("tools/call", {
+      name: "embed_knowledge",
+      arguments: { dryRun: true },
+    });
+    const sc = res.structuredContent;
+    assert.equal(sc.dryRun, true);
+    assert.equal(sc.embedded, 0);
+    assert.equal(sc.vectors, 0);
+    assert.ok(sc.total >= 2, `fixture chunks pending (${sc.total})`);
+    assert.equal(typeof sc.model, "string");
+    assert.equal(typeof sc.dims, "number");
+    assert.ok(res.content[0].text.includes("DRY RUN"));
+    assert.ok(res.content[0].text.includes("embed_knowledge"));
+  });
+
+  test("search_knowledge_base semantic:true before embedding → friendly error", async () => {
+    // No vectors exist yet — semantic search must never crash or silently fall
+    // back to FTS-only; it guides the user to run embed_knowledge first.
+    await assert.rejects(
+      client.call("tools/call", {
+        name: "search_knowledge_base",
+        arguments: { query: "water", semantic: true },
+      }),
+      /No semantic vectors indexed yet\. Run embed_knowledge first/,
+    );
+    // Without the flag the exact same query still works (byte-identical path).
+    const plain = await client.call("tools/call", {
+      name: "search_knowledge_base",
+      arguments: { query: "water" },
+    });
+    assert.ok(plain.content[0].text.includes("Found"));
   });
 
   test("search_knowledge_base supports multi-type filters and inline content", async () => {

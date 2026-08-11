@@ -368,7 +368,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
     });
   });
 
-  test('a v2 database migrates to v4 (bodyless + tabley columns, FTS rebuilt, data kept)', async () => {
+  test('a v2 database migrates to v5 (bodyless + tabley columns, FTS rebuilt, vector table added, data kept)', async () => {
     const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-v2to4-'));
     try {
       const docsDir = path.join(tmp2, 'docs');
@@ -405,7 +405,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
         try {
           assert.equal(
             check.prepare('PRAGMA user_version').get().user_version,
-            4
+            5
           );
           const chunkCols = check
             .prepare('PRAGMA table_info(knowledge_chunks)')
@@ -440,7 +440,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
     }
   });
 
-  test('migrates a legacy v1 database to v4 (clean drop + recreate)', async () => {
+  test('migrates a legacy v1 database to v5 (clean drop + recreate)', async () => {
     const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pz-kb-migrate-'));
     try {
       const { DatabaseSync } = await import('node:sqlite');
@@ -488,7 +488,7 @@ describe('KnowledgeBaseManager chunking + section reads (KB v2)', () => {
           );
           assert.equal(
             check.prepare('PRAGMA user_version').get().user_version,
-            4
+            5
           );
         } finally {
           check.close();

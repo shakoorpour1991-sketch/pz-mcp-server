@@ -181,11 +181,30 @@ Optionally re-ingest from a raw generated JavaDoc HTML tree (the tree with packa
 
 ---
 
+### `embed_knowledge`
+
+**Semantic indexing (Phase 5, fully opt-in)** — embed every knowledge chunk that does not have a vector yet into the schema-v5 `knowledge_chunk_vectors` table. Nothing happens at install, boot, or `index_*` time: the embedding model downloads **only** when this tool runs non-dry, **once**, into `<data>/models/`, and persists across restarts (a cached second run never re-downloads). Re-running is **incremental** — only chunks without a vector (or whose model changed) are embedded, so it is cheap and safe to re-run after any re-index. Chunk text embedded = `title + content` (signature + body, so method overloads stay distinct).
+
+| Param       | Type    | Required | Description                                                                                            |
+| ----------- | ------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `model`     | string  | No       | Embedding model id (default: `PZ_MCP_EMBEDDING_MODEL` or `Xenova/all-MiniLM-L6-v2`, 384 dims); changing the model forces a clean re-embed of every chunk |
+| `batchSize` | number  | No       | Chunks per embedding batch (default: `PZ_MCP_EMBEDDING_BATCH_SIZE` or 32, 1–512)                       |
+| `limit`     | number  | No       | Cap on chunks embedded this run (useful for smoke tests / incremental chunks)                          |
+| `dryRun`    | boolean | No       | Preview what would be embedded — **no download, no embedding, no writes** (default: `false`)           |
+
+**Output:** `model`, `dims`, `total` (chunks in the KB), `vectors` (rows stored after the run), `embedded` (this run), `skipped` (already done), `modelChanged`, `dryRun`, `durationMs`.
+
+> Local WASM embeddings via `@huggingface/transformers` — the repo keeps its **zero-native-dependency** identity (an npm override maps `onnxruntime-node` → `onnxruntime-web`, pure JS/WASM).
+
+---
+
 ### `search_knowledge_base`
 
 Full-text search of knowledge base docs with relevance ranking. Exact terms are matched **first**; only when a plain match returns nothing does the query re-run with **prefix + inflection expansion** (a suffix-expansion fallback: `"getPlay"` resolves to `getPlayer`/`getPlayers`, `"reload"` to `reloads`/`reloading` — the index itself is plain `unicode61`, because porter stemming silently broke trailing-y prefix fallbacks). Common queries never pay the `"cooking"` → `cookie` noise tax since expansion only fires on a no-hit. **Results are section-level chunks** — each hit is a precise unit (a wiki section or a single javadocs method/field) with its own `topic` id, readable directly via `knowledge://<topic>` (or `knowledge://<topic>#<section>` for one section).
 
 **Type-aware defaults**: 96.8% of the corpus is javadocs and most of those are bodyless bare signatures (decompiled PZ fields have no javadoc comments), so a flat ranking used to flood natural-language queries with constants. A mixed search (no `type`/`types`/`package` filter) ranks **prose docs (wiki/research/api-docs/mods-analysis) first when the query reads like natural language** ("anvil", "blacksmithing") and **javadocs first when it looks like an identifier** (`getPlayer`, `ANVIL_WEIGHT`, `Base.Hammer`) — with bodyless signature chunks and table-heavy docs downweighted in the prose case, and a **per-doc cap** so one giant doc can't flood the top-N. An explicit filter always uses pure bm25 rank. **bm25 column weights** favor the chunk topic/title/tags over the long content body, so identifier searches surface the exact member first.
+
+**Semantic (Phase 5, opt-in)**: pass `semantic: true` for **hybrid retrieval** — the query is embedded and cosine-scanned against the vector index, then the semantic top-K is merged with the keyword top-K and re-ranked by `0.7·bm25 + 0.3·cosine`. Conceptual questions with zero keyword overlap still find the right doc (no keyword hit → semantic hits are still returned). Requires vectors — run `embed_knowledge` once first; `semantic: true` without vectors returns a friendly "run embed_knowledge first" error (never a crash, never a silent FTS fallback).
 
 | Param              | Type      | Required | Description                                                                                                                                        |
 | ------------------ | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -197,6 +216,7 @@ Full-text search of knowledge base docs with relevance ranking. Exact terms are 
 | `includeContent`   | boolean   | No       | Return full chunk bodies inline (search + read in one call — no `get_knowledge_section` round trips); bodies are filled in rank order up to the budget |
 | `maxContent`       | number    | No       | Total char budget for inline bodies (default 8,000, max 20,000; the first overflow is truncated, later results omit content)                        |
 | `maxResultsPerDoc` | number    | No       | Cap results per doc (default 3; 0 disables) — a top-10 that samples several docs beats ten hits from a single loot table                            |
+| `semantic`         | boolean   | No       | **Hybrid retrieval** (default: `false` — byte-identical to today's FTS-only path): embed the query and blend semantic (cosine) hits in as `0.7·bm25 + 0.3·cosine`. Requires `embed_knowledge` to have been run once |
 | `limit`            | number    | No       | Max results, 1–100 (default: 10)                                                                                                                    |
 
 **Output:** Chunks ranked by relevance (bm25), each with `topic` (chunk id), `docTopic` (file-level topic), title, section, score, portable `type`, `source`, a line-window snippet, **read-cost `chars`/`words` metadata** (agents can budget context before reading), and — when `includeContent` was requested — the capped `content` body. JavaDocs must be indexed with `index_javadocs` first.
@@ -493,6 +513,7 @@ atomic) — the folder never drifts.
 
 - `@modelcontextprotocol/sdk` 1.30
 - `adm-zip` (pure-JS zip read/write — no native dependencies)
+- `@huggingface/transformers` 3.8.1 (WASM embeddings for `embed_knowledge` — lazy-imported; npm override maps its native `onnxruntime-node` onto `onnxruntime-web`, pure JS/WASM)
 - `node:sqlite` (built-in, no native dependencies)
 - `zod` 3.25
 - Node.js ≥ 22.5

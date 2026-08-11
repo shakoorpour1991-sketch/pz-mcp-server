@@ -33,6 +33,7 @@
   "author": "shakoorpour1991-sketch",
   "license": "MIT",
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "adm-zip": "^0.6.0",
     "pino": "^10.3.1",
@@ -58,5 +59,10 @@
   "bugs": {
     "url": "https://github.com/shakoorpour1991-sketch/pz-mcp-server/issues"
   },
-  "homepage": "https://github.com/shakoorpour1991-sketch/pz-mcp-server#readme"
+  "homepage": "https://github.com/shakoorpour1991-sketch/pz-mcp-server#readme",
+  "overrides": {
+    "@huggingface/transformers": {
+      "onnxruntime-node": "npm:onnxruntime-web@1.22.0-dev.20250409-89f8206ba4"
+    }
+  }
 }

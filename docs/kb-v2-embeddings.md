@@ -1,7 +1,9 @@
-# KB v2 — Phase 5: Semantic search (embeddings) plan
+# KB v2 — Phase 5: Semantic search (embeddings) — implemented (Option A)
 
-**Status:** ⏸ parked — design locked, awaiting implementation go-ahead.
+**Status:** ✅ **shipped — Option A (local WASM embeddings) is implemented and green.**
 **Scope:** Finding #7b from the KB overhaul (`reload` vs `reloads` is solved by porter stemming, which shipped in Phase 0; *conceptual* matching — "what do I need for blacksmithing" surfacing the blacksmithing doc without keyword overlap — needs vector search).
+
+**What shipped (2026-08):** `embed_knowledge` tool + `search_knowledge_base { semantic: true }` hybrid search, schema **v5** (`knowledge_chunk_vectors`), `src/knowledge/EmbeddingManager.ts` (WASM encoder + cosine/blend), `PZ_MCP_EMBEDDING_MODEL` / `PZ_MCP_EMBEDDING_BATCH_SIZE` env vars, tests + docs. Everything is **opt-in**: no model downloads at install/boot/index time; embedding happens only via `embed_knowledge`; `semantic: true` without vectors returns a friendly "run embed_knowledge first" error (never a crash, never a silent FTS fallback). Model downloads **once** into `<data>/models/` (`<cacheDir>/<org>/<repo>/` layout) and persists across restarts. **Option B (API providers) is OUT OF SCOPE** — the storage layer is provider-agnostic, but only the local encoder is implemented.
 
 ---
 
@@ -22,7 +24,7 @@ So Phase 5 is purely additive: **vectors + a similarity path on top of the exist
 
 1. **Hybrid retrieval, FTS-first.** Keyword search stays the primary path — in modding, exact identifiers (class names, method signatures, script property names) are the ground truth and FTS nails those. Semantic search is a *recall booster*: `hybrid = keyword hits ∪ semantic hits`, re-ranked by a score blend (`0.7 · bm25 + 0.3 · cosine` tunable). No keyword hit → still show top semantic hits so conceptual questions work.
 2. **Local-first, zero-native-dependency preserved.** The project's defining constraint is "pure TypeScript + built-in `node:sqlite`, no native deps". Research (2026) confirms a fully local path now exists that keeps that promise:
-   - **`@huggingface/transformers` (transformers.js)** runs embedding models in Node on the **WASM backend** — no native compilation, works on Windows. `onnxruntime-node` is an optional perf upgrade (native, needs VC++ redist), but the WASM backend is the default and keeps the repo dependency-free.
+   - **`@huggingface/transformers` (transformers.js) on the pure WASM backend** — no native compilation, works on Windows. transformers.js v3 hard-depends on `onnxruntime-node` (native), so `package.json` pins **v3.8.1** and uses an **npm override** mapping `onnxruntime-node` → `onnxruntime-web` (pure JS/WASM): the native module is never installed and the WASM runtime ships in the package. `env.backends.onnx.wasm.wasmPaths` points at onnxruntime-web's local `dist/` as a `file://` URL (a raw Windows path would be parsed as the `c:` URL scheme by its factory loader), `numThreads = 1`, `env.allowRemoteModels` gates the one-time download.
    - **Vector storage without sqlite-vec:** `node:sqlite`'s `DatabaseSync` has no clean `load_extension` path, so a hosted SQLite extension (sqlite-vec) is a poor fit. Instead store each vector as a `Float32Array` → `BLOB` in a plain `knowledge_chunk_vectors` table (one row per chunk). Brute-force cosine over 108k × 384-dim vectors with typed arrays is **~10–50 ms per query** in JS — comfortably fast for an MCP tool, zero new infrastructure.
    - Model: `all-MiniLM-L6-v2` (ONNX ~90 MB, 384 dims) or `bge-small-en-v1.5` (~130 MB, 384 dims, slightly better retrieval quality). Download once into the data dir at first index.
 3. **API option stays optional (opt-in flag).** `PZ_MCP_EMBEDDING_PROVIDER` + `..._API_KEY` env vars; when set, index-time embedding goes through the provider instead of the local model. Useful for users who prefer cloud quality or lack the disk/RAM for a local model. Off by default.
@@ -64,7 +66,7 @@ CREATE INDEX idx_kcv_doc ON knowledge_chunk_vectors (doc_topic);
 3. FTS bm25 as today → top-K.
 4. Merge, blend scores, cap at `limit`, decorate with existing `type`/`package`/`section` metadata, render with the existing formatter.
 
-**Files touched (estimate):** `src/knowledge/EmbeddingManager.ts` (new), `src/knowledge/KnowledgeBaseManager.ts` (v3 migration + vector table), `src/tools/localData.ts`, `src/schemas.ts`, `src/utils/config.ts` (env), `src/utils/formatters.ts`, tests, docs. **No package.json dependency changes** (transformers.js loads models from the data dir; WASM runtime bundles via the package itself).
+**Files touched (as built):** `src/knowledge/EmbeddingManager.ts` (new), `src/knowledge/KnowledgeBaseManager.ts` (v5 migration + vector table + hybrid search), `src/tools/localData.ts` (`embed_knowledge` tool + semantic forwarding), `src/schemas.ts` (schema + `TOOL_SCHEMAS`), `src/utils/config.ts` (env), `src/utils/formatters.ts` (`formatEmbedKnowledgeResults`), `src/tools/registry.ts` + `src/index.ts` (wiring), `package.json` (transformers v3.8.1 + `onnxruntime-node`→`onnxruntime-web` override), tests, docs.
 
 ---
 
@@ -102,10 +104,10 @@ CREATE INDEX idx_kcv_doc ON knowledge_chunk_vectors (doc_topic);
 
 ## 6. Sequencing
 
-| Step | Work | Verify |
-|---|---|---|
-| 1 | v3 migration (vector table) + `EmbeddingManager` (WASM encode, batch, workers) | unit tests with a tiny stub encoder; `npm run build` |
-| 2 | `embed_knowledge` tool + incremental backfill | `npm run verify:kb` extended with vector checks |
-| 3 | Hybrid search (merge + blend) + `semantic` param + formatter | integration tests; real-corpus smoke vs the 11 findings |
-| 4 | Option B provider adapter (env-gated, never runs by default) | mock HTTP tests; docs |
-| 5 | README/TOOLS.md/CHANGELOG/progress-file update + full suite + review | `npm test`, `npm run lint` |
+| Step | Work | Verify | Status |
+|---|---|---|---|
+| 1 | v5 migration (vector table) + `EmbeddingManager` (WASM encode, batch) | unit tests with a tiny stub encoder; `npm run build` | ✅ |
+| 2 | `embed_knowledge` tool + incremental backfill | `npm run verify:kb` extended with vector checks | ✅ |
+| 3 | Hybrid search (merge + blend) + `semantic` param + formatter | integration tests; real-corpus smoke vs the 11 findings | ✅ |
+| 4 | Option B provider adapter (env-gated, never runs by default) | mock HTTP tests; docs | ⬜ **out of scope** |
+| 5 | README/TOOLS.md/CHANGELOG/progress-file update + full suite + review | `npm test`, `npm run lint` | ✅ (598 tests / 118 suites, `verify:kb` green) |

@@ -17,7 +17,11 @@
  *  - incremental sync: unchanged files skipped before read/parse; deleted
  *    files pruned together with their chunks
  *  - migration: a legacy v1 DB (full-copy docs + FTS) is dropped and
- *    recreated as v2
+ *    recreated as v5 (chunks + external-content FTS + bodyless/tabley +
+ *    Phase 5 semantic vector table)
+ *  - Phase 5 (opt-in embeddings): the schema carries the v5
+ *    knowledge_chunk_vectors table + index, and indexing alone leaves it
+ *    EMPTY — nothing is downloaded or embedded unless embed_knowledge runs
  *
  * Usage:  node scripts/_verify_kb.mjs     (no args — uses the repo's KB)
  *         npm run verify:kb
@@ -245,6 +249,38 @@ try {
       .prepare("SELECT COUNT(*) AS n FROM knowledge_docs WHERE tabley = 1")
       .get();
     check("tabley docs flagged in DB", t.n > 0, `${t.n} table-heavy docs`);
+    // Phase 5: schema is v5 and the vector table exists with the expected
+    // columns + index — but indexing alone NEVER embeds (opt-in, zero
+    // downloads at index time).
+    check(
+      "schema version is v5 (semantic vector table)",
+      kbDb.prepare("PRAGMA user_version").get().user_version === 5,
+    );
+    const vecCols = kbDb
+      .prepare("PRAGMA table_info(knowledge_chunk_vectors)")
+      .all()
+      .map((c) => c.name);
+    check(
+      "knowledge_chunk_vectors has the v5 columns",
+      ["chunk_topic", "doc_topic", "model", "dims", "vector", "updated_at"].every(
+        (c) => vecCols.includes(c),
+      ),
+      vecCols.join(","),
+    );
+    check(
+      "idx_kcv_doc index present",
+      kbDb
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_kcv_doc'")
+        .get() !== undefined,
+    );
+    const vecCount = kbDb
+      .prepare("SELECT COUNT(*) AS n FROM knowledge_chunk_vectors")
+      .get();
+    check(
+      "indexing left the vector table empty (opt-in embeddings)",
+      vecCount.n === 0,
+      `${vecCount.n} vectors`,
+    );
   } finally {
     kbDb.close();
   }
@@ -306,12 +342,15 @@ try {
       .all()
       .map((c) => c.name);
     check(
-      "legacy DB migrated to v4 (doc_type, bodyless, tabley, no content copy, no full-copy FTS)",
+      "legacy DB migrated to v5 (doc_type, bodyless, tabley, vector table, no content copy, no full-copy FTS)",
       docCols.includes("doc_type") && !docCols.includes("content") &&
         docCols.includes("tabley") &&
         chunkCols.includes("bodyless") &&
         checkDb.prepare("SELECT name FROM sqlite_master WHERE name = 'knowledge_fts'").get() === undefined &&
-        checkDb.prepare("PRAGMA user_version").get().user_version === 4,
+        checkDb.prepare("PRAGMA user_version").get().user_version === 5 &&
+        checkDb
+          .prepare("SELECT name FROM sqlite_master WHERE name = 'knowledge_chunk_vectors'")
+          .get() !== undefined,
     );
     check(
       "legacy rows gone after migration",

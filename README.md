@@ -89,7 +89,7 @@
 ## Stats
 
 - **30 MCP tools** across 8 channels
-- **569 tests / 112 suites** — green (build + lint + format:check + coverage + audit)
+- **598 tests / 118 suites** — green (build + lint + format:check + coverage + audit)
 - Coverage: 94.24% line · 85.62% functions · 93.76% branches
 - **0 vulnerabilities** (`npm audit`)
 - **~9,383 vanilla items** · 8,133 references parsed (Build 42.20)
@@ -160,7 +160,7 @@ All variables validated at startup via a single Zod schema — invalid values fa
 - `npm run build` — compile TypeScript
 - `npm run dev` / `npm start` — run (tsx dev / compiled)
 - `npm run lint` — ESLint
-- `npm test` — build + full suite (569 tests / 112 suites)
+- `npm test` — build + full suite (598 tests / 118 suites)
 - `npm run coverage` — coverage report (thresholds: 85/80/70)
 - `npm run benchmark` — hermetic DB/FTS performance baselines
 - `npm run verify:kb` · `npm run verify:deck` · `npm run verify:javadocs` — hermetic verification

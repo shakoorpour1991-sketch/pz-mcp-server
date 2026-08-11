@@ -93,7 +93,7 @@ Progress during download shows in the dashboard via SSE (indeterminate while Ste
 ## 6. Constraints & conventions
 
 - Milestones: build → **verify with real tool output** → fix → commit → next. One commit per milestone.
-- `npm run build` && `npm test` && `npm run lint` must stay green (559/559 tests).
+- `npm run build` && `npm test` && `npm run lint` must stay green (598/598 tests).
 - No drive-by refactors, no overengineering, minimal new dependencies.
 - Update `docs/project-summary.md` (canonical AI context), README tool tables, CHANGELOG (Unreleased) when the feature lands.
 - Return unified diffs + LOCAL AGENT INSTRUCTIONS; diffs apply against the current working tree.

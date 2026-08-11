@@ -501,6 +501,43 @@ export function formatKbIndexResults(result: {
   return output;
 }
 
+/**
+ * embed_knowledge results (Phase 5 semantic vectors) — model/dims, per-run
+ * counters, dry-run preview, and the one-time download note.
+ */
+export function formatEmbedKnowledgeResults(result: {
+  model: string;
+  dims: number;
+  total: number;
+  vectors: number;
+  embedded: number;
+  skipped: number;
+  modelChanged: boolean;
+  dryRun: boolean;
+  durationMs: number;
+}): string {
+  const verb = result.dryRun ? "would embed" : "embedded";
+  let output = `## Knowledge Base Embedding Results\n\n`;
+  output += `- **Model**: ${result.model} (${result.dims} dims)\n`;
+  output += `- **Chunks**: ${result.total} total · ${result.vectors} with vectors\n`;
+  output += `- **${verb}**: ${result.embedded} chunk(s) this run\n`;
+  if (result.skipped > 0) {
+    output += `- **Skipped (already embedded)**: ${result.skipped}\n`;
+  }
+  if (result.modelChanged) {
+    output += `- **Model changed**: existing vectors were wiped — a clean re-embed was run\n`;
+  }
+  if (result.dryRun) {
+    output += `\nDRY RUN — no model download, no embedding, no writes happened. Re-run without dryRun: true to embed.\n`;
+  } else if (result.durationMs > 0) {
+    output += `- **Duration**: ${result.durationMs}ms\n`;
+  }
+  if (result.vectors === 0 && result.total > 0) {
+    output += `\n⚠️ No vectors yet — run embed_knowledge (without dryRun) once; the model downloads into <data>/models/ and persists across restarts. Then use search_knowledge_base with semantic: true.\n`;
+  }
+  return output;
+}
+
 export function formatJavadocsIndexResults(result: {
   mode?: "shipped" | "source";
   ingest: {

@@ -26,7 +26,7 @@ admin/
   bridge.mjs               # Control Deck HTTP bridge (port 8787) — JSON-RPC over stdio to the MCP server
   index.html / main.mjs / data.mjs / style.css   # Control Deck UI
 scripts/                   # maintenance + verification scripts (verify:kb, verify:deck, _verify_*, ...)
-tests/                     # node:test suites (559 tests, 111 suites) — build first, import from dist/
+tests/                     # node:test suites (598 tests, 118 suites) — build first, import from dist/
 knowledge-base/            # repo-shipped modding docs + javadocs/ (distilled Java API reference)
 zedData/ (in src/validation/zedData/)  # vendored pz-scripts-data dataset + vanillaVerified.json
 docs/                      # project-summary (canonical), kb-v2-*, mod-workspace, USAGE_EXAMPLES

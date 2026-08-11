@@ -33,6 +33,7 @@ import { RecipeAnalyzer } from "./analyzers/RecipeAnalyzer.js";
 import { ScriptGenerator } from "./generators/ScriptGenerator.js";
 import { ValidationEngine } from "./validation/ValidationEngine.js";
 import { KnowledgeBaseManager } from "./knowledge/KnowledgeBaseManager.js";
+import { EmbeddingManager } from "./knowledge/EmbeddingManager.js";
 import { PathManager } from "./utils/PathManager.js";
 import { SteamWorkshopClient } from "./workshop/SteamWorkshopClient.js";
 import { SteamCmdDownloader } from "./workshop/SteamCmdDownloader.js";
@@ -101,8 +102,12 @@ async function initializeServer() {
     const validator = new ValidationEngine(dbManager);
     const recipeAnalyzer = new RecipeAnalyzer(dbManager);
 
-    // Initialize knowledge base manager
-    knowledgeBaseManager = new KnowledgeBaseManager();
+    // Initialize knowledge base manager + Phase 5 semantic engine (opt-in —
+    // the model is never touched at boot; embed_knowledge loads it lazily).
+    const embeddingManager = new EmbeddingManager();
+    knowledgeBaseManager = new KnowledgeBaseManager(undefined, {
+      embeddingManager,
+    });
     await knowledgeBaseManager.initialize();
 
     // Initialize Steam Workshop metadata client (keyless) + SteamCMD downloader
@@ -141,6 +146,7 @@ async function initializeServer() {
       workspaceManager,
       modInstaller,
       modGenManager,
+      embeddingManager,
     };
 
     logger.info("🎮 Project Zomboid MCP Server initialized successfully");

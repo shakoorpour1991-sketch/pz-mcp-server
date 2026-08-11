@@ -480,12 +480,61 @@ export const SearchKnowledgeBaseSchema = z.object({
     .describe(
       "Cap results per doc (default 3; 0 disables) so one giant doc can't flood the top-N — a top-10 that samples several docs beats ten hits from a single loot table.",
     ),
+  semantic: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "Hybrid search (Phase 5): embed the query and blend semantic cosine hits with the keyword results (0.7·bm25 + 0.3·cosine) so conceptual questions without keyword overlap still surface the right docs. Requires the vectors to be indexed — run embed_knowledge first (a friendly error guides you when they are missing). Off by default: without it the pipeline is byte-identical to today's FTS search.",
+    ),
   limit: z
     .number()
     .min(1)
     .max(100)
     .default(10)
     .describe("Maximum number of results"),
+});
+
+/**
+ * embed_knowledge — Phase 5 semantic vectors. Everything here is opt-in: the
+ * model downloads at most once into <data>/models/ and only when this tool runs
+ * non-dry; re-running is incremental (only chunks without a vector are
+ * embedded) and model changes force a clean re-embed.
+ */
+export const EmbedKnowledgeSchema = z.object({
+  model: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe(
+      "Embedding model id (default: PZ_MCP_EMBEDDING_MODEL env or Xenova/all-MiniLM-L6-v2, 384 dims). The model downloads once into <data>/models/ on first use. Changing the model forces a clean re-embed of every chunk.",
+    ),
+  batchSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(512)
+    .optional()
+    .describe(
+      "Chunks embedded per batch (default: PZ_MCP_EMBEDDING_BATCH_SIZE env or 32).",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200000)
+    .optional()
+    .describe(
+      "Only embed the first N pending chunks (useful for smoke tests / incremental sync; default: all pending).",
+    ),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "Preview what would be embedded (model, dims, pending/skipped counts) — no model download, no embedding, no writes.",
+    ),
 });
 
 export const GetKnowledgeSectionSchema = z.object({
@@ -868,6 +917,7 @@ export const TOOL_SCHEMAS = {
   parse_game_files: ParseGameFilesSchema,
   index_knowledge_base: IndexKnowledgeBaseSchema,
   index_javadocs: IndexJavadocsSchema,
+  embed_knowledge: EmbedKnowledgeSchema,
   analyze_recipe_chain: AnalyzeRecipeChainSchema,
   detect_recipe_conflicts: DetectRecipeConflictsSchema,
   export_mod_script: ExportModScriptSchema,
