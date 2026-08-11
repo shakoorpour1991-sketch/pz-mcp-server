@@ -47,6 +47,7 @@ export const TOOL_ICONS = {
   parse_game_files: "db",
   index_knowledge_base: "book",
   index_javadocs: "code",
+  embed_knowledge: "db",
   search_knowledge_base: "search",
   list_knowledge_topics: "book",
   get_knowledge_section: "book",
@@ -106,6 +107,7 @@ export const TOOL_CATS = [
     match: [
       "index_knowledge_base",
       "index_javadocs",
+      "embed_knowledge",
       "search_knowledge_base",
       "list_knowledge_topics",
       "get_knowledge_section",
@@ -198,9 +200,14 @@ export const TOOL_GUIDES = {
     how: "No arguments needed — the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs, one file per API type) is indexed directly, so it works on any machine. Optional <b>path</b>: a raw generated JavaDocs HTML tree (or distilled markdown dir) to re-ingest from scratch (<b>source</b> is an alias for path; <b>output</b> sets where generated markdown lands). Optional <b>overwrite</b> (default true; false for an incremental sync).",
     ex: '{} — or path: "C:/Users/you/PZ-JavaDocs" to re-ingest from HTML',
   },
+  embed_knowledge: {
+    what: "Semantic indexing (Phase 5, opt-in): embed every knowledge chunk into vectors so search_knowledge_base can answer conceptual questions with <b>semantic: true</b>. Nothing downloads at boot or index time — the model downloads once here, into <data>/models/, and persists (a re-run with the model cached never re-downloads).",
+    how: "Just press Run — it embeds every chunk missing a vector, incrementally (re-running only touches new/changed chunks). Optional: <b>model</b> (default all-MiniLM-L6-v2; changing it forces a clean re-embed), <b>batchSize</b> (chunks per batch, default 32), <b>limit</b> (cap this run — handy for a quick smoke test), and <b>dryRun</b> (preview what would be embedded — no download, no writes). First run downloads ~90–130 MB once — allow a few minutes.",
+    ex: "{} — or { dryRun: true } to preview without downloading",
+  },
   search_knowledge_base: {
     what: "Search the indexed knowledge base with relevance ranking (bm25 with column weights, stemmed + prefix-matched). Results are <b>section-level chunks</b> — a wiki section or a single javadocs method/field — not whole pages, so every hit is precise. Click <b>View section</b> on a result to read exactly that chunk.",
-    how: '<b>query</b> is required, e.g. "blacksmithing recipe". Natural-language queries rank prose docs (wiki/research/api-docs) first so JavaDocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank JavaDocs first. Optional: <b>topic</b> (exact doc topic, e.g. wiki/Farming), <b>type</b> or <b>types</b> (single / multi-select doc types — e.g. types: research + wiki for prose only), <b>package</b> (Java package — javadocs only, e.g. zombie.iso), <b>includeContent</b> (return full chunk bodies inline — search + read in one call, capped by <b>maxContent</b>, default 8000 chars), <b>maxResultsPerDoc</b> (cap how many chunks one doc may take in the top-N — default 3, 0 disables), and <b>limit</b> (default 10). JavaDocs must be indexed first via index_javadocs.',
+    how: '<b>query</b> is required, e.g. "blacksmithing recipe". Natural-language queries rank prose docs (wiki/research/api-docs) first so JavaDocs constants don\'t flood the list; identifier-like queries (getSquare, Base.Hammer) rank JavaDocs first. Optional: <b>topic</b> (exact doc topic, e.g. wiki/Farming), <b>type</b> or <b>types</b> (single / multi-select doc types — e.g. types: research + wiki for prose only), <b>package</b> (Java package — javadocs only, e.g. zombie.iso), <b>semantic</b> (hybrid retrieval — blends vector similarity in at 0.7·bm25 + 0.3·cosine, so conceptual questions with zero keyword overlap still find the right doc; run <b>embed_knowledge</b> once first — without vectors it returns a friendly "run embed_knowledge first" error), <b>includeContent</b> (return full chunk bodies inline — search + read in one call, capped by <b>maxContent</b>, default 8000 chars), <b>maxResultsPerDoc</b> (cap how many chunks one doc may take in the top-N — default 3, 0 disables), and <b>limit</b> (default 10). JavaDocs must be indexed first via index_javadocs.',
     ex: 'query: "getSquare" · type: "javadocs" · package: "zombie.iso"',
   },
   list_knowledge_topics: {
@@ -387,6 +394,7 @@ export const EXAMPLES = {
   parse_game_files: {},
   index_knowledge_base: {},
   index_javadocs: {},
+  embed_knowledge: { dryRun: true },
   search_knowledge_base: { query: "loot distribution" },
   list_knowledge_topics: {},
   get_knowledge_section: {

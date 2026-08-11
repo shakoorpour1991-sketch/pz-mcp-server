@@ -190,7 +190,10 @@ const S = {
     // Full-doc view (resources/read) opened from a browse row.
     viewDoc: null, // { topic, title, text }
     // Filter controls, persisted across tab switches (re-applied on render).
-    filters: { types: [], prefix: "", perDoc: 3, include: false },
+    filters: { types: [], prefix: "", perDoc: 3, include: false, semantic: false },
+    // Phase 5: embed_knowledge state — last result (model/dims/vectors) and
+    // busy flag drive the badges in the KB panel + Status KB index card.
+    embed: { busy: false, last: null },
   },
   // Index state shown on the Status page (refreshed from list_knowledge_topics).
   kbStatus: { state: "idle", docs: 0, javadocs: 0, byType: {}, total: 0 },
@@ -409,6 +412,7 @@ async function handshake() {
   loadEnv();
   renderView();
   refreshKbStatus();
+  refreshKbEmbedState();
 }
 
 /* ---------- SSE wire ---------- */
@@ -701,6 +705,13 @@ function statusHTML() {
     cardCollapseBtn("kb-idx") +
     '<span class="badge b-dim" style="margin-left:auto">persists across restarts — index once, it stays</span></h3>' +
     '<div class="kb-idx-grid" id="kbIdxGrid"></div>' +
+    '<div class="kb-idx-foot">' +
+    '<span class="badge b-dim" data-kb-embed-state>semantic: not embedded yet</span>' +
+    '<span style="flex:1"></span>' +
+    '<button class="btn sm" data-act="kb-embed" title="embed_knowledge: embed semantic vectors for hybrid search — one-time model download (~90–130 MB) into <data>/models/, persisted across restarts; re-runs are incremental">' +
+    ICONS.db +
+    " Embed vectors</button>" +
+    "</div>" +
     "</section>" +
     '<div class="status-grid">' +
     '<section class="glass card panel-card" data-card="transport"><h3 data-act="card-collapse" data-card="transport">' +
@@ -1004,6 +1015,8 @@ let _kbIdxHtml = "";
 function updateKbStatusDom() {
   const grid = $("#kbIdxGrid");
   if (!grid) return;
+  // Refresh the semantic-vector badge whenever the Status KB card renders.
+  updateKbEmbedBadge();
   const s = S.kbStatus;
   if (s.state === "idle" || s.state === "loading") {
     grid.innerHTML =
@@ -2076,6 +2089,8 @@ function kbApplyFilters() {
     raw === "" ? 3 : Math.max(0, Math.min(20, Math.round(Number(raw) || 3)));
   const inc = $("#kbInclude");
   S.kbdb.filters.include = !!(inc && inc.checked);
+  const sem = $("#kbSemantic");
+  S.kbdb.filters.semantic = !!(sem && sem.checked);
 }
 // Re-apply the persisted filter state to freshly-rendered controls.
 function kbRestoreFilterDom() {
@@ -2091,8 +2106,11 @@ function kbRestoreFilterDom() {
   if (perDoc) perDoc.value = String(S.kbdb.filters.perDoc);
   const inc = $("#kbInclude");
   if (inc) inc.checked = S.kbdb.filters.include;
+  const sem = $("#kbSemantic");
+  if (sem) sem.checked = S.kbdb.filters.semantic;
   const btn = $("#kbBrowseBtn");
   if (btn) btn.classList.toggle("primary", S.kbdb.mode === "browse");
+  updateKbEmbedBadge();
 }
 function restoreKbDb() {
   const out = $("#kbOut");
@@ -2120,7 +2138,7 @@ function restoreKbDb() {
 async function kbDbSearch() {
   kbApplyFilters();
   const q = $("#kbQuery").value.trim();
-  const { types, perDoc, include } = S.kbdb.filters;
+  const { types, perDoc, include, semantic } = S.kbdb.filters;
   const out = $("#kbOut");
   if (!q) {
     toast("Type a KB query first", "warn");
@@ -2136,6 +2154,10 @@ async function kbDbSearch() {
     // maxResultsPerDoc: 3 = server default, 0 disables the per-doc cap.
     if (perDoc !== 3) args.maxResultsPerDoc = perDoc;
     if (include) args.includeContent = true;
+    // Phase 5 hybrid retrieval — requires embed_knowledge to have run once;
+    // without vectors the server returns a friendly "run embed_knowledge"
+    // error which surfaces in the panel below.
+    if (semantic) args.semantic = true;
     const reply = await rpc("tools/call", {
       name: "search_knowledge_base",
       arguments: args,
@@ -2158,6 +2180,139 @@ async function kbDbSearch() {
       '<div class="md-out" style="color:#FDA4AF">✖ ' + esc(e.message || e) + "</div>";
   }
 }
+/* ---------- embed_knowledge (Phase 5 semantic vectors) ---------- */
+// Lightweight badge refresh at handshake: a dry-run preview (no download, no
+// writes — just a DB count + model read) restores the truthful vector state
+// across restarts. Never shows a spinner; failures leave the badge idle.
+async function refreshKbEmbedState() {
+  if (!S.handshaken) return;
+  try {
+    const preview = await rpc("tools/call", {
+      name: "embed_knowledge",
+      arguments: { dryRun: true },
+    });
+    const p = preview.result?.structuredContent || {};
+    S.kbdb.embed.last = { ...p };
+    updateKbEmbedBadge();
+  } catch {
+    // Server without embed_knowledge or a KB read hiccup — badge stays idle.
+  }
+}
+// Renders the semantic-vector state badge in the KB panel + Status KB index
+// card (both carry [data-kb-embed-state]). No tool calls — it reads state.
+function updateKbEmbedBadge() {
+  const e = S.kbdb.embed;
+  let html;
+  if (e.busy)
+    html =
+      '<span class="spinner" style="width:12px;height:12px;vertical-align:-2px"></span> embedding…';
+  else if (e.last && e.last.vectors > 0)
+    html =
+      "✓ " +
+      (e.last.vectors ?? 0).toLocaleString() +
+      " vectors · " +
+      esc(e.last.model || "");
+  else html = "semantic: not embedded yet";
+  for (const el of document.querySelectorAll("[data-kb-embed-state]"))
+    el.innerHTML = html;
+}
+// Embed semantic vectors from the deck: cheap dry-run preview first (no
+// download, no writes), then a confirm for the one-time model download, then
+// the real run. The badge + panel reflect the last result; the Status KB card
+// refreshes after a successful embed.
+async function kbDbEmbed() {
+  if (S.kbdb.embed.busy) return;
+  S.kbdb.embed.busy = true;
+  updateKbEmbedBadge();
+  const out = $("#kbOut");
+  try {
+    // 1) Dry-run preview — embed_knowledge dryRun never downloads/embeds/writes.
+    const preview = await rpc("tools/call", {
+      name: "embed_knowledge",
+      arguments: { dryRun: true },
+    });
+    const p = preview.result?.structuredContent || {};
+    const pending = Math.max(0, (p.total ?? 0) - (p.skipped ?? 0));
+    if (pending === 0) {
+      // Everything already embedded — nothing to do, no download.
+      S.kbdb.embed.last = { ...p };
+      toast("Semantic vectors are up to date · " + (p.vectors ?? 0));
+      updateKbEmbedBadge();
+      return;
+    }
+    // 2) Confirm the download (only when the model isn't cached yet) + embed.
+    const firstRun = (p.vectors ?? 0) === 0;
+    const ok = await confirmAsk(
+      "<b>Embed " +
+        pending.toLocaleString() +
+        " chunk" +
+        (pending === 1 ? "" : "s") +
+        "?</b><br>" +
+        (firstRun
+          ? "First run downloads the <b>" +
+            esc(p.model || "embedding model") +
+            "</b> model (~90–130 MB, once, into <code>&lt;data&gt;/models/</code>, persisted across restarts) and embeds " +
+            (p.total ?? 0).toLocaleString() +
+            " chunks in total."
+          : "The model is already cached — only " +
+            pending.toLocaleString() +
+            " new/changed chunk" +
+            (pending === 1 ? "" : "s") +
+            " will embed.") +
+        " Re-runs are incremental — only new/changed chunks embed.",
+      "Embedding " +
+        (p.total ?? 0).toLocaleString() +
+        " chunks on the WASM backend can take several minutes — keep this tab open.",
+    );
+    if (!ok) return;
+    // 3) Real run (LONG_TOOLS on the bridge — 30 min budget for first run).
+    if (out)
+      out.innerHTML =
+        '<div class="md-out" style="display:flex;align-items:center;gap:10px"><span class="spinner"></span> embedding knowledge base… (first run downloads the model — this can take a while)</div>';
+    const reply = await rpc("tools/call", {
+      name: "embed_knowledge",
+      arguments: {},
+    });
+    const r = reply.result?.structuredContent || {};
+    S.kbdb.embed.last = r;
+    updateKbEmbedBadge();
+    toast(
+      "Embedded " +
+        (r.embedded ?? 0).toLocaleString() +
+        " chunk" +
+        (r.embedded === 1 ? "" : "s") +
+        " · " +
+        (r.model || ""),
+    );
+    if (out)
+      out.innerHTML =
+        '<div class="md-out" style="color:var(--emerald)">✓ Embed complete — <b>' +
+        (r.embedded ?? 0).toLocaleString() +
+        "</b> chunk" +
+        (r.embedded === 1 ? "" : "s") +
+        " embedded with <b>" +
+        esc(r.model || "") +
+        "</b> (" +
+        (r.dims ?? 0) +
+        " dims · " +
+        (r.vectors ?? 0).toLocaleString() +
+        " vectors · " +
+        (r.durationMs ?? 0) +
+        "ms). Tick <b>Semantic search</b> above and run your query again.</div>";
+    refreshKbStatus();
+  } catch (e) {
+    toast("embed failed: " + e.message, "warn");
+    if (out)
+      out.innerHTML =
+        '<div class="md-out" style="color:#FDA4AF">✖ ' +
+        esc(e.message || e) +
+        "</div>";
+  } finally {
+    S.kbdb.embed.busy = false;
+    updateKbEmbedBadge();
+  }
+}
+
 // Browse mode: list whole docs via list_knowledge_topics with the same
 // type/prefix filters (paged). Each row's Read button opens resources/read.
 const KB_BROWSE_PAGE = 40;
@@ -2465,6 +2620,7 @@ function databaseHTML() {
     '<input class="field" id="kbPrefix" style="width:200px;min-height:36px" placeholder="topic prefix… e.g. wiki or javadocs/zombie.iso" aria-label="Topic prefix filter" title="list_knowledge_topics / browse: only docs whose topic starts with this (e.g. wiki, research, javadocs/zombie.iso)">' +
     '<input class="field num" id="kbPerDoc" type="number" min="0" max="20" value="3" style="width:84px;min-height:36px" aria-label="Max results per doc" title="search_knowledge_base maxResultsPerDoc: cap how many chunks one doc may occupy in the top-N (0 disables the cap)">' +
     '<label class="kb-inc" title="Return each chunk full body inline (search + read in one call — no extra get_knowledge_section round trips)"><input type="checkbox" id="kbInclude"> include content</label>' +
+    '<label class="kb-inc" title="Hybrid retrieval — blend vector similarity into the keyword ranking (0.7·bm25 + 0.3·cosine) so conceptual questions with zero keyword overlap still find the right doc. Run Embed vectors once first; without vectors the server returns a friendly “run embed_knowledge first” error."><input type="checkbox" id="kbSemantic"> semantic</label>' +
     "</div>" +
     '<div class="kb-bar" style="margin-top:10px">' +
     '<button class="btn sm" data-act="go-tool" data-tool="index_knowledge_base">' +
@@ -2473,9 +2629,13 @@ function databaseHTML() {
     '<button class="btn sm" data-act="go-tool" data-tool="index_javadocs">' +
     ICONS.code +
     " index_javadocs</button>" +
-    '<span class="badge b-dim" style="margin-left:auto">browse = list_knowledge_topics · prose first</span>' +
+    '<button class="btn sm" data-act="kb-embed" id="kbEmbedBtn" title="embed_knowledge: embed semantic vectors for hybrid search — one-time model download (~90–130 MB) into <data>/models/, persisted across restarts; re-runs are incremental (only new/changed chunks)">' +
+    ICONS.db +
+    " Embed vectors</button>" +
+    '<span class="badge b-dim" data-kb-embed-state style="margin-left:auto">semantic: not embedded yet</span>' +
+    '<span class="badge b-dim">browse = list_knowledge_topics · prose first</span>' +
     "</div>" +
-    '<div class="f-hint" style="margin:10px 2px 0">Indexed markdown docs + the repo-shipped JavaDocs reference are split into <b>section chunks</b> — search returns precise units with <b>chars/words</b> so you can budget reads, and <b>View section</b> reads exactly one (wiki section or a single method/field). Tick <b>Include content</b> to get chunk bodies inline. Type chips are <b>multi-select</b> (e.g. research + wiki, no javadocs); <b>per doc</b> caps how many chunks one doc can take in the top-N; <b>Browse docs</b> lists docs (not chunks) with the same filters. Natural-language queries rank wiki/research/api-docs first; identifiers (getSquare) rank JavaDocs first.</div>' +
+    '<div class="f-hint" style="margin:10px 2px 0">Indexed markdown docs + the repo-shipped JavaDocs reference are split into <b>section chunks</b> — search returns precise units with <b>chars/words</b> so you can budget reads, and <b>View section</b> reads exactly one (wiki section or a single method/field). Tick <b>Include content</b> to get chunk bodies inline. Type chips are <b>multi-select</b> (e.g. research + wiki, no javadocs); <b>per doc</b> caps how many chunks one doc can take in the top-N; <b>Browse docs</b> lists docs (not chunks) with the same filters. Natural-language queries rank wiki/research/api-docs first; identifiers (getSquare) rank JavaDocs first. Phase 5: <b>Embed vectors</b> once (one-time model download into <data>/models/), then tick <b>semantic</b> for hybrid retrieval — conceptual questions with no keyword overlap still find the right doc.</div>' +
     '<div id="kbOut" style="margin-top:14px"><div class="md-out" style="color:var(--faint)">Search results will appear here — each result is one section; click <b>View section</b> to read it, or <b>Browse docs</b> to list whole docs.</div></div>' +
     "</section>"
   );
@@ -6153,6 +6313,7 @@ document.addEventListener("click", (e) => {
       kbDbBrowse((S.kbdb.browse?.offset ?? 0) + (S.kbdb.browse?.limit ?? 40));
     else if (a === "kb-browse-prev")
       kbDbBrowse(Math.max(0, (S.kbdb.browse?.offset ?? 0) - (S.kbdb.browse?.limit ?? 40)));
+    else if (a === "kb-embed") kbDbEmbed();
     else if (a === "kb-view-doc") kbDbViewDoc(+act.dataset.i);
     else if (a === "kb-type") {
       const pressed = act.getAttribute("aria-pressed") === "true";

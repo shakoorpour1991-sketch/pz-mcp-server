@@ -35,6 +35,7 @@ const LONG_TOOLS = new Set([
   "parse_game_files",
   "index_knowledge_base",
   "index_javadocs",
+  "embed_knowledge", // first run downloads the model (~90–130 MB) + embeds 108k chunks
   "analyze_mod",
   "workshop_download",
   "workshop_analyze",
@@ -1049,7 +1050,14 @@ const server = http.createServer(async (req, res) => {
             200,
           );
       }
-      const timeout = LONG_TOOLS.has(msg.params?.name) ? 300000 : 120000;
+      // embed_knowledge's first run downloads the model + embeds ~108k chunks
+      // single-threaded on WASM — budget 30 min so the deck never aborts it.
+      const timeout =
+        msg.params?.name === "embed_knowledge"
+          ? 1800000
+          : LONG_TOOLS.has(msg.params?.name)
+            ? 300000
+            : 120000;
       try {
         const reply = await sendToServer(msg, timeout);
         return reply === null

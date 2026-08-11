@@ -4483,3 +4483,13 @@ a.link:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* Status KB index card: semantic-vector footer (Phase 5 embed_knowledge). */
+.kb-idx-foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--stroke-soft);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
