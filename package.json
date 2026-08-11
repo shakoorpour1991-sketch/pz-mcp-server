@@ -17,6 +17,10 @@
     "format:check": "prettier --check src/**/*.ts",
     "verify:deck": "node scripts/_verify_deck.mjs",
     "verify:kb": "node scripts/_verify_kb.mjs",
+    "verify:javadocs": "node scripts/_verify_javadocs.mjs",
+    "verify:workshop": "node scripts/_verify_workshop.mjs",
+    "verify:workshop_analyze": "node scripts/_verify_workshop_analyze.mjs",
+    "verify:workshop_deck": "node scripts/_verify_workshop_deck.mjs",
     "prepublishOnly": "npm test"
   },
   "keywords": [

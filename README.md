@@ -271,7 +271,7 @@ Downloaded mods are read/analyzed only — they are never executed and never aut
 | `npm run dev`         | Run with `tsx` in development mode                      |
 | `npm start`           | Run the compiled server                                 |
 | `npm run lint`        | Run ESLint                                              |
-| `npm test`            | Build + run the full test suite (460 tests / 96 suites) |
+| `npm test`            | Build + run the full test suite (559 tests / 111 suites) |
 | `npm run coverage`    | Test coverage report (after `npm test` has built)       |
 | `npm run benchmark`   | Hermetic DB/FTS performance baselines                   |
 | `npm run verify:deck` | Admin dashboard smoke check                             |

@@ -1,39 +1,33 @@
-# Project Zomboid MCP Server Architecture
+# Project Structure — pz-mcp-server
 
-## Research Summary
+> Superseded. The canonical architecture + tool-surface reference is
+> **`docs/project-summary.md`**; the operational reference (commands, shell
+> constraints, conventions) is **`AGENTS.md`** at the repo root. This file
+> keeps only a quick navigation map.
 
-Based on research, Project Zomboid mods have the following key components:
-
-### File Structure
-- **mod.info**: Metadata file (name, id, author, description, etc.)
-- **media/scripts/*.txt**: Game definitions (items, recipes, sounds, vehicles, etc.)
-- **media/lua/**: Lua script files (client/, server/, shared/ subfolders)
-- **media/**: Other assets (textures, sounds, models, maps, etc.)
-
-### Key File Formats to Parse
-
-1. **mod.info**: Simple key=value format
-   - Required: name, id
-   - Optional: author, description, version, requirements, etc.
-
-2. **Script Files (.txt)**: Structured blocks
-   - module { ... }
-   - item { ... }
-   - recipe { ... }
-   - evolvedrecipe { ... }
-   - fixing { ... }
-   - sound { ... }
-   - vehicle { ... }
-
-3. **Lua Files**: Standard Lua syntax with PZ API calls
-
-## MCP Server Features
-
-The server will provide:
-- Parse and index mod files
-- Query mod information (items, recipes, dependencies)
-- Validate mod structure and compatibility
-- Generate mod templates and boilerplate
-- Search functionality across mod databases
-- Mod conflict detection
-- Recipe chain analysis
+```
+src/
+  index.ts                 # MCP server bootstrap, prompts, knowledge:// resources, ALL_TOOLS
+  schemas.ts               # every tool's zod input schema + TOOL_SCHEMAS (used by the bridge)
+  tools/                   # 29 tool handlers + ToolRegistry (discovery, scripts, analysis, localData,
+                           #   workshop, installer, modgen, workspace, registry, index)
+  database/                # SQLite layer (node:sqlite) — items, references, mods, recipe_ingredients, FTS5
+  parsers/                 # ProjectZomboidParser — game files + mod directories -> DB
+  generators/              # ScriptGenerator — item/recipe/evolvedrecipe/fixing/sound/vehicle templates
+  validation/              # ValidationEngine + ZedScripts knowledge layer (zedData/ dataset, 97 block types)
+  knowledge/               # KnowledgeBaseManager (KB v2 chunked search), kbChunker, javadocs/JavaDocIndexer
+  analyzers/               # ModAnalyzer (structure/lua/balance/deprecations) + RecipeAnalyzer (graph/conflicts)
+  workspace/               # WorkspaceManager — rooted, safety-first mod project management
+  modgen/                  # beginner mod generator (templates, b42Validator, assets)
+  workshop/                # SteamWorkshopClient + SteamCmdDownloader
+  modinstall/              # ModInstaller — .zip/folder -> mods dir
+  utils/                   # shared helpers (scriptScanner, scriptSyntax, fts, config, blockTypes, ...)
+admin/
+  bridge.mjs               # Control Deck HTTP bridge (port 8787) — JSON-RPC over stdio to the MCP server
+  index.html / main.mjs / data.mjs / style.css   # Control Deck UI
+scripts/                   # maintenance + verification scripts (verify:kb, verify:deck, _verify_*, ...)
+tests/                     # node:test suites (559 tests, 111 suites) — build first, import from dist/
+knowledge-base/            # repo-shipped modding docs + javadocs/ (distilled Java API reference)
+zedData/ (in src/validation/zedData/)  # vendored pz-scripts-data dataset + vanillaVerified.json
+docs/                      # project-summary (canonical), kb-v2-*, mod-workspace, USAGE_EXAMPLES
+```

@@ -44,6 +44,26 @@ Search vanilla Project Zomboid content with intelligent matching and structured 
 
 ---
 
+### `search_recipes`
+
+Search the parsed recipe table by name, category, skill, ingredients or results — structured crafting-data search, distinct from `search_vanilla`'s mixed content.
+
+| Param           | Type   | Required | Description                                                                        |
+| --------------- | ------ | -------- | ---------------------------------------------------------------------------------- |
+| `query`         | string | No       | Free-text search on recipe name or id                                              |
+| `category`      | string | No       | Filter by recipe category (e.g. `Carpentry`, `Cooking`, `Repair`)                  |
+| `skill`         | string | No       | Filter by required skill (e.g. `Woodwork`, `Blacksmith`, `Carpentry`)              |
+| `minSkillLevel` | number | No       | Minimum required skill level                                                       |
+| `maxSkillLevel` | number | No       | Maximum required skill level                                                       |
+| `ingredient`    | string | No       | Recipes using this item or tag as an ingredient (accepts `Base.Nails`, `Nails`, or `base:nails`) |
+| `tool`          | string | No       | Recipes requiring this item or tag as a tool (`mode:keep` input)                   |
+| `result`        | string | No       | Recipes producing this item                                                        |
+| `limit`         | number | No       | Max results, 1–100 (default: 20)                                                   |
+
+**Output:** Matching recipes with id, name, category, skill requirements, ingredients and results.
+
+---
+
 ### `generate_script`
 
 Generate Project Zomboid scripts from templates.
@@ -286,12 +306,6 @@ Download a workshop item via SteamCMD into the workshop workspace directory (`PZ
 | `dryRun` | boolean | No       | Preview the download — resolve the item, verify the app, report the target path — without invoking SteamCMD or touching disk (default: `false`) |
 
 **Size cap:** items larger than `PZ_MCP_MAX_DOWNLOAD_BYTES` (default 4 GiB) are refused before any download, in both `workshop_download` and `workshop_analyze`.
-
----
-
-### `workshop_analyze`
-
-Fetch & analyze: downloads the mod (skips if already present), parses its scripts into the database, runs the full analysis suite, and returns a Mod Report.
 
 ---
 

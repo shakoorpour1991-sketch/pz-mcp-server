@@ -57,6 +57,17 @@ export const TOOL_ICONS = {
   modgen_list: "folder",
   modgen_blueprint: "doc",
   modgen_regenerate: "hammer",
+  search_recipes: "search",
+  export_mod_script: "doc",
+  analyze_recipe_chain: "graph",
+  detect_recipe_conflicts: "warn",
+  workshop_search: "search",
+  workshop_get_details: "doc",
+  workshop_download: "download",
+  workshop_analyze: "scan",
+  workspace_create: "folder",
+  workspace_inspect: "scan",
+  workspace_list: "folder",
 };
 export const TOOL_CATS = [
   {
@@ -128,6 +139,12 @@ export const TOOL_CATS = [
       "modgen_blueprint",
       "modgen_regenerate",
     ],
+  },
+  {
+    id: "workspace",
+    label: "Mod Workspace",
+    icon: "folder",
+    match: ["workspace_create", "workspace_inspect", "workspace_list"],
   },
 ];
 export function catForTool(name) {
@@ -266,6 +283,21 @@ export const TOOL_GUIDES = {
     how: "<b>project</b> is required. Pass <b>stats</b> to pin new values (null resets a stat to auto), <b>randomize</b> (array of stat keys) to re-roll them inside the vanilla range, or change <b>modName</b>/<b>author</b>/<b>description</b>/<b>displayName</b>/<b>icon</b>/<b>module</b>. Build 42 checks run first — nothing is written if they fail.",
     ex: 'project: "MyWeapon" · stats: { MaxDamage: 2.2 } · randomize: ["CriticalChance"]',
   },
+  workspace_list: {
+    what: "List mod projects in the workspace (PZ_MCP_WORKSPACE_DIR, default <data>/workspaces) with their mod.info presence.",
+    how: "No arguments needed — press Run.",
+    ex: "—",
+  },
+  workspace_create: {
+    what: "Scaffold a new Build-42 mod project (mod.info, workshop.txt, poster.png, common/ + versioned media/ tree). Existing files are never modified; dryRun previews.",
+    how: "<b>name</b> and <b>modId</b> are required. Optional: <b>modName</b>, <b>author</b>, <b>description</b>, <b>version</b>, <b>buildVersion</b> (default 42), <b>template</b> (minimal/full), <b>requires</b>, <b>sampleItem</b>, <b>includePoster</b>, <b>overwrite</b>, and <b>dryRun</b> to preview the exact scaffold.",
+    ex: 'name: "MyMod" · modId: "mymod" · modName: "My Mod" · buildVersion: "42"',
+  },
+  workspace_inspect: {
+    what: "Full structured inspection of a mod project: metadata, supported builds, dependencies (+ missing), content types, file counts, and validation errors/warnings — same engine as analyze_mod.",
+    how: "<b>project</b> is required — a project name from workspace_list / workspace_create. Optional: <b>checkDependencies</b> (default true) and <b>includeFileList</b> (default false).",
+    ex: 'project: "MyMod"',
+  },
 };
 
 /* Whole-program guide (main page) */
@@ -282,8 +314,8 @@ export const GUIDE_STEPS = [
   },
   {
     icon: "scan",
-    title: "The 7 tabs",
-    body: "<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Installer</b> — auto-detect your game paths and drop mods in (.zip or folders) to install them into Zomboid/mods. <b>Config</b> — accent color, console behaviour and server controls.",
+    title: "The 8 tabs",
+    body: "<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Installer</b> — auto-detect your game paths and drop mods in (.zip or folders) to install them into Zomboid/mods. <b>Generator</b> — one-click Build 42 mod generation from beginner templates. <b>Config</b> — accent color, console behaviour and server controls.",
   },
   {
     icon: "play",
@@ -318,7 +350,7 @@ export const GUIDE_STEPS = [
   {
     icon: "arrowR",
     title: "Keyboard & tips",
-    body: '<span class="kbd">1–7</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.',
+    body: '<span class="kbd">1–8</span> switch tabs · <span class="kbd">T</span> payload inspector · <span class="kbd">Esc</span> close dialogs. Press <b>Enter</b> in any field to Run. The <b>Wire Log</b> shows every real JSON-RPC frame — click one to inspect the exact payload.',
   },
 ];
 
@@ -361,6 +393,47 @@ export const EXAMPLES = {
     topic: "javadocs/zombie.characters.IsoPlayer",
     section: "getPlayer",
   },
+  search_recipes: { ingredient: "Nails", skill: "Woodwork" },
+  export_mod_script: {
+    modPath: "C:/Users/you/Zomboid/mods/MyMod",
+    type: "item",
+    name: "CustomAxe",
+    dryRun: true,
+  },
+  analyze_recipe_chain: {
+    seed: "Base.Axe",
+    direction: "both",
+    maxDepth: 3,
+  },
+  detect_recipe_conflicts: { limit: 50 },
+  workshop_search: { query: "Brita", limit: 20 },
+  workshop_get_details: { id: "2696145877" },
+  workshop_download: { id: "2696145877" },
+  workshop_analyze: { id: "2696145877" },
+  detect_pz_paths: {},
+  install_mod: {
+    source: "C:/Downloads/MyMod.zip",
+    dryRun: true,
+  },
+  modgen_templates: {},
+  modgen_generate: {
+    template: "melee_weapon",
+    name: "MyWeapon",
+    modId: "my_weapon",
+    modName: "My Weapon",
+    itemName: "MyWeaponItem",
+  },
+  modgen_list: {},
+  modgen_blueprint: { project: "MyWeapon" },
+  modgen_regenerate: { project: "MyWeapon", stats: { MaxDamage: 2.2 } },
+  workspace_list: {},
+  workspace_create: {
+    name: "MyMod",
+    modId: "mymod",
+    modName: "My Mod",
+    buildVersion: "42",
+  },
+  workspace_inspect: { project: "MyMod" },
 };
 export const CHAIN_CHIPS = [
   { id: "MillFlour", label: "Mill Flour", hint: "recipe" },

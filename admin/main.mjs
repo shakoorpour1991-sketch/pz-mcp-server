@@ -290,13 +290,13 @@ const S = {
 function saveSettings() {
   try {
     localStorage.setItem("pzdeck.settings", JSON.stringify(S.settings));
-  } catch (e) {}
+  } catch {}
 }
 function loadSettings() {
   try {
     const r = localStorage.getItem("pzdeck.settings");
     if (r) Object.assign(S.settings, JSON.parse(r));
-  } catch (e) {}
+  } catch {}
 }
 function applyAccent(hex) {
   S.settings.accent = hex;
@@ -1625,7 +1625,6 @@ async function callTool(name, args) {
   const cb = $("#tool-" + CSS.escape(name) + ' [data-act="cancel-run"]');
   if (cb) cb.style.display = "inline-flex";
   const t0 = performance.now();
-  const status = { name, dt: null, isError: false, text: "" };
   try {
     const reply = await rpc(
       "tools/call",
@@ -1811,7 +1810,7 @@ function showResult(name, text, dt, reply, isError) {
       : renderMD(text);
   if (diags.length) {
     const d = document.createElement("div");
-    d.innerHTML = diagPanelHTML(diags, name);
+    d.innerHTML = diagPanelHTML(diags);
     body.appendChild(d.firstElementChild);
   }
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1853,7 +1852,7 @@ function restoreResult() {
       : renderMD(r.text);
   if (r.diags && r.diags.length) {
     const d = document.createElement("div");
-    d.innerHTML = diagPanelHTML(r.diags, r.name);
+    d.innerHTML = diagPanelHTML(r.diags);
     body.appendChild(d.firstElementChild);
   }
 }
@@ -2862,7 +2861,7 @@ async function wsDownload(id) {
     renderView();
   }
 }
-async function wsPauseDownload(id) {
+async function wsPauseDownload(_id) {
   const dl = S.ws.dl;
   dl.reqPaused = true;
   try {
@@ -3650,7 +3649,7 @@ function chainHighlightApply() {
     if (!c.sugg || c.sugg.seed !== seed) return;
     c.sugg.results = list.slice(0, 14);
     renderChain();
-  } catch (e) {
+  } catch {
     /* keep the dead-end card without suggestions */
   }
 }
@@ -4864,16 +4863,6 @@ function chainFitTarget() {
   const z = Math.max(0.2, Math.min(3, 0.94 / sv));
   return { zoom: z, x: (cw - W * z) / 2, y: (ch - H * z) / 2 };
 }
-function chainFit() {
-  const t = chainFitTarget();
-  if (!t) return;
-  S.chain.zoom = t.zoom;
-  S.chain.pan.x = t.x;
-  S.chain.pan.y = t.y;
-  S.chain._fitZoom = t.zoom;
-  S.chain._fitIdle = true;
-  chainApplyView();
-}
 function chainFitAnim() {
   const t = chainFitTarget();
   if (!t) return;
@@ -5195,7 +5184,7 @@ async function chainDropSearch(v, seedId, dropId) {
       .join("");
     S.chain.dropIdx = -1;
     drop.hidden = false;
-  } catch (e) {
+  } catch {
     /* autocomplete is best-effort */
   }
 }
@@ -5727,7 +5716,7 @@ function diagRowHTML(d, i, clickable = true) {
   );
 }
 
-function diagPanelHTML(diags, name) {
+function diagPanelHTML(diags) {
   const errN = diags.filter((d) => d.severity === "error").length;
   const warnN = diags.filter((d) => d.severity === "warning").length;
   const infoN = diags.filter((d) => d.severity === "info").length;
@@ -6417,50 +6406,6 @@ $("#tabbar").addEventListener("keydown", (e) => {
   $("#tab-" + next).focus();
 });
 
-/* ==================== PARALLAX ==================== */
-function initParallax() {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const l1 = $("#pxl1"),
-    l2 = $("#pxl2");
-  let tx = 0,
-    ty = 0,
-    cx = 0,
-    cy = 0,
-    lastMove = 0,
-    raf = 0;
-  addEventListener(
-    "pointermove",
-    (e) => {
-      tx = e.clientX / innerWidth - 0.5;
-      ty = e.clientY / innerHeight - 0.5;
-      lastMove = performance.now();
-      if (!raf) raf = requestAnimationFrame(loop);
-    },
-    { passive: true },
-  );
-  function loop() {
-    cx += (tx - cx) * 0.045;
-    cy += (ty - cy) * 0.045;
-    if (!document.documentElement.classList.contains("rm")) {
-      l1.style.transform = "translate3d(" + cx * 32 + "px," + cy * 24 + "px,0)";
-      l2.style.transform =
-        "translate3d(" + cx * -52 + "px," + cy * -40 + "px,0)";
-    }
-    // Skip while the graph is being dragged — the pan already repaints every frame.
-    if (document.body.classList.contains("panning")) {
-      raf = requestAnimationFrame(loop);
-      return;
-    }
-    // Idle pause: after 1.5s without pointer movement, park the layers and
-    // stop the rAF loop so an open dashboard stops consuming a frame budget.
-    if (performance.now() - lastMove > 1500) {
-      raf = 0;
-      return;
-    }
-    raf = requestAnimationFrame(loop);
-  }
-}
-
 /* ==================== BOOT ==================== */
 function boot() {
   loadSettings();
@@ -6469,7 +6414,7 @@ function boot() {
       S.pg.cats,
       JSON.parse(localStorage.getItem("pzdeck.pgcats") || "{}"),
     );
-  } catch (e) {}
+  } catch {}
   applyAccent(S.settings.accent);
   if (S.settings.reduceMotion) document.documentElement.classList.add("rm");
   bindTerminal();
