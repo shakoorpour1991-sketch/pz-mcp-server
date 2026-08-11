@@ -634,14 +634,12 @@ function ringSVG(id, rc) {
   );
 }
 function metricCard(id, label, rc, sub) {
+  // Telemetry cards are passive readouts — no collapse affordance (the
+  // collapse/expand feature applies to the Status panels only).
   return (
     '<article class="glass card metric" style="--rc:' +
     rc +
-    '" data-card="metric-' +
-    id +
-    '"><div class="m-top" data-act="card-collapse" data-card="metric-' +
-    id +
-    '">' +
+    '"><div class="m-top">' +
     ringSVG(id, rc) +
     '<div style="min-width:0"><div class="m-label">' +
     label +
@@ -651,7 +649,6 @@ function metricCard(id, label, rc, sub) {
     '<div class="m-sub">' +
     sub +
     "</div></div>" +
-    cardCollapseBtn("metric-" + id) +
     "</div>" +
     '<svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true"><path class="a" id="sa-' +
     id +
@@ -1078,17 +1075,18 @@ function saveCardStates() {
 }
 function loadCardStates() {
   try {
-    Object.assign(
-      S.cardsCollapsed,
-      JSON.parse(localStorage.getItem("pzdeck.cards") || "{}"),
-    );
+    const saved = JSON.parse(localStorage.getItem("pzdeck.cards") || "{}");
+    // Telemetry metric cards dropped their collapse affordance — prune any
+    // stale metric-* keys persisted by older builds so they don't linger.
+    for (const k of Object.keys(saved)) if (k.startsWith("metric-")) delete saved[k];
+    Object.assign(S.cardsCollapsed, saved);
   } catch {}
 }
 // Re-apply persisted collapse state after the Status tab is re-rendered.
-// Only the card containers carry the collapsed class; their buttons (which
-// also carry data-card) just mirror aria-expanded.
+// Only the collapsible panel-card containers carry the collapsed class;
+// their buttons (which also carry data-card) just mirror aria-expanded.
 function applyCardStates() {
-  for (const el of $$(".panel-card[data-card], .metric[data-card]")) {
+  for (const el of $$(".panel-card[data-card]")) {
     const id = el.dataset.card;
     el.classList.toggle("collapsed", !!S.cardsCollapsed[id]);
     const btn = el.querySelector(".card-collapse");
@@ -1098,9 +1096,7 @@ function applyCardStates() {
 function toggleCardState(id) {
   S.cardsCollapsed[id] = !S.cardsCollapsed[id];
   saveCardStates();
-  const card = document.querySelector(
-    '.panel-card[data-card="' + id + '"], .metric[data-card="' + id + '"]',
-  );
+  const card = document.querySelector('.panel-card[data-card="' + id + '"]');
   if (card) {
     card.classList.toggle("collapsed", S.cardsCollapsed[id]);
     const btn = card.querySelector(".card-collapse");
