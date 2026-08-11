@@ -154,9 +154,9 @@ export function catForTool(name) {
 /* Beginner-friendly explanations for every tool (keyed by MCP tool name) */
 export const TOOL_GUIDES = {
   search_vanilla: {
-    what: "Search the real Project Zomboid database — items, recipes, sounds and vehicles.",
-    how: "<b>query</b> is required — type a keyword like <b>axe</b> or <b>canned</b> and press Run. Everything else is optional: filter by <b>type</b> (item, recipe, sound, …), <b>category</b>, <b>tags</b>, <b>metalValueMin/Max</b>, <b>attachmentType</b>, <b>minWeight/maxWeight</b>, <b>minCalories/maxCalories</b>, or set <b>limit</b> for more/fewer results.",
-    ex: 'query: "axe" · limit: 10',
+    what: "Search the real Project Zomboid database — items, recipes, sounds and vehicles — with fuzzy typo-tolerant id resolution and a knowledge-graph view.",
+    how: "<b>query</b> (or <b>id</b>) is required — type a keyword like <b>axe</b> or <b>canned</b> and press Run, or use <b>id</b> for an exact canonical lookup that resolves typos (Hamer → Base.Hammer). Filters: <b>type</b> (item, recipe, sound, …), <b>category</b>, <b>module</b>, <b>scriptPath</b>, <b>tags</b>, <b>metalValueMin/Max</b>, <b>attachmentType</b>, <b>minWeight/maxWeight</b>, <b>minCalories/maxCalories</b>, <b>properties</b> (structured constraints like [{key: MaxDamage, min: 5}]), <b>usedInRecipe</b> / <b>producedByRecipe</b> (recipe-graph membership), <b>sprite</b>, <b>sound</b>. Set <b>includeRelations</b> for a full relationship graph on the first result, <b>format: \"ai\"</b> for compact anti-hallucination context blocks, or <b>limit</b> for more/fewer results.",
+    ex: 'query: "axe" · limit: 10 — or id: "Base.Hamer" (typo-safe)',
   },
   search_recipes: {
     what: "Find structured crafting recipes by what they need or what they make.",
@@ -195,8 +195,8 @@ export const TOOL_GUIDES = {
   },
   index_javadocs: {
     what: "Index Java API docs into the knowledge base — classes, interfaces, methods, fields become searchable API reference.",
-    how: "No arguments needed — the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs, one file per API type) is indexed directly, so it works on any machine. Optional <b>source</b>: a raw generated JavaDocs HTML tree to re-ingest from scratch (with <b>output</b> for the generated markdown). Optional <b>overwrite</b> (default true; false for an incremental sync).",
-    ex: '{} — or source: "C:/Users/you/PZ-JavaDocs" to re-ingest from HTML',
+    how: "No arguments needed — the repo-shipped distilled JavaDocs markdown (knowledge-base/javadocs, one file per API type) is indexed directly, so it works on any machine. Optional <b>path</b>: a raw generated JavaDocs HTML tree (or distilled markdown dir) to re-ingest from scratch (<b>source</b> is an alias for path; <b>output</b> sets where generated markdown lands). Optional <b>overwrite</b> (default true; false for an incremental sync).",
+    ex: '{} — or path: "C:/Users/you/PZ-JavaDocs" to re-ingest from HTML',
   },
   search_knowledge_base: {
     what: "Search the indexed knowledge base with relevance ranking (bm25 with column weights, stemmed + prefix-matched). Results are <b>section-level chunks</b> — a wiki section or a single javadocs method/field — not whole pages, so every hit is precise. Click <b>View section</b> on a result to read exactly that chunk.",
@@ -240,8 +240,8 @@ export const TOOL_GUIDES = {
   },
   workshop_download: {
     what: "Download a workshop mod via SteamCMD into the workspace folder.",
-    how: "<b>id</b> is required (numeric id or URL). Requires steamcmd (STEAMCMD_PATH or a common install location).",
-    ex: 'id: "2696145877"',
+    how: "<b>id</b> is required (numeric id or URL). Requires steamcmd (STEAMCMD_PATH or a common install location). Set <b>dryRun</b> to preview — resolve the item, verify it's a Project Zomboid mod and report the target path — without touching disk.",
+    ex: 'id: "2696145877" · dryRun: false',
   },
   workshop_analyze: {
     what: "Fetch & analyze a workshop mod end-to-end: download, parse, balance check + full Mod Report.",
@@ -315,7 +315,7 @@ export const GUIDE_STEPS = [
   {
     icon: "scan",
     title: "The 8 tabs",
-    body: "<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Recipe Chain</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Installer</b> — auto-detect your game paths and drop mods in (.zip or folders) to install them into Zomboid/mods. <b>Generator</b> — one-click Build 42 mod generation from beginner templates. <b>Config</b> — accent color, console behaviour and server controls.",
+    body: "<b>Status</b> — live server telemetry, wire state and log. <b>Playground</b> — call every MCP tool with form validation. <b>Database</b> — instant search over parsed game files plus the knowledge base. <b>Workshop</b> — browse, download and analyze Steam Workshop mods. <b>Chains</b> — visual crafting graph: what makes an item, what it makes, what consumes it. <b>Installer</b> — auto-detect your game paths and drop mods in (.zip or folders) to install them into Zomboid/mods. <b>Generator</b> — one-click Build 42 mod generation from beginner templates. <b>Config</b> — accent color, console behaviour and server controls.",
   },
   {
     icon: "play",
@@ -329,8 +329,8 @@ export const GUIDE_STEPS = [
   },
   {
     icon: "db",
-    title: "Database & Knowledge tabs",
-    body: "The Database tab runs the same FTS5 search as search_vanilla, plus a knowledge-base search that returns precise <b>section chunks</b> (a wiki section or a single javadocs method/field). Hit <b>View section</b> on any result to drill into exactly that chunk — no more reading whole pages.",
+    title: "Database tab",
+    body: "The Database tab runs the same FTS5 search as search_vanilla over parsed game data, plus a <b>Knowledge Base</b> panel that searches the indexed docs and returns precise <b>section chunks</b> (a wiki section or a single javadocs method/field). Hit <b>View section</b> on any result to drill into exactly that chunk — no more reading whole pages.",
   },
   {
     icon: "download",
@@ -344,7 +344,7 @@ export const GUIDE_STEPS = [
   },
   {
     icon: "graph",
-    title: "Recipe Chain tab",
+    title: "Chains tab (Recipe Chain)",
     body: "Type any item or recipe id (a recipe like <b>MillFlour</b> gives the richest graph) and press <b>Build graph</b>. Recipe nodes are amber, items cyan; green arrows mean <b>produces</b>, amber means <b>consumes</b>. Click a node to inspect it, drag to pan, ctrl+scroll to zoom. <b>Show recipe conflicts</b> lists items several recipes claim to make — click one to graph it.",
   },
   {
